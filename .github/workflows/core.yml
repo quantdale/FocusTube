@@ -16,12 +16,22 @@ jobs:
         run: swift --version
 
       - name: Test FocusTubeCore
-        run: swift test 2>&1 | tee /tmp/core-build.log || true
-
-      - name: Publish diagnostic
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh gist create /tmp/core-build.log -p -d "core-build-log" \
-            || echo "gist create failed"
+          set -o pipefail
+          swift test 2>&1 | tee /tmp/core-test.log
+
+      # The Actions log API needs auth to read; the step summary renders on the
+      # public run page, so surface compiler/test failures there for remote diagnosis.
+      - name: Publish failure summary
+        if: failure()
+        run: |
+          {
+            echo "### FocusTubeCore swift test output"
+            echo '```'
+            grep -E "error:" /tmp/core-test.log | head -100 || true
+            echo '```'
+            echo "### Tail"
+            echo '```'
+            tail -80 /tmp/core-test.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

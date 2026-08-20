@@ -20,6 +20,9 @@ Downloads/
 *.m4a
 *.mov
 
+# Local toolchain (never committed)
+.swift-toolchain/
+
 # OS / editor
 .DS_Store
 Thumbs.db
