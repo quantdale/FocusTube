@@ -97,6 +97,16 @@ public final class PlayerCoordinator {
         player.play()
     }
 
+    /// Plays an already-finalized local media file with no network dependency.
+    public func playLocalFile(_ url: URL) {
+        let item = AVPlayerItem(url: url)
+        playerItem = item
+        observe(item: item)
+        player.replaceCurrentItem(with: item)
+        state = PlaybackState(status: .loading)
+        player.play()
+    }
+
     public func stop() {
         itemObservation?.invalidate()
         timeControlObservation?.invalidate()
