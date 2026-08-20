@@ -31,7 +31,7 @@ public struct PlaybackState: Sendable {
     }
 
     @discardableResult
-    public mutating func transition(to next: PlaybackStatus) throws TransitionError {
+    public mutating func transition(to next: PlaybackStatus) throws(TransitionError) {
         guard isValid(next: next, from: status) else {
             throw TransitionError.invalidTransition
         }
