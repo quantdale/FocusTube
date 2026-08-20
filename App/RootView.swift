@@ -18,7 +18,7 @@ struct RootView: View {
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         let container = try! ModelContainer(for: schema, configurations: [config])
         let library = LibraryStore(context: ModelContext(container))
-        let manager = DownloadManager(transport: URLSessionDownloadTransport(), context: ModelContext(container))
+        let manager = DownloadManager(transport: BackgroundDownloadTransport.shared, context: ModelContext(container))
         _libraryStore = State(initialValue: library)
         _downloadManager = State(initialValue: manager)
         _downloadService = State(initialValue: DownloadService(downloadManager: manager, library: library))
@@ -51,7 +51,11 @@ struct RootView: View {
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
 
             NavigationStack {
-                DownloadsView(store: libraryStore, playerCoordinator: playerCoordinator)
+                DownloadsView(
+                    store: libraryStore,
+                    downloadManager: downloadManager,
+                    playerCoordinator: playerCoordinator
+                )
             }
             .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
 
@@ -81,31 +85,54 @@ private struct PlaceholderView: View {
 
 struct DownloadsView: View {
     @Bindable var store: LibraryStore
+    @Bindable var downloadManager: DownloadManager
     let playerCoordinator: PlayerCoordinator
 
     var body: some View {
         List {
-            ForEach(store.downloaded, id: \.id) { item in
-                HStack {
-                    Button {
-                        playerCoordinator.playLocalFile(item.fileURL)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.title).lineLimit(2)
-                            Text("\(item.resolution)p · \(item.sizeBytes) bytes").font(.caption).foregroundStyle(.secondary)
+            Section("Downloads in progress") {
+                if downloadManager.liveTasks.isEmpty {
+                    Text("No active downloads.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(downloadManager.liveTasks) { task in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(task.videoID).font(.subheadline).lineLimit(1)
+                        Text("\(task.resolution)p · \(task.state.status.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if task.state.totalBytes > 0 {
+                            ProgressView(value: Double(task.state.bytesDownloaded), total: Double(task.state.totalBytes))
+                        } else {
+                            ProgressView()
                         }
-                    }
-                    Spacer()
-                    Button(role: .destructive) {
-                        store.deleteDownloadedMedia(id: item.id)
-                    } label: {
-                        Image(systemName: "trash")
                     }
                 }
             }
-            if store.downloaded.isEmpty {
-                Text("No downloaded videos yet.")
-                    .foregroundStyle(.secondary)
+
+            Section("Downloaded") {
+                ForEach(store.downloaded, id: \.id) { item in
+                    HStack {
+                        Button {
+                            playerCoordinator.playLocalFile(item.fileURL)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title).lineLimit(2)
+                                Text("\(item.resolution)p · \(item.sizeBytes) bytes").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            store.deleteDownloadedMedia(id: item.id)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                }
+                if store.downloaded.isEmpty {
+                    Text("No downloaded videos yet.")
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .navigationTitle("Downloads")

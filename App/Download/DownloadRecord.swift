@@ -3,33 +3,37 @@ import SwiftData
 import FocusTubeCore
 
 /// SwiftData-persisted download record. Mirrors the deterministic `DownloadTask`
-/// so metadata survives relaunch and reconciles with filesystem reality.
+/// so metadata survives relaunch and reconciles with filesystem reality. The
+/// component list is persisted so an interrupted download can be retried after a
+/// process relaunch even though the in-memory coordinator state is gone.
 @Model
 final class DownloadRecord {
     @Attribute(.unique) var id: String
     var videoID: String
-    var streamID: String
     var resolution: Int
-    var sourceURL: URL
     var destinationURL: URL
     var statusRaw: String
     var bytesDownloaded: Int64
     var totalBytes: Int64
     var errorRaw: String?
     var createdAt: Date
+    var componentsData: Data
 
     init(task: DownloadTask) {
         self.id = task.id
         self.videoID = task.videoID
-        self.streamID = task.streamID
         self.resolution = task.resolution
-        self.sourceURL = task.sourceURL
         self.destinationURL = task.destinationURL
         self.statusRaw = task.state.status.rawValue
         self.bytesDownloaded = task.state.bytesDownloaded
         self.totalBytes = task.state.totalBytes
         self.errorRaw = task.state.error?.rawValue
         self.createdAt = Date()
+        self.componentsData = (try? JSONEncoder().encode(task.components)) ?? Data()
+    }
+
+    var components: [DownloadComponent] {
+        (try? JSONDecoder().decode([DownloadComponent].self, from: componentsData)) ?? []
     }
 
     var downloadTask: DownloadTask {
@@ -42,10 +46,9 @@ final class DownloadRecord {
         return DownloadTask(
             id: id,
             videoID: videoID,
-            streamID: streamID,
             resolution: resolution,
-            sourceURL: sourceURL,
             destinationURL: destinationURL,
+            components: components,
             state: state
         )
     }

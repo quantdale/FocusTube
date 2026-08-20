@@ -13,6 +13,7 @@ private struct FakeMediaExtractor: MediaExtracting {
     }
 }
 
+@MainActor
 final class PlayerCoordinatorTests: XCTestCase {
     func makeStream(id: String, resolution: Int?, kind: StreamKind, nativePlayable: Bool = true, url: URL) -> MediaStream {
         MediaStream(

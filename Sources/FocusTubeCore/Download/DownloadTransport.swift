@@ -1,15 +1,19 @@
 import Foundation
 
-/// Outcome reported by a `DownloadTransport` back to the coordinator.
+/// Outcome reported by a `DownloadTransport` back to the coordinator. Multi-
+/// component (adaptive) downloads report one event per component, tagged with
+/// its index, so the coordinator can aggregate progress and finalize only once
+/// every component has arrived.
 public enum DownloadEvent: Sendable {
-    case progress(bytes: Int64, total: Int64)
-    case completed(tempLocation: URL)
+    case progress(component: Int, bytes: Int64, total: Int64)
+    case completed(tempLocation: URL, component: Int)
     case failed(DownloadError)
 }
 
-/// Abstraction over the actual byte transport (URLSession background in the app,
-/// a fake in tests). Keeps the deterministic download state machine free of
-/// networking and filesystem specifics.
+/// Abstraction over the actual byte transport (real background URLSession in the
+/// app, a fake in tests). Keeps the deterministic download state machine free of
+/// networking and filesystem specifics. A single `DownloadRequest` may expand to
+/// multiple underlying transfers (one per `DownloadComponent`).
 public protocol DownloadTransport: Sendable {
     func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async
     func cancel(taskID: String) async

@@ -42,6 +42,11 @@ public final class PlayerCoordinator {
         self.playerViewController.allowsPictureInPictureByDefault = true
     }
 
+    deinit {
+        // The coordinator is injected once and lives for the app's lifetime, so
+        // no per-lifecycle teardown of AVFoundation observers is required here.
+    }
+
     // MARK: - Selection (delegated to Core policy)
 
     /// Picks the highest allowed natively playable combined stream. Pure and
@@ -114,7 +119,6 @@ public final class PlayerCoordinator {
         startProgressObserver()
         player.play()
     }
-}
 
     public func stop() {
         itemObservation?.invalidate()

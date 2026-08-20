@@ -1,17 +1,25 @@
 public enum DownloadStatus: String, Codable, Sendable, Hashable {
     case idle
+    case resolving
     case queued
     case downloading
     case paused
+    case validating
+    case muxing
     case finalizing
+    case waitingForRetry
+    case reResolving
     case completed
     case failed
 }
 
 public enum DownloadError: String, Error, Equatable, Sendable {
     case noAllowedStream
+    case requestedQualityUnavailable
     case transportFailed
     case validationFailed
+    case muxFailed
+    case expiredMediaURL
     case cancelled
     case interrupted
     case storageRefused
@@ -19,9 +27,9 @@ public enum DownloadError: String, Error, Equatable, Sendable {
 }
 
 /// Explicit, observable download state machine. Background transfer, file
-/// finalization, and validation are the app-layer concern; this model encodes
-/// valid transitions so coordinator logic and UI can be tested deterministically
-/// and recover from failures predictably.
+/// finalization, muxing, and validation are the app-layer concern; this model
+/// encodes valid transitions so coordinator logic and UI can be tested
+/// deterministically and recover from failures predictably.
 public struct DownloadState: Sendable {
     public var status: DownloadStatus
     public var error: DownloadError?
@@ -58,17 +66,28 @@ public struct DownloadState: Sendable {
 
     private func isValid(next: DownloadStatus, from current: DownloadStatus) -> Bool {
         switch (current, next) {
-        case (.idle, .queued), (.idle, .failed):
+        case (.idle, .queued), (.idle, .resolving), (.idle, .failed):
+            return true
+        case (.resolving, .queued), (.resolving, .failed):
             return true
         case (.queued, .downloading), (.queued, .failed):
             return true
-        case (.downloading, .paused), (.downloading, .finalizing), (.downloading, .failed):
+        case (.downloading, .paused), (.downloading, .validating),
+             (.downloading, .waitingForRetry), (.downloading, .failed):
             return true
         case (.paused, .downloading), (.paused, .failed):
             return true
+        case (.validating, .finalizing), (.validating, .muxing), (.validating, .failed):
+            return true
+        case (.muxing, .finalizing), (.muxing, .failed):
+            return true
         case (.finalizing, .completed), (.finalizing, .failed):
             return true
-        case (.failed, .idle), (.failed, .queued):
+        case (.waitingForRetry, .downloading), (.waitingForRetry, .failed):
+            return true
+        case (.reResolving, .queued), (.reResolving, .failed):
+            return true
+        case (.failed, .idle), (.failed, .queued), (.failed, .resolving):
             return true
         case (.completed, .idle):
             return true

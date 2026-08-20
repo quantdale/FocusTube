@@ -45,7 +45,7 @@ final class DownloadCoordinatorTests: XCTestCase {
     func testProgressUpdatesBytes() async {
         let coordinator = DownloadCoordinator(transport: NoopDownloadTransport(), fileManager: FakeFileManager())
         _ = await coordinator.enqueue(makeRequest())
-        await coordinator.handle(.progress(bytes: 50, total: 100), taskID: "d1")
+        await coordinator.handle(.progress(component: 0, bytes: 50, total: 100), taskID: "d1")
         let task = await coordinator.task("d1")
         XCTAssertEqual(task?.state.bytesDownloaded, 50)
         XCTAssertEqual(task?.state.totalBytes, 100)
@@ -55,7 +55,7 @@ final class DownloadCoordinatorTests: XCTestCase {
     func testCompletionFinalizesAndCompletes() async {
         let coordinator = DownloadCoordinator(transport: NoopDownloadTransport(), fileManager: FakeFileManager())
         _ = await coordinator.enqueue(makeRequest())
-        await coordinator.handle(.completed(tempLocation: URL(fileURLWithPath: "/tmp/tmp-d1.mp4")), taskID: "d1")
+        await coordinator.handle(.completed(tempLocation: URL(fileURLWithPath: "/tmp/tmp-d1.mp4"), component: 0), taskID: "d1")
         let task = await coordinator.task("d1")
         XCTAssertEqual(task?.state.status, .completed)
         XCTAssertNil(task?.state.error)
@@ -66,7 +66,7 @@ final class DownloadCoordinatorTests: XCTestCase {
         fm.exists = false
         let coordinator = DownloadCoordinator(transport: NoopDownloadTransport(), fileManager: fm)
         _ = await coordinator.enqueue(makeRequest())
-        await coordinator.handle(.completed(tempLocation: URL(fileURLWithPath: "/tmp/missing.mp4")), taskID: "d1")
+        await coordinator.handle(.completed(tempLocation: URL(fileURLWithPath: "/tmp/missing.mp4"), component: 0), taskID: "d1")
         let task = await coordinator.task("d1")
         XCTAssertEqual(task?.state.status, .failed)
         XCTAssertEqual(task?.state.error, .validationFailed)
@@ -77,7 +77,7 @@ final class DownloadCoordinatorTests: XCTestCase {
         fm.replaceThrows = true
         let coordinator = DownloadCoordinator(transport: NoopDownloadTransport(), fileManager: fm)
         _ = await coordinator.enqueue(makeRequest())
-        await coordinator.handle(.completed(tempLocation: URL(fileURLWithPath: "/tmp/tmp-d1.mp4")), taskID: "d1")
+        await coordinator.handle(.completed(tempLocation: URL(fileURLWithPath: "/tmp/tmp-d1.mp4"), component: 0), taskID: "d1")
         let task = await coordinator.task("d1")
         XCTAssertEqual(task?.state.status, .failed)
         XCTAssertEqual(task?.state.error, .finalizationFailed)

@@ -7,9 +7,14 @@ public struct DownloadQualityPicker {
     public init() {}
 
     public func availableQualities(from media: ResolvedMedia) -> [DownloadQuality] {
-        let resolutions = (media.combined + media.videoOnly).compactMap { $0.resolution }
-        let set = Set(resolutions)
-        return DownloadQuality.descending.filter { set.contains($0.rawValue) }
+        DownloadQuality.descending.filter { quality in
+            switch DownloadPlanner.plan(for: media, quality: quality) {
+            case .unavailable:
+                return false
+            case .combined, .adaptive:
+                return true
+            }
+        }
     }
 
     public func isAvailable(_ quality: DownloadQuality, from media: ResolvedMedia) -> Bool {

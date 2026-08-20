@@ -1,10 +1,12 @@
 import Foundation
 import FocusTubeCore
 
-/// Orchestrates a real download: resolves media, selects the stream for the
-/// chosen quality, drives `DownloadManager`, and on completion registers the
-/// finalized file in the `LibraryStore` so it appears offline in the Downloads
-/// tab. The loop is: pick → download → finalize → register.
+/// Orchestrates a real download: resolves media, selects the exact download
+/// strategy for the chosen quality (combined, or adaptive video+audio mux),
+/// drives `DownloadManager` over a durable background `URLSession`, and on
+/// completion registers the finalized file in the `LibraryStore` so it appears
+/// offline in the Downloads tab. The loop is: plan -> download -> finalize ->
+/// register. No quality is ever silently downgraded.
 @MainActor
 public final class DownloadService {
     private let extractor: MediaExtracting
@@ -12,69 +14,98 @@ public final class DownloadService {
     private let library: LibraryStore
     private let picker = DownloadQualityPicker()
     private let fileManager: FileManaging
+    private let mediaDirectory: URL
 
     public init(
         extractor: MediaExtracting = YouTubeKitMediaExtractor(),
         downloadManager: DownloadManager,
         library: LibraryStore,
-        fileManager: FileManaging = FileManager.default
+        fileManager: FileManaging = FileManager.default,
+        mediaDirectory: URL = DownloadManager.defaultMediaDirectory()
     ) {
         self.extractor = extractor
         self.downloadManager = downloadManager
         self.library = library
         self.fileManager = fileManager
+        self.mediaDirectory = mediaDirectory
     }
 
-    public func download(videoID: String, title: String, channelTitle: String, quality: DownloadQuality) async {
+    public func download(
+        videoID: String,
+        title: String,
+        channelTitle: String,
+        quality: DownloadQuality
+    ) async {
+        let media: ResolvedMedia
         do {
-            let media = try await extractor.resolve(videoID: videoID)
-            guard let stream = selectStream(media: media, quality: quality) else { return }
-            let destination = defaultDestination(videoID: videoID, quality: quality)
-            let request = DownloadRequest(
-                id: "\(videoID)-\(quality.rawValue)",
-                videoID: videoID,
-                streamID: stream.id,
-                resolution: quality.rawValue,
-                sourceURL: stream.sourceURL,
-                destinationURL: destination
-            )
-            _ = await downloadManager.enqueue(request)
-            await downloadManager.begin(request.id)
-
-            for _ in 0..<180 {
-                if let task = await downloadManager.records.first(where: { $0.id == request.id }) {
-                    if task.state.status == .completed {
-                        let size = fileManager.size(of: destination)
-                        library.addDownloadedMedia(DownloadedMedia(
-                            id: request.id,
-                            videoID: videoID,
-                            title: title,
-                            resolution: quality.rawValue,
-                            fileURL: destination,
-                            sizeBytes: size,
-                            createdAt: Date()
-                        ))
-                        return
-                    }
-                    if task.state.status == .failed { return }
-                }
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
+            media = try await extractor.resolve(videoID: videoID)
         } catch {
+            return
+        }
+
+        let plan = DownloadPlanner.plan(for: media, quality: quality)
+        switch plan {
+        case let .combined(component, resolution):
+            await run(
+                videoID: videoID, title: title, channelTitle: channelTitle,
+                quality: quality, resolution: resolution, components: [component]
+            )
+        case let .adaptive(video, audio, resolution):
+            await run(
+                videoID: videoID, title: title, channelTitle: channelTitle,
+                quality: quality, resolution: resolution, components: [video, audio]
+            )
+        case .unavailable:
+            // The quality picker only offers qualities the planner can satisfy,
+            // so this is defensive. No silent downgrade is performed.
             return
         }
     }
 
-    private func selectStream(media: ResolvedMedia, quality: DownloadQuality) -> MediaStream? {
-        let combined = MediaStreamFilter.allowed(media.combined)
-            .filter { $0.nativePlayable && $0.resolution == quality.rawValue }
-        if let exact = combined.first { return exact }
-        return combined.max { ($0.resolution ?? 0) < ($1.resolution ?? 0) }
+    private func run(
+        videoID: String,
+        title: String,
+        channelTitle: String,
+        quality: DownloadQuality,
+        resolution: Int,
+        components: [DownloadComponent]
+    ) async {
+        let id = "\(videoID)-\(quality.rawValue)"
+        let destination = destination(videoID: videoID, quality: quality)
+        let request = DownloadRequest(
+            id: id,
+            videoID: videoID,
+            resolution: resolution,
+            destinationURL: destination,
+            components: components
+        )
+
+        let enqueued = await downloadManager.enqueue(request)
+        if enqueued.state.status == .failed {
+            return
+        }
+
+        await downloadManager.begin(request.id)
+
+        guard let final = await downloadManager.waitForCompletion(request.id) else { return }
+        if final.state.status == .completed {
+            let size = fileManager.size(of: destination)
+            library.addDownloadedMedia(DownloadedMedia(
+                id: id,
+                videoID: videoID,
+                title: title,
+                resolution: quality.rawValue,
+                fileURL: destination,
+                sizeBytes: size,
+                createdAt: Date()
+            ))
+        }
     }
 
-    private func defaultDestination(videoID: String, quality: DownloadQuality) -> URL {
-        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("FocusTubeDownloads")
-        return dir.appendingPathComponent("\(videoID)-\(quality.rawValue).mp4")
+    private func destination(videoID: String, quality: DownloadQuality) -> URL {
+        mediaDirectory
+            .appendingPathComponent(videoID)
+            .appendingPathComponent("\(quality.rawValue)")
+            .appendingPathComponent("media.mp4")
     }
 }

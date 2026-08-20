@@ -15,6 +15,7 @@ private struct SpyTarget: PlayerCommandTarget {
     func seek(to seconds: TimeInterval) { seekSeconds = seconds }
 }
 
+@MainActor
 final class BackgroundMediaTests: XCTestCase {
     func testRemoteCommandMapping() {
         var spy = SpyTarget()

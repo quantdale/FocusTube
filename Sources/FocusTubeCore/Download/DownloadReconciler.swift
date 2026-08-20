@@ -4,7 +4,8 @@ import Foundation
 /// deterministic: given the persisted tasks and a filesystem check, it derives
 /// the corrected post-relaunch state without touching networking or storage.
 public enum DownloadReconciler {
-    /// - `downloading` / `finalizing` from a previous launch cannot resume
+    /// - `downloading` / `finalizing` / `resolving` / `validating` / `muxing` /
+    ///   `waitingForRetry` / `reResolving` from a previous launch cannot resume
     ///   mid-transfer and are marked interrupted (retryable).
     /// - `completed` is verified against the filesystem; a missing final file
     ///   becomes a validation failure.
@@ -16,7 +17,8 @@ public enum DownloadReconciler {
         tasks.map { task in
             var updated = task
             switch task.state.status {
-            case .downloading, .finalizing:
+            case .downloading, .finalizing, .resolving, .validating,
+                 .muxing, .waitingForRetry, .reResolving:
                 var state = task.state
                 state.status = .failed
                 state.error = .interrupted

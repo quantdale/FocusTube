@@ -1,34 +1,87 @@
 import Foundation
 import SwiftData
 import FocusTubeCore
+import AVFoundation
 
 /// App-layer durable download manager. Owns the deterministic `DownloadCoordinator`
 /// and persists `DownloadRecord` metadata in SwiftData, reconciles on relaunch,
 /// refuses downloads when storage is insufficient, and cleans up on
-/// cancel/failure without orphaning final media.
+/// cancel/failure without orphaning final media. Final media is stored under
+/// Application Support (never the temporary directory); transient component
+/// files use a durable incomplete-work area there.
 @MainActor
+@Observable
 public final class DownloadManager {
+    public private(set) var liveTasks: [DownloadTask] = []
+
     private let coordinator: DownloadCoordinator
     private let context: ModelContext
     private let storage: StorageProviding
-    private let directory: URL
+    private let mediaDirectory: URL
+    private let incompleteDirectory: URL
+    private let transport: DownloadTransport
 
     public init(
         transport: DownloadTransport,
         context: ModelContext,
         storage: StorageProviding = VolumeStorage(),
-        directory: URL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("FocusTubeDownloads")
+        mediaDirectory: URL = Self.defaultMediaDirectory(),
+        incompleteDirectory: URL = Self.defaultIncompleteDirectory()
     ) {
-        self.coordinator = DownloadCoordinator(transport: transport, directory: directory)
         self.context = context
         self.storage = storage
-        self.directory = directory
+        self.mediaDirectory = mediaDirectory
+        self.incompleteDirectory = incompleteDirectory
+        self.transport = transport
+        self.coordinator = DownloadCoordinator(
+            transport: transport,
+            directory: incompleteDirectory,
+            mux: Self.makeMux()
+        )
         reconcileOnLaunch()
+    }
+
+    // MARK: - Durable paths
+
+    public static func defaultMediaDirectory() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("FocusTube").appendingPathComponent("Media")
+    }
+
+    public static func defaultIncompleteDirectory() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("FocusTube").appendingPathComponent("Incomplete")
+    }
+
+    /// Native AVFoundation mux of adaptive video+audio components into the final
+    /// file. Defined here (App layer) so Core stays free of AVFoundation; the
+    /// coordinator invokes it through the injected closure.
+    private static func makeMux() -> (@Sendable ([URL], URL) async throws -> URL) {
+        { components, destination in
+            try await MainActor.run {
+                let muxer = AdaptiveMuxer()
+                guard components.count == 2 else { throw MuxError.missingComponent }
+                let result = await muxer.mux(
+                    videoURL: components[0],
+                    audioURL: components[1],
+                    outputURL: destination
+                )
+                switch result {
+                case .success(let url): return url
+                case .failure(let error): throw error
+                }
+            }
+        }
     }
 
     // MARK: - Reconciliation
 
     public func reconcileOnLaunch() {
+        // Drop background tasks from a previous process lifetime; they cannot be
+        // transparently re-bound, so their records are reconciled to interrupted
+        // and made retryable below.
+        (transport as? BackgroundDownloadTransport)?.cancelAll()
+
         let records = fetchRecords()
         let tasks = records.map { $0.downloadTask }
         let reconciled = DownloadReconciler.reconcile(tasks) { [weak self] url in
@@ -50,10 +103,9 @@ public final class DownloadManager {
             var task = DownloadTask(
                 id: request.id,
                 videoID: request.videoID,
-                streamID: request.streamID,
                 resolution: request.resolution,
-                sourceURL: request.sourceURL,
                 destinationURL: request.destinationURL,
+                components: request.components,
                 state: DownloadState(status: .failed, error: .storageRefused)
             )
             context.insert(DownloadRecord(task: task))
@@ -68,32 +120,85 @@ public final class DownloadManager {
     }
 
     public func begin(_ taskID: String) async {
-        await coordinator.begin(taskID)
-        syncRecord(taskID)
+        await coordinator.begin(taskID) { [weak self] task in
+            Task { @MainActor in
+                self?.applyLive(task)
+            }
+        }
+        await syncRecord(taskID)
     }
 
     public func cancel(_ taskID: String) async {
         await coordinator.cancel(taskID)
-        syncRecord(taskID)
+        await syncRecord(taskID)
+        removeLive(taskID)
     }
 
     public func retry(_ taskID: String) async {
-        guard let task = await coordinator.task(taskID) else { return }
+        guard let record = fetchRecords().first(where: { $0.id == taskID }) else { return }
+        let components = record.components
+        guard !components.isEmpty else { return }
         let request = DownloadRequest(
-            id: task.id,
-            videoID: task.videoID,
-            streamID: task.streamID,
-            resolution: task.resolution,
-            sourceURL: task.sourceURL,
-            destinationURL: task.destinationURL
+            id: record.id,
+            videoID: record.videoID,
+            resolution: record.resolution,
+            destinationURL: record.destinationURL,
+            components: components
         )
         _ = await coordinator.enqueue(request)
-        await coordinator.begin(task.id)
-        syncRecord(taskID)
+        await coordinator.begin(request.id) { [weak self] task in
+            Task { @MainActor in
+                self?.applyLive(task)
+            }
+        }
+        await syncRecord(taskID)
     }
 
     public var records: [DownloadTask] {
         fetchRecords().map { $0.downloadTask }
+    }
+
+    public var activeTasks: [DownloadTask] {
+        records.filter { status in
+            switch status.state.status {
+            case .queued, .downloading, .paused, .validating, .muxing, .finalizing, .waitingForRetry, .resolving, .reResolving:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    /// Blocks until the coordinator reports the task completed or failed, or the
+    /// timeout elapses. Used by `DownloadService` to register finalized media.
+    public func waitForCompletion(_ id: String, timeout: TimeInterval = 600) async -> DownloadTask? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let task = await coordinator.task(id),
+               task.state.status == .completed || task.state.status == .failed {
+                await syncRecord(id)
+                return task
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        return await coordinator.task(id)
+    }
+
+    // MARK: - Live progress (UI projection)
+
+    private func applyLive(_ task: DownloadTask) {
+        if let idx = liveTasks.firstIndex(where: { $0.id == task.id }) {
+            liveTasks[idx] = task
+        } else {
+            liveTasks.append(task)
+        }
+        if task.state.status == .completed || task.state.status == .failed {
+            removeLive(task.id)
+        }
+    }
+
+    private func removeLive(_ taskID: String) {
+        liveTasks.removeAll { $0.id == taskID }
     }
 
     // MARK: - Helpers
@@ -106,7 +211,7 @@ public final class DownloadManager {
         FileManager.default.fileExists(atPath: url.path)
     }
 
-    private func syncRecord(_ taskID: String) {
+    private func syncRecord(_ taskID: String) async {
         guard let record = fetchRecords().first(where: { $0.id == taskID }) else { return }
         guard let task = await coordinator.task(taskID) else { return }
         record.apply(task)

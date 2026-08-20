@@ -23,7 +23,7 @@ final class DownloadQualityPickerTests: XCTestCase {
             extractedAt: Date(),
             combined: [makeStream(resolution: 1080, kind: .combined), makeStream(resolution: 720, kind: .combined)],
             videoOnly: [makeStream(resolution: 480, kind: .videoOnly)],
-            audioOnly: []
+            audioOnly: [makeStream(resolution: 0, kind: .audioOnly)]
         )
         let picker = DownloadQualityPicker()
         let available = picker.availableQualities(from: media)

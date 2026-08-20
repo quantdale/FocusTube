@@ -32,7 +32,7 @@ final class DownloadLiveSmoke: XCTestCase {
             destinationURL: destination
         )
 
-        let coordinator = DownloadCoordinator(transport: URLSessionDownloadTransport())
+        let coordinator = await DownloadCoordinator(transport: BackgroundDownloadTransport())
         _ = await coordinator.enqueue(request)
         await coordinator.begin("live-d1")
 
