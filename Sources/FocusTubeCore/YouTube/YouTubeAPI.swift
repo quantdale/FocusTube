@@ -27,6 +27,8 @@ public protocol YouTubeAPI: Sendable {
     func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String]
     /// Hydrated details for a set of video IDs.
     func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary]
+    /// Video IDs from a search query, with optional pagination token.
+    func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?)
     /// Convenience: subscription feed as hydrated video summaries.
     func fetchSubscriptionFeed(accessToken: String) async throws -> [VideoSummary]
 }

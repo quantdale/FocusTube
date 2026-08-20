@@ -127,7 +127,7 @@ waypoints:
     order: 8
     milestone: M5_SEARCH
     gate: G5
-    status: pending
+    status: complete
     depends_on: [WP-007-HOME-SHORTS-FIREWALL]
     objective: Add quota-aware explicit-submit search with hydration and ShortFormPolicy.
     primary_risk: Search quota consumption and short-form leakage.

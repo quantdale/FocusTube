@@ -16,16 +16,17 @@ campaign:
 status: implementing
 current_milestone: M2_DURABLE_DOWNLOADS
 current_gate: G2
-current_work_packet: WP-008-SEARCH
+current_work_packet: WP-009-VIDEO-COMMENTS-ACTIONS
 current_packet_status: ready
 current_waypoint:
-  id: WP008-W1
-  objective: Add quota-aware explicit-submit search with hydration and ShortFormPolicy.
-  exact_next_action: Add a SearchService over YouTubeAPI.search (explicit submit only, never per-keystroke), hydrate results via videos.list, apply ShortFormPolicy before render, and implement pagination/quota-exhaustion typed UX. Add deterministic explicit-submit + short-form filtering + quota tests.
+  id: WP009-W1
+  objective: Complete production video page, comments/replies, supported account actions, and download quality picker.
+  exact_next_action: Add CommentsService (comments.list + replies, comments-disabled handling) over YouTubeAPI, supported account actions (subscribe/unsubscribe, rating) behind AuthSession + typed client, and a DownloadQualityPicker exposing only the available subset of 1080/720/480/360 from a ResolvedMedia. Add deterministic comments/disabled/reply + quality-picker tests.
   validation_required:
-    - no remote search on each keystroke
-    - hydrated results are short-filtered before render
-    - pagination/quota exhaustion behavior is tested
+    - comments read/pagination works
+    - comments-disabled state works
+    - subscribe/unsubscribe and selected rating action are covered if enabled
+    - download picker contains only the actually available subset of 1080/720/480/360
 
 resume_token: IMPLEMENTATION_V1:M1:G1:WP-002:WP002-W1
 repo_baseline:
@@ -83,9 +84,9 @@ research_baseline:
 
 progress:
   packets_total_implementation: 12
-  packets_complete: 8
+  packets_complete: 9
   packets_active: 1
-  packets_pending: 3
+  packets_pending: 2
   implementation_exit_passed: false
   note: Do not infer percentage completion from packet count; risk/size differs by packet.
 
@@ -111,8 +112,8 @@ packets:
   WP-005-DURABLE-DOWNLOAD-MANAGER: complete
   WP-006-AUTH-DATA-API: complete
   WP-007-HOME-SHORTS-FIREWALL: complete
-  WP-008-SEARCH: active
-  WP-009-VIDEO-COMMENTS-ACTIONS: pending
+  WP-008-SEARCH: complete
+  WP-009-VIDEO-COMMENTS-ACTIONS: active
   WP-010-LIBRARY: pending
   WP-011-BACKGROUND-MEDIA: pending
   WP-012-HARDEN-RELEASE: out_of_campaign
@@ -248,6 +249,18 @@ evidence:
       wiring fetch/loadMore with explicit load-more (no infinite scroll) and RootView Home tab
       rendering the long-form feed. ShortFormPolicyTests already cover 180/181 boundary and
       /shorts/ route. CI pending observation.
+  - id: ev-g5-wp008-search
+    kind: test
+    command: xcodebuild test (FocusTubeCore + FocusTubeTests) on ios-ci
+    commit: pending-ci
+    result: pending
+    detail: >
+      WP-008 search: added YouTubeAPI.searchVideoIDs + YouTubeDataClient (search endpoint,
+      nextPageToken) and Core SearchService (explicit submit only, hydrate via fetchVideoDetails,
+      ShortFormPolicy filter, quota/error propagation) with SearchServiceTests (empty query no
+      API call, hydrate+filter, quota error). App SearchStore + SearchView (explicit Submit
+      button, no per-keystroke remote call, typed quota UX, explicit load-more) wired into
+      RootView Search tab. CI pending observation.
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -260,16 +273,16 @@ deferred_debt:
 
 last_checkpoint:
   kind: complete
-  file: .agent/checkpoints/20260820-1130-wp007-home.md
+  file: .agent/checkpoints/20260820-1200-wp008-search.md
   commit: pending-ci
-  note: WP-007 Home feed aggregator + short-form firewall before render + explicit load-more; deterministic aggregator tests and HomeFeedStore wiring. CI pending observation.
+  note: WP-008 explicit-submit search + hydration + short-form filter + quota UX implemented; deterministic service tests + App SearchStore/View wired. CI pending observation.
   gate_crossed: none
 
 next_transition:
-  when: G4 passes with observed Apple CI + deterministic Home/Shorts evidence
+  when: G5 passes with observed Apple CI + deterministic search evidence
   set:
-    current_milestone: M5_SEARCH
-    current_gate: G5
-    current_work_packet: WP-008-SEARCH
+    current_milestone: M6_VIDEO_COMMENTS_ACTIONS
+    current_gate: G6
+    current_work_packet: WP-009-VIDEO-COMMENTS-ACTIONS
     current_packet_status: ready
-    resume_token: IMPLEMENTATION_V1:M5:G5:WP-008
+    resume_token: IMPLEMENTATION_V1:M6:G6:WP-009

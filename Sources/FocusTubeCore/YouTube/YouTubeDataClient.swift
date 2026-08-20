@@ -56,6 +56,22 @@ public struct YouTubeDataClient: YouTubeAPI {
         }
     }
 
+    public func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
+        var query: [String: String] = [
+            "part": "snippet",
+            "q": query,
+            "type": "video",
+            "maxResults": "20"
+        ]
+        if let pageToken, !pageToken.isEmpty {
+            query["pageToken"] = pageToken
+        }
+        let request = try Self.buildRequest(baseURL: baseURL, path: "search", accessToken: accessToken, query: query)
+        let data = try await perform(request)
+        let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
+        return (decoded.items.compactMap { $0.id.videoId }, decoded.nextPageToken)
+    }
+
     // MARK: - Execution / mapping
 
     private func perform(_ request: URLRequest) async throws -> Data {
@@ -142,6 +158,17 @@ private struct VideosResponse: Decodable {
         }
         struct ContentDetails: Decodable {
             let duration: String
+        }
+    }
+}
+
+private struct SearchResponse: Decodable {
+    let nextPageToken: String?
+    let items: [SearchItem]
+    struct SearchItem: Decodable {
+        let id: ID
+        struct ID: Decodable {
+            let videoId: String?
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @State private var playerCoordinator = PlayerCoordinator()
     @State private var homeStore = HomeFeedStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
+    @State private var searchStore = SearchStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
 
     var body: some View {
         TabView {
@@ -12,7 +13,7 @@ struct RootView: View {
             .tabItem { Label("Home", systemImage: "house") }
 
             NavigationStack {
-                PlaceholderView(title: "Search", message: "Explicit-submit YouTube search")
+                SearchView(store: searchStore, playerCoordinator: playerCoordinator)
             }
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
 
