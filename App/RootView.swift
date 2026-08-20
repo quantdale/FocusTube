@@ -13,6 +13,7 @@ struct RootView: View {
         let container = try! ModelContainer(for: schema, configurations: config)
         return LibraryStore(context: ModelContext(container))
     }()
+    @State private var backgroundMedia: BackgroundMediaCoordinator?
 
     var body: some View {
         TabView {
@@ -35,6 +36,12 @@ struct RootView: View {
                 LibraryView(store: libraryStore)
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
+        }
+        .task {
+            let coordinator = BackgroundMediaCoordinator(target: playerCoordinator)
+            backgroundMedia = coordinator
+            try? coordinator.configureAudioSession()
+            coordinator.registerRemoteCommands()
         }
     }
 }
