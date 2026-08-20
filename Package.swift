@@ -3,6 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "FocusTubeCore",
+    platforms: [
+        .iOS(.v17),
+        .macOS(.v13)
+    ],
     products: [
         .library(name: "FocusTubeCore", targets: ["FocusTubeCore"])
     ],

@@ -70,7 +70,6 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
     info:
-      path: Config/Info.plist
       properties:
         CFBundleDisplayName: FocusTube
         UILaunchScreen: {}
