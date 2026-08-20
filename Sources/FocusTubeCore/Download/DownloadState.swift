@@ -8,12 +8,13 @@ public enum DownloadStatus: String, Codable, Sendable, Hashable {
     case failed
 }
 
-public enum DownloadError: Error, Equatable, Sendable {
+public enum DownloadError: String, Error, Equatable, Sendable {
     case noAllowedStream
     case transportFailed
     case validationFailed
-    case finalizationFailed
     case cancelled
+    case interrupted
+    case storageRefused
     case unknown
 }
 
@@ -59,11 +60,11 @@ public struct DownloadState: Sendable {
         switch (current, next) {
         case (.idle, .queued), (.idle, .failed):
             return true
-        case (.queued, .downloading), (.queued, .failed), (.queued, .cancelled):
+        case (.queued, .downloading), (.queued, .failed):
             return true
         case (.downloading, .paused), (.downloading, .finalizing), (.downloading, .failed):
             return true
-        case (.paused, .downloading), (.paused, .failed), (.paused, .cancelled):
+        case (.paused, .downloading), (.paused, .failed):
             return true
         case (.finalizing, .completed), (.finalizing, .failed):
             return true

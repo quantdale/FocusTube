@@ -14,19 +14,19 @@ campaign:
   auto_enter_hardening: false
 
 status: implementing
-current_milestone: M1_MEDIA_VIABILITY
-current_gate: G1
-current_work_packet: WP-005-DURABLE-DOWNLOAD-MANAGER
+current_milestone: M2_DURABLE_DOWNLOADS
+current_gate: G2
+current_work_packet: WP-006-AUTH-DATA-API
 current_packet_status: ready
 current_waypoint:
-  id: WP005-W1
-  objective: Make downloads durable across suspension, interruption, relaunch, retry, and signed-URL expiration.
-  exact_next_action: Persist DownloadTask records (SwiftData metadata + filesystem) behind a DownloadManager that reconciles on relaunch, implements retry/re-resolution, refuses on insufficient storage, and cleans up on cancel/failure without orphaning. Add deterministic state-machine reconciliation tests.
+  id: WP006-W1
+  objective: Add GoogleSignIn boundary and typed YouTube Data API client without coupling media extraction to OAuth.
+  exact_next_action: Add AuthSession boundary (GoogleSignIn) with fake for tests, and a typed YouTube Data API client (subscriptions/list + videos/hydrate) over URLSession with typed error/quota handling. Add deterministic fake-auth + typed-error integration tests; keep secret/token logging absent.
   validation_required:
-    - explicit DownloadManager state machine tests pass
-    - background tasks reconcile on relaunch
-    - transient retry/re-resolution/storage refusal/cancel cleanup pass
-    - SwiftData record and filesystem final state reconcile safely
+    - fake auth supports deterministic authenticated-app tests
+    - typed YouTube API client handles success/auth/quota/network/decode error classes
+    - subscription-list integration is implemented and deterministically tested
+    - no secret/token logging
 
 resume_token: IMPLEMENTATION_V1:M1:G1:WP-002:WP002-W1
 repo_baseline:
@@ -84,9 +84,9 @@ research_baseline:
 
 progress:
   packets_total_implementation: 12
-  packets_complete: 5
+  packets_complete: 6
   packets_active: 1
-  packets_pending: 6
+  packets_pending: 5
   implementation_exit_passed: false
   note: Do not infer percentage completion from packet count; risk/size differs by packet.
 
@@ -109,8 +109,8 @@ packets:
   WP-002-PLAYBACK: complete
   WP-003-COMBINED-DOWNLOAD: complete
   WP-004-ADAPTIVE-1080: complete
-  WP-005-DURABLE-DOWNLOAD-MANAGER: active
-  WP-006-AUTH-DATA-API: pending
+  WP-005-DURABLE-DOWNLOAD-MANAGER: complete
+  WP-006-AUTH-DATA-API: active
   WP-007-HOME-SHORTS-FIREWALL: pending
   WP-008-SEARCH: pending
   WP-009-VIDEO-COMMENTS-ACTIONS: pending
@@ -212,6 +212,18 @@ evidence:
       passthrough) with AdaptiveMuxerTests (typed failure on non-media input, no fallback);
       opt-in AdaptiveLiveSmoke (FOCUSTUBE_LIVE_SMOKE=1) downloads both components and muxes.
       CI run triggered by push; evidence pending observation on Apple build plane.
+  - id: ev-g2-wp005-downloadmanager
+    kind: test
+    command: xcodebuild test (FocusTubeTests) on ios-ci
+    commit: pending-ci
+    result: pending
+    detail: >
+      WP-005 durable download manager: Core DownloadReconciler (downloading/finalizing ->
+      interrupted, completed-with-missing-file -> validationFailed, queued/paused unchanged)
+      with DownloadReconcilerTests; App SwiftData DownloadRecord + @MainActor DownloadManager
+      (reconcileOnLaunch, storage refusal via StorageProviding seam, cancel cleanup) with
+      DownloadManagerTests using in-memory ModelContainer (persist queued, storage refusal,
+      relaunch reconcile to interrupted, cancel cleanup). CI pending observation.
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -224,16 +236,16 @@ deferred_debt:
 
 last_checkpoint:
   kind: complete
-  file: .agent/checkpoints/20260820-1000-wp004-adaptive.md
+  file: .agent/checkpoints/20260820-1030-wp005-downloadmanager.md
   commit: pending-ci
-  note: WP-004 adaptive 1080p component selection + native mux implemented; deterministic selection + mux tests + opt-in live smoke. CI pending observation.
+  note: WP-005 durable download manager implemented; SwiftData persistence + relaunch reconciliation + storage refusal + cancel cleanup, deterministic tests via in-memory container. CI pending observation.
   gate_crossed: none
 
 next_transition:
-  when: G1 passes with observed Apple CI + deterministic extraction evidence
+  when: G2 passes with observed Apple CI + deterministic reconciliation evidence
   set:
-    current_milestone: M2_DURABLE_DOWNLOADS
-    current_gate: G2
-    current_work_packet: WP-005-DURABLE-DOWNLOAD-MANAGER
+    current_milestone: M3_AUTH_DATA_API
+    current_gate: G3
+    current_work_packet: WP-006-AUTH-DATA-API
     current_packet_status: ready
-    resume_token: IMPLEMENTATION_V1:M2:G2:WP-005
+    resume_token: IMPLEMENTATION_V1:M3:G3:WP-006

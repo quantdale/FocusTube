@@ -82,7 +82,7 @@ waypoints:
     order: 5
     milestone: M2_DURABLE_DOWNLOADS
     gate: G2
-    status: pending
+    status: complete
     depends_on: [WP-004-ADAPTIVE-1080]
     objective: Make downloads durable across suspension, interruption, relaunch, retry, and signed-URL expiration.
     primary_risk: State reconciliation/data integrity.
