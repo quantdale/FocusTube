@@ -18,14 +18,14 @@ final class LiveExtractionSmoke: XCTestCase {
 
         let combined = streams.filter { $0.includesVideoAndAudioTrack }.map { stream in
             MediaStream(
-                id: "\(stream.itag.itag)",
+                id: stream.url.absoluteString,
                 videoID: videoID,
                 resolution: stream.videoResolution,
                 kind: .combined,
                 nativePlayable: stream.isNativelyPlayable,
-                container: stream.fileExtension.rawValue,
-                videoCodec: stream.videoCodec?.rawValue,
-                audioCodec: stream.audioCodec?.rawValue,
+                container: String(describing: stream.fileExtension),
+                videoCodec: stream.videoCodec.map { String(describing: $0) },
+                audioCodec: stream.audioCodec.map { String(describing: $0) },
                 sourceURL: stream.url,
                 expiresAt: nil
             )
