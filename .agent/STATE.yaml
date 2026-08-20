@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-20T07:15:00+08:00
+updated_at: 2026-08-20T07:30:00+08:00
 
 campaign:
   id: IMPLEMENTATION_V1
@@ -160,6 +160,17 @@ evidence:
       + skipped live smoke). Concrete YouTubeKitMediaExtractor (local-only) compiled
       and linked; MediaStreamFilter enforces {1080,720,480,360}. See checkpoint
       .agent/checkpoints/20260820-0710-wp001-extraction.md.
+  - id: ev-g1-wp002-playback-state
+    kind: ci
+    workflow: ios-ci
+    run: 32343436786
+    commit: d559196
+    result: pass
+    detail: >
+      WP-002 deterministic foundation green. FocusTubeCore PlaybackState machine +
+      typed PlaybackError + PlaybackStateTests (valid transitions, failure clearing,
+      invalid-transition rejection, no-playable-stream selection). swift test and full
+      iOS build/test pass on macOS-26 (Xcode 26.6, iPhone 17 Pro iOS-26-4).
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -171,9 +182,10 @@ deferred_debt:
     detail: Repository was observed public during bootstrap. No credentials are committed. Visibility does not block implementation.
 
 last_checkpoint:
-  kind: packet
+  kind: partial
   file: .agent/checkpoints/20260820-0710-wp001-extraction.md
-  commit: 2f5fe1c
+  commit: d559196
+  note: WP-002 deterministic foundation merged and green; AVPlayer wiring + simulator playback-start smoke remain.
   gate_crossed: none
 
 next_transition:
