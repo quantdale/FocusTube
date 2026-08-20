@@ -34,18 +34,21 @@ final class YouTubeDataClientTests: XCTestCase {
         let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: Data(), statusCode: 401))
         do { _ = try await client.fetchVideoDetails(ids: ["x"], accessToken: "tok"); XCTFail() }
         catch let error as YouTubeAPIError { XCTAssertEqual(error, .unauthorized) }
+        catch { XCTFail("unexpected error: \(error)") }
     }
 
     func testQuotaExceededMapped() async {
         let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: Data(), statusCode: 403))
         do { _ = try await client.fetchVideoDetails(ids: ["x"], accessToken: "tok"); XCTFail() }
         catch let error as YouTubeAPIError { XCTAssertEqual(error, .quotaExceeded) }
+        catch { XCTFail("unexpected error: \(error)") }
     }
 
     func testNotFoundMapped() async {
         let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: Data(), statusCode: 404))
         do { _ = try await client.fetchVideoDetails(ids: ["x"], accessToken: "tok"); XCTFail() }
         catch let error as YouTubeAPIError { XCTAssertEqual(error, .notFound) }
+        catch { XCTFail("unexpected error: \(error)") }
     }
 
     func testUnknownStatusMapped() async {
@@ -54,18 +57,21 @@ final class YouTubeDataClientTests: XCTestCase {
         catch let error as YouTubeAPIError {
             if case .unknown(let status) = error { XCTAssertEqual(status, 500) } else { XCTFail() }
         }
+        catch { XCTFail("unexpected error: \(error)") }
     }
 
     func testDecodeFailureMapped() async {
         let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: "not json".data(using: .utf8)!, statusCode: 200))
         do { _ = try await client.fetchVideoDetails(ids: ["x"], accessToken: "tok"); XCTFail() }
         catch let error as YouTubeAPIError { XCTAssertEqual(error, .decode) }
+        catch { XCTFail("unexpected error: \(error)") }
     }
 
     func testNetworkFailureMapped() async {
         let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: Data(), statusCode: 200, throwsError: true))
         do { _ = try await client.fetchVideoDetails(ids: ["x"], accessToken: "tok"); XCTFail() }
         catch let error as YouTubeAPIError { XCTAssertEqual(error, .network) }
+        catch { XCTFail("unexpected error: \(error)") }
     }
 
     func testSubscriptionFeedAggregates() async throws {
@@ -93,7 +99,9 @@ final class YouTubeDataClientTests: XCTestCase {
     }
 }
 
-private struct ScriptedPerformer: HTTPPerforming {
+// Class (not struct) so `index` can advance across sequential scripted requests;
+// @unchecked Sendable is safe here because requests are awaited sequentially.
+private final class ScriptedPerformer: HTTPPerforming, @unchecked Sendable {
     var responses: [(Data, Int)]
     private var index = 0
 

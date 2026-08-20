@@ -18,6 +18,7 @@ public enum DownloadError: String, Error, Equatable, Sendable {
     case requestedQualityUnavailable
     case transportFailed
     case validationFailed
+    case finalizationFailed
     case muxFailed
     case expiredMediaURL
     case cancelled
@@ -30,7 +31,7 @@ public enum DownloadError: String, Error, Equatable, Sendable {
 /// finalization, muxing, and validation are the app-layer concern; this model
 /// encodes valid transitions so coordinator logic and UI can be tested
 /// deterministically and recover from failures predictably.
-public struct DownloadState: Sendable {
+public struct DownloadState: Sendable, Hashable {
     public var status: DownloadStatus
     public var error: DownloadError?
     public var bytesDownloaded: Int64

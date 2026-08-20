@@ -5,13 +5,11 @@ private struct SearchStubAPI: YouTubeAPI {
     var searchIDs: [String]
     var nextPageToken: String?
     var details: [VideoSummary]
-    var searchCalled = false
 
     func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { [] }
     func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String] { [] }
     func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] { details }
     func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> ([String], String?) {
-        searchCalled = true
         return (searchIDs, nextPageToken)
     }
     func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage { .disabled }
@@ -66,6 +64,8 @@ final class SearchServiceTests: XCTestCase {
             XCTFail()
         } catch let error as YouTubeAPIError {
             XCTAssertEqual(error, .quotaExceeded)
+        } catch {
+            XCTFail("unexpected error: \(error)")
         }
     }
 }

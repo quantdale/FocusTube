@@ -1,4 +1,5 @@
 import Foundation
+import os
 import FocusTubeCore
 
 /// Real durable background download transport backed by a `URLSession` created
@@ -96,23 +97,23 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
     // MARK: - Delegate bridge callbacks (called on the session delegate queue)
 
     fileprivate func deliverProgress(taskIdentifier: Int, bytes: Int64, total: Int64) {
-        let (handler, index) = lock.withLock { state -> (@Sendable (DownloadEvent) -> Void, Int)? in
+        guard let (handler, index) = lock.withLock({ state -> (@Sendable (DownloadEvent) -> Void, Int)? in
             guard let handler = state.handlers[taskIdentifier],
                   let index = state.componentIndex[taskIdentifier] else { return nil }
             return (handler, index)
-        }
-        handler?(.progress(component: index, bytes: bytes, total: total))
+        }) else { return }
+        handler(.progress(component: index, bytes: bytes, total: total))
     }
 
     fileprivate func deliverCompleted(taskIdentifier: Int, location: URL) {
-        let (handler, index) = lock.withLock { state -> (@Sendable (DownloadEvent) -> Void, Int)? in
+        guard let (handler, index) = lock.withLock({ state -> (@Sendable (DownloadEvent) -> Void, Int)? in
             guard let handler = state.handlers[taskIdentifier],
                   let index = state.componentIndex[taskIdentifier] else { return nil }
             state.handlers[taskIdentifier] = nil
             state.componentIndex[taskIdentifier] = nil
             return (handler, index)
-        }
-        handler?(.completed(tempLocation: location, component: index))
+        }) else { return }
+        handler(.completed(tempLocation: location, component: index))
     }
 
     fileprivate func deliverFailed(taskIdentifier: Int) {

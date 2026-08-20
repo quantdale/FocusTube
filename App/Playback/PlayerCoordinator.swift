@@ -218,4 +218,7 @@ extension PlayerCoordinator: PlayerCommandTarget {
     public func togglePlayPause() {
         if state.status == .playing { pause() } else { resume() }
     }
+    public func seek(to seconds: TimeInterval) {
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
+    }
 }

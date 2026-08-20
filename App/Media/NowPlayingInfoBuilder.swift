@@ -1,4 +1,5 @@
 import MediaPlayer
+import UIKit
 
 /// Pure builder for the Now Playing info dictionary. Kept side-effect free so
 /// the metadata content is deterministically testable without `MPNowPlayingInfoCenter`.
@@ -17,8 +18,8 @@ public enum NowPlayingInfoBuilder {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: 1.0
         ]
-        if let artwork {
-            dict[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(data: artwork)
+        if let artwork, let image = UIImage(data: artwork) {
+            dict[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(image: image)
         }
         return dict
     }

@@ -12,7 +12,7 @@ public final class SearchStore {
     public private(set) var error: YouTubeAPIError?
     public private(set) var query: String = ""
 
-    private var nextPageToken: String?
+    public private(set) var nextPageToken: String?
     private let auth: AuthSession
     private let api: YouTubeAPI
     private let service: SearchService

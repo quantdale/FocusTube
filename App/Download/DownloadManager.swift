@@ -58,18 +58,16 @@ public final class DownloadManager {
     /// coordinator invokes it through the injected closure.
     private static func makeMux() -> (@Sendable ([URL], URL) async throws -> URL) {
         { components, destination in
-            try await MainActor.run {
-                let muxer = AdaptiveMuxer()
-                guard components.count == 2 else { throw MuxError.missingComponent }
-                let result = await muxer.mux(
-                    videoURL: components[0],
-                    audioURL: components[1],
-                    outputURL: destination
-                )
-                switch result {
-                case .success(let url): return url
-                case .failure(let error): throw error
-                }
+            let muxer = await AdaptiveMuxer()
+            guard components.count == 2 else { throw MuxError.missingComponent }
+            let result = await muxer.mux(
+                videoURL: components[0],
+                audioURL: components[1],
+                outputURL: destination
+            )
+            switch result {
+            case .success(let url): return url
+            case .failure(let error): throw error
             }
         }
     }

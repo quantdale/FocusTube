@@ -1,7 +1,9 @@
 import XCTest
 @testable import FocusTubeCore
 
-private struct FullStubAPI: YouTubeAPI {
+// Class (not struct) so action methods can record invocations for assertions;
+// @unchecked Sendable is safe here because tests exercise calls sequentially.
+private final class FullStubAPI: YouTubeAPI, @unchecked Sendable {
     var commentsPage: CommentPage = .disabled
     var commentsThrows: YouTubeAPIError?
     var subscribedChannel: String?
@@ -67,6 +69,8 @@ final class VideoActionsTests: XCTestCase {
             XCTFail()
         } catch let error as YouTubeAPIError {
             XCTAssertEqual(error, .commentsDisabled)
+        } catch {
+            XCTFail("unexpected error: \(error)")
         }
     }
 
@@ -88,6 +92,8 @@ final class VideoActionsTests: XCTestCase {
             XCTFail()
         } catch let error as YouTubeAPIError {
             XCTAssertEqual(error, .quotaExceeded)
+        } catch {
+            XCTFail("unexpected error: \(error)")
         }
     }
 }

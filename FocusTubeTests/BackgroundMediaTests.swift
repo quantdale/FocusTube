@@ -3,6 +3,7 @@ import MediaPlayer
 @testable import FocusTube
 import FocusTubeCore
 
+@MainActor
 private struct SpyTarget: PlayerCommandTarget {
     var playCount = 0
     var pauseCount = 0
