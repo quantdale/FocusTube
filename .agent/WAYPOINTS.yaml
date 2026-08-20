@@ -25,7 +25,7 @@ waypoints:
     order: 1
     milestone: M1_MEDIA_VIABILITY
     gate: G1
-    status: active
+    status: complete
     depends_on: [WP-000-BOOTSTRAP]
     objective: Isolate YouTubeKit local extraction behind FocusTube-owned models/protocols.
     primary_risk: Upstream extraction fragility.
@@ -39,7 +39,7 @@ waypoints:
     order: 2
     milestone: M1_MEDIA_VIABILITY
     gate: G1
-    status: pending
+    status: active
     depends_on: [WP-001-EXTRACTION]
     objective: Prove native online playback through AVPlayer/AVPlayerViewController.
     primary_risk: Extracted stream/device compatibility.

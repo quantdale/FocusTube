@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-20T06:40:00+08:00
+updated_at: 2026-08-20T07:15:00+08:00
 
 campaign:
   id: IMPLEMENTATION_V1
@@ -16,18 +16,18 @@ campaign:
 status: implementing
 current_milestone: M1_MEDIA_VIABILITY
 current_gate: G1
-current_work_packet: WP-001-EXTRACTION
+current_work_packet: WP-002-PLAYBACK
 current_packet_status: ready
 current_waypoint:
-  id: WP001-W1
-  objective: Define normalized media models and the local-only MediaExtracting boundary.
-  exact_next_action: Add FocusTube-owned ResolvedMedia/stream models, the MediaExtracting protocol, YouTubeKitMediaExtractor (local method only), allowed-resolution filter, and deterministic fake-extractor selection/normalization tests; validate via swift test on CI.
+  id: WP002-W1
+  objective: Prove native online playback through AVPlayer/AVPlayerViewController.
+  exact_next_action: Add app-side PlayerCoordinator (AVPlayer/AVPlayerViewController) over MediaStreamFilter.selectOnlineStream, typed playback failures, and an opt-in/simulator playback-start smoke; validate build/test on CI.
   validation_required:
-    - FocusTubeCore swift test (deterministic adapter/normalization)
-    - no feature layer imports YouTubeKit directly
-    - no 1440p/2160p escapes normalization
+    - selected native-playable stream creates AVPlayerItem
+    - simulator playback starts for representative long-form source
+    - playback failures are typed/observable
 
-resume_token: IMPLEMENTATION_V1:M1:G1:WP-001:WP001-W1
+resume_token: IMPLEMENTATION_V1:M1:G1:WP-002:WP002-W1
 repo_baseline:
   branch: main
   commit: 90e9afe
@@ -104,8 +104,8 @@ milestones:
 
 packets:
   WP-000-BOOTSTRAP: complete
-  WP-001-EXTRACTION: ready
-  WP-002-PLAYBACK: pending
+  WP-001-EXTRACTION: complete
+  WP-002-PLAYBACK: ready
   WP-003-COMBINED-DOWNLOAD: pending
   WP-004-ADAPTIVE-1080: pending
   WP-005-DURABLE-DOWNLOAD-MANAGER: pending
@@ -147,6 +147,19 @@ evidence:
       generation, iOS build/test, iPhone 17 Pro (iOS-26-4) boot, app launch,
       LaunchTests testRootTabsExist. Xcode 26.6, Apple Swift 6.3.3. Artifact
       focustube-ios-ci (3.3MB) uploaded.
+  - id: ev-g1-wp001-extraction
+    kind: ci
+    workflow: ios-ci
+    run: 32342460929
+    commit: 2f5fe1c
+    result: pass
+    detail: >
+      WP-001 G1 deterministic gate green. swift test passes (MediaExtractionTests:
+      disallowed-resolution filtering, highest-allowed native combined selection,
+      no >1080, typed FakeMediaExtractor error). iOS build/test passes (LaunchTests
+      + skipped live smoke). Concrete YouTubeKitMediaExtractor (local-only) compiled
+      and linked; MediaStreamFilter enforces {1080,720,480,360}. See checkpoint
+      .agent/checkpoints/20260820-0710-wp001-extraction.md.
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -158,10 +171,10 @@ deferred_debt:
     detail: Repository was observed public during bootstrap. No credentials are committed. Visibility does not block implementation.
 
 last_checkpoint:
-  kind: gate
-  file: .agent/checkpoints/20260820-0637-g0-bootstrap.md
-  commit: 90e9afe
-  gate_crossed: G0
+  kind: packet
+  file: .agent/checkpoints/20260820-0710-wp001-extraction.md
+  commit: 2f5fe1c
+  gate_crossed: none
 
 next_transition:
   when: G1 passes with observed Apple CI + deterministic extraction evidence
