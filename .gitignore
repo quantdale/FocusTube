@@ -1,0 +1,30 @@
+# Xcode / generated project
+*.xcodeproj/
+DerivedData/
+.build/
+.swiftpm/
+Package.resolved
+
+# Local configuration / secrets
+Config/Secrets.local.xcconfig
+*.p12
+*.mobileprovision
+GoogleService-Info.plist
+
+# Runtime media and artifacts
+Artifacts/
+artifacts/
+Downloads/
+*.xcresult
+*.mp4
+*.m4a
+*.mov
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# XcodeGen cache
+.xcodegen/

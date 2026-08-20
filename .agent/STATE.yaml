@@ -1,0 +1,69 @@
+schema_version: 1
+project: FocusTube
+plan_version: 1
+updated_at: 2026-08-20 14:03:00+08:00
+status: ready
+current_milestone: M0_BOOTSTRAP
+current_gate: G0
+current_work_packet: WP-000-BOOTSTRAP
+next_waypoint: Verify the published bootstrap on main, run Windows FocusTubeCore tests,
+  then execute WP-000 through macOS/XcodeGen/iOS Simulator CI and collect G0 evidence.
+locked_decisions:
+  platform: native_ios
+  minimum_ios: '17.0'
+  ui: SwiftUI
+  playback: AVPlayer_AVPlayerViewController
+  extractor: YouTubeKit
+  extractor_methods:
+  - local
+  yt_dlp_fallback: false
+  remote_extractor: false
+  download_resolutions:
+  - 1080
+  - 720
+  - 480
+  - 360
+  max_download_resolution: 1080
+  persistence_metadata: SwiftData
+  persistence_media: filesystem
+  project_generation: XcodeGen
+  backend: none_v1
+  shorts: hard_disabled
+  autoplay_next_default: false
+  infinite_scroll_default: false
+  primary_dev_host: windows
+  apple_build_plane: github_actions_macos
+research_baseline:
+  date: 2026-08-20
+  youtube_kit_verified_release: 0.4.8
+  google_signin_documented_version: 9.0.0
+  xcode_target: '26.6'
+  xcodegen_minimum: 2.46.0
+milestones:
+  M0_BOOTSTRAP: pending
+  M1_MEDIA_VIABILITY: pending
+  M2_DURABLE_DOWNLOADS: pending
+  M3_AUTH_DATA_API: pending
+  M4_HOME_FOCUS: pending
+  M5_SEARCH: pending
+  M6_VIDEO_COMMENTS_ACTIONS: pending
+  M7_LIBRARY: pending
+  M8_BACKGROUND_MEDIA: pending
+  M9_HARDENING: pending
+  M10_PERSONAL_RELEASE: pending
+blockers: []
+evidence:
+- kind: design
+  result: complete
+  detail: Architecture/product/roadmap baseline authored and externally researched.
+- kind: test
+  command: swift test
+  environment: linux x86_64 / Swift 6.2.1 (artifact-construction environment)
+  result: pass
+  detail: '5 FocusTubeCore policy tests passed: quality ladder, >1080 ceiling, missing-quality
+    behavior, 180s boundary, /shorts/ route.'
+deferred_debt:
+- id: repository_visibility
+  severity: administrative
+  detail: Repository quantdale/FocusTube is currently public. The original project recommendation was private for personal-use development; visibility does not block WP-000 because no credentials are committed.
+

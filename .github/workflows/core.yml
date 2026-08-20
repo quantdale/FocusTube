@@ -1,0 +1,16 @@
+name: Core Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Test FocusTubeCore
+        run: swift test

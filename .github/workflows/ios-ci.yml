@@ -1,0 +1,60 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: bash scripts/ci/select-xcode.sh
+
+      - name: Install XcodeGen
+        run: |
+          brew update
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Test FocusTubeCore
+        run: swift test
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project FocusTube.xcodeproj -scheme FocusTube
+
+      - name: Select and boot simulator
+        run: |
+          UDID="$(bash scripts/ci/select-simulator.sh | tail -n 1)"
+          echo "FOCUSTUBE_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Build and test
+        run: |
+          mkdir -p Artifacts
+          set -o pipefail
+          xcodebuild test             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -resultBundlePath Artifacts/FocusTube.xcresult             CODE_SIGNING_ALLOWED=NO | tee Artifacts/xcodebuild.log
+
+      - name: Simulator screenshot
+        if: always()
+        run: |
+          mkdir -p Artifacts
+          xcrun simctl io "$FOCUSTUBE_SIMULATOR_UDID" screenshot Artifacts/final-simulator.png || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: focustube-ios-ci
+          path: Artifacts/
+          if-no-files-found: warn

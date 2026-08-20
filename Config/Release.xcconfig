@@ -1,0 +1,3 @@
+// Non-secret release configuration only.
+FOCUSTUBE_ENVIRONMENT = release
+#include? "Secrets.local.xcconfig"

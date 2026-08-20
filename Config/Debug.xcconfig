@@ -1,0 +1,3 @@
+// Non-secret debug configuration only.
+FOCUSTUBE_ENVIRONMENT = debug
+#include? "Secrets.local.xcconfig"
