@@ -79,7 +79,9 @@ final class DownloadPlannerTests: XCTestCase {
             audioOnly: []
         )
         let plan = DownloadPlanner.plan(for: media, quality: .p1080)
-        XCTAssertEqual(plan, .unavailable(reason: .requestedQualityUnavailable))
+        // A 2160 source is outside the allowed set, so nothing downloadable
+        // exists at all (not merely an unavailable 1080).
+        XCTAssertEqual(plan, .unavailable(reason: .noAllowedStream))
     }
 
     func testExactCombined720ChosenFor720Request() {
