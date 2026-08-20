@@ -23,11 +23,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BODY=$(head -c 9000 /tmp/core-build.log \
-            | python3 -c "import sys,json;print(json.dumps(sys.stdin.read()))")
-          curl -s -X POST \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -d "{\"title\":\"CI diag build log\",\"body\":$BODY}" \
-            https://api.github.com/repos/quantdale/FocusTube/issues \
-            || echo "issue create failed"
+          gh gist create /tmp/core-build.log -p -d "core-build-log" \
+            || echo "gist create failed"
