@@ -7,7 +7,7 @@ final class LibraryStoreTests: XCTestCase {
     func makeContainer() throws -> ModelContainer {
         let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: config)
+        return try ModelContainer(for: schema, configurations: [config])
     }
 
     func testProgressPersistsAndResumes() async throws {

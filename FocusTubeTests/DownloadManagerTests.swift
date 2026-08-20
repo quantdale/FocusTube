@@ -17,7 +17,7 @@ final class DownloadManagerTests: XCTestCase {
     func makeContainer() throws -> ModelContainer {
         let schema = Schema([DownloadRecord.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        return try ModelContainer(for: DownloadRecord.self, configurations: config)
+        return try ModelContainer(for: schema, configurations: [config])
     }
 
     func makeRequest(id: String) -> DownloadRequest {

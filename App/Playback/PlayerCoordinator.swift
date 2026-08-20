@@ -106,14 +106,6 @@ public final class PlayerCoordinator {
         state = PlaybackState(status: .loading)
         player.play()
     }
-}
-
-extension PlayerCoordinator: PlayerCommandTarget {
-    public func play() { resume() }
-    public func togglePlayPause() {
-        if state.status == .playing { pause() } else { resume() }
-    }
-}
 
     public func stop() {
         itemObservation?.invalidate()
@@ -186,5 +178,12 @@ extension PlayerCoordinator: PlayerCommandTarget {
             return .itemFailed
         }
         return .unknown
+    }
+}
+
+extension PlayerCoordinator: PlayerCommandTarget {
+    public func play() { resume() }
+    public func togglePlayPause() {
+        if state.status == .playing { pause() } else { resume() }
     }
 }

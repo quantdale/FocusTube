@@ -14,6 +14,10 @@ private struct SearchStubAPI: YouTubeAPI {
         searchCalled = true
         return (searchIDs, nextPageToken)
     }
+    func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage { .disabled }
+    func subscribe(channelID: String, accessToken: String) async throws {}
+    func unsubscribe(subscriptionID: String, accessToken: String) async throws {}
+    func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {}
     func fetchSubscriptionFeed(accessToken: String) async throws -> [VideoSummary] { [] }
 }
 
@@ -50,6 +54,10 @@ final class SearchServiceTests: XCTestCase {
             func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> ([String], String?) {
                 throw YouTubeAPIError.quotaExceeded
             }
+            func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage { .disabled }
+            func subscribe(channelID: String, accessToken: String) async throws {}
+            func unsubscribe(subscriptionID: String, accessToken: String) async throws {}
+            func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {}
             func fetchSubscriptionFeed(accessToken: String) async throws -> [VideoSummary] { [] }
         }
         let service = SearchService(api: FailingAPI())

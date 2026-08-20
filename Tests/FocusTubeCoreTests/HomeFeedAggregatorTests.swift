@@ -8,6 +8,10 @@ private struct StubYouTubeAPI: YouTubeAPI {
     func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String] { [] }
     func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] { [] }
     func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> ([String], String?) { ([], nil) }
+    func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage { .disabled }
+    func subscribe(channelID: String, accessToken: String) async throws {}
+    func unsubscribe(subscriptionID: String, accessToken: String) async throws {}
+    func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {}
 
     func fetchSubscriptionFeed(accessToken: String) async throws -> [VideoSummary] {
         summaries

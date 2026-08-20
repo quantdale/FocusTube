@@ -25,6 +25,10 @@ public protocol FileManaging: Sendable {
 }
 
 extension FileManager: FileManaging {
+    public func fileExists(at url: URL) -> Bool {
+        fileExists(atPath: url.path)
+    }
+
     public func size(of url: URL) -> Int64 {
         guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]) else { return 0 }
         return Int64(values.fileSize ?? 0)
