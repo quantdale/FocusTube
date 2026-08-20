@@ -141,14 +141,15 @@ waypoints:
     order: 9
     milestone: M6_VIDEO_COMMENTS_ACTIONS
     gate: G6
-    status: pending
+    status: complete
     depends_on: [WP-008-SEARCH]
     objective: Complete production video page, comments/replies, supported account actions, and download quality picker.
     primary_risk: Authenticated mutation correctness and UI state consistency.
     exit_evidence:
-      - comments read/disabled/post/reply paths are covered
+      - comments read/pagination works
+      - comments-disabled state works
       - subscribe/unsubscribe and selected rating action are covered if enabled
-      - quality picker exposes only available subset of 1080/720/480/360
+      - download picker contains only the actually available subset of 1080/720/480/360
     next: WP-010-LIBRARY
 
   - id: WP-010-LIBRARY

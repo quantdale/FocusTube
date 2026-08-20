@@ -4,16 +4,18 @@ struct RootView: View {
     @State private var playerCoordinator = PlayerCoordinator()
     @State private var homeStore = HomeFeedStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
     @State private var searchStore = SearchStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
+    @State private var auth: AuthSession = GoogleSignInAuthSession()
+    @State private var api: YouTubeAPI = YouTubeDataClient()
 
     var body: some View {
         TabView {
             NavigationStack {
-                HomeFeedView(store: homeStore, playerCoordinator: playerCoordinator)
+                HomeFeedView(store: homeStore, playerCoordinator: playerCoordinator, auth: auth, api: api)
             }
             .tabItem { Label("Home", systemImage: "house") }
 
             NavigationStack {
-                SearchView(store: searchStore, playerCoordinator: playerCoordinator)
+                SearchView(store: searchStore, playerCoordinator: playerCoordinator, auth: auth, api: api)
             }
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
 
@@ -45,8 +47,10 @@ private struct PlaceholderView: View {
 private struct HomeFeedView: View {
     @Bindable var store: HomeFeedStore
     let playerCoordinator: PlayerCoordinator
+    let auth: AuthSession
+    let api: YouTubeAPI
 
-    @State private var showPlayer = false
+    @State private var showVideo = false
     @State private var selectedVideoID: String?
 
     var body: some View {
@@ -57,7 +61,7 @@ private struct HomeFeedView: View {
             ForEach(store.videos) { video in
                 Button {
                     selectedVideoID = video.id
-                    showPlayer = true
+                    showVideo = true
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(video.title).lineLimit(2)
@@ -72,7 +76,7 @@ private struct HomeFeedView: View {
             }
             Button {
                 selectedVideoID = "aqz-KE-bpKQ"
-                showPlayer = true
+                showVideo = true
             } label: {
                 Label("Open native player (M1 demo)", systemImage: "play.circle")
             }
@@ -82,17 +86,15 @@ private struct HomeFeedView: View {
             await store.restore()
             await store.load()
         }
-        .sheet(isPresented: $showPlayer) {
+        .sheet(isPresented: $showVideo) {
             if let id = selectedVideoID {
                 NavigationStack {
-                    PlayerView(coordinator: playerCoordinator)
-                        .navigationTitle("Playback")
+                    VideoPageView(videoID: id, coordinator: playerCoordinator, auth: auth, api: api)
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
-                                Button("Close") { showPlayer = false }
+                                Button("Close") { showVideo = false }
                             }
                         }
-                        .task { await playerCoordinator.loadAndPlay(videoID: id) }
                 }
             }
         }

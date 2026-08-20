@@ -4,9 +4,11 @@ import FocusTubeCore
 struct SearchView: View {
     @Bindable var store: SearchStore
     let playerCoordinator: PlayerCoordinator
+    let auth: AuthSession
+    let api: YouTubeAPI
 
     @State private var queryText = ""
-    @State private var showPlayer = false
+    @State private var showVideo = false
     @State private var selectedVideoID: String?
 
     var body: some View {
@@ -35,7 +37,7 @@ struct SearchView: View {
             ForEach(store.results) { video in
                 Button {
                     selectedVideoID = video.id
-                    showPlayer = true
+                    showVideo = true
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(video.title).lineLimit(2)
@@ -53,17 +55,15 @@ struct SearchView: View {
             }
         }
         .navigationTitle("Search")
-        .sheet(isPresented: $showPlayer) {
+        .sheet(isPresented: $showVideo) {
             if let id = selectedVideoID {
                 NavigationStack {
-                    PlayerView(coordinator: playerCoordinator)
-                        .navigationTitle("Playback")
+                    VideoPageView(videoID: id, coordinator: playerCoordinator, auth: auth, api: api)
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
-                                Button("Close") { showPlayer = false }
+                                Button("Close") { showVideo = false }
                             }
                         }
-                        .task { await playerCoordinator.loadAndPlay(videoID: id) }
                 }
             }
         }

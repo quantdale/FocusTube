@@ -4,6 +4,7 @@ import Foundation
 public enum YouTubeAPIError: Error, Equatable, Sendable {
     case unauthorized
     case quotaExceeded
+    case commentsDisabled
     case notFound
     case network
     case decode
@@ -29,6 +30,14 @@ public protocol YouTubeAPI: Sendable {
     func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary]
     /// Video IDs from a search query, with optional pagination token.
     func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?)
+    /// Comments for a video (top-level + their replies), or the disabled state.
+    func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage
+    /// Subscribe the authenticated user to a channel.
+    func subscribe(channelID: String, accessToken: String) async throws
+    /// Unsubscribe by subscription resource ID.
+    func unsubscribe(subscriptionID: String, accessToken: String) async throws
+    /// Set the authenticated user's rating for a video.
+    func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws
     /// Convenience: subscription feed as hydrated video summaries.
     func fetchSubscriptionFeed(accessToken: String) async throws -> [VideoSummary]
 }

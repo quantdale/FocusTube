@@ -72,6 +72,74 @@ public struct YouTubeDataClient: YouTubeAPI {
         return (decoded.items.compactMap { $0.id.videoId }, decoded.nextPageToken)
     }
 
+    // MARK: - Comments
+
+    public func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage {
+        var query: [String: String] = [
+            "part": "snippet,replies",
+            "videoId": videoID,
+            "maxResults": "20",
+            "textFormat": "plainText"
+        ]
+        if let pageToken, !pageToken.isEmpty {
+            query["pageToken"] = pageToken
+        }
+        let request = try Self.buildRequest(baseURL: baseURL, path: "commentThreads", accessToken: accessToken, query: query)
+        let data = try await perform(request)
+        let decoded = try JSONDecoder().decode(CommentThreadsResponse.self, from: data)
+        let comments = decoded.items.map { item -> Comment in
+            let top = item.snippet.topLevelComment
+            let replies = (item.replies?.comments ?? []).map { rc in
+                Comment(
+                    id: rc.id,
+                    author: rc.snippet.authorDisplayName,
+                    text: rc.snippet.textDisplay,
+                    likeCount: rc.snippet.likeCount ?? 0,
+                    publishedAt: ISO8601DateFormatter().date(from: rc.snippet.publishedAt),
+                    replyCount: 0
+                )
+            }
+            return Comment(
+                id: top.id,
+                author: top.snippet.authorDisplayName,
+                text: top.snippet.textDisplay,
+                likeCount: top.snippet.likeCount ?? 0,
+                publishedAt: ISO8601DateFormatter().date(from: top.snippet.publishedAt),
+                replyCount: item.snippet.totalReplyCount ?? 0,
+                replies: replies
+            )
+        }
+        return CommentPage(comments: comments, nextPageToken: decoded.nextPageToken, commentsDisabled: false)
+    }
+
+    // MARK: - Account actions
+
+    public func subscribe(channelID: String, accessToken: String) async throws {
+        var request = try Self.buildRequest(baseURL: baseURL, path: "subscriptions", accessToken: accessToken, query: ["part": "snippet"])
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode([
+            "snippet": ["resourceId": ["kind": "youtube#channel", "channelId": channelID]]
+        ])
+        _ = try await perform(request)
+    }
+
+    public func unsubscribe(subscriptionID: String, accessToken: String) async throws {
+        var request = try Self.buildRequest(baseURL: baseURL, path: "subscriptions", accessToken: accessToken, query: ["id": subscriptionID])
+        request.httpMethod = "DELETE"
+        _ = try await perform(request)
+    }
+
+    public func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {
+        let request = try Self.buildRequest(baseURL: baseURL, path: "videos/rate", accessToken: accessToken, query: [
+            "id": videoID,
+            "rating": rating.rawValue
+        ])
+        var r = request
+        r.httpMethod = "POST"
+        _ = try await perform(r)
+    }
+
     // MARK: - Execution / mapping
 
     private func perform(_ request: URLRequest) async throws -> Data {
@@ -86,9 +154,18 @@ public struct YouTubeDataClient: YouTubeAPI {
             throw YouTubeAPIError.unknown(status: -1)
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.mapError(http.statusCode)
+            throw Self.apiError(from: data, statusCode: http.statusCode)
         }
         return data
+    }
+
+    private static func apiError(from data: Data, statusCode: Int) -> YouTubeAPIError {
+        if statusCode == 403,
+           let decoded = try? JSONDecoder().decode(ErrorEnvelope.self, from: data),
+           decoded.error.errors.contains(where: { $0.reason == "commentsDisabled" }) {
+            return .commentsDisabled
+        }
+        return mapError(statusCode)
     }
 
     public static func mapError(_ statusCode: Int) -> YouTubeAPIError {
@@ -170,5 +247,46 @@ private struct SearchResponse: Decodable {
         struct ID: Decodable {
             let videoId: String?
         }
+    }
+}
+
+private struct ErrorEnvelope: Decodable {
+    let error: ErrorBody
+    struct ErrorBody: Decodable {
+        let errors: [ErrorItem]
+        struct ErrorItem: Decodable {
+            let reason: String
+        }
+    }
+}
+
+private struct CommentThreadsResponse: Decodable {
+    let nextPageToken: String?
+    let items: [Item]
+    struct Item: Decodable {
+        let id: String
+        let snippet: Snippet
+        let replies: Replies?
+        struct Snippet: Decodable {
+            let topLevelComment: TopLevelComment
+            let totalReplyCount: Int?
+            struct TopLevelComment: Decodable {
+                let id: String
+                let snippet: CommentSnippet
+            }
+        }
+        struct Replies: Decodable {
+            let comments: [ReplyComment]
+            struct ReplyComment: Decodable {
+                let id: String
+                let snippet: CommentSnippet
+            }
+        }
+    }
+    struct CommentSnippet: Decodable {
+        let authorDisplayName: String
+        let textDisplay: String
+        let likeCount: Int?
+        let publishedAt: String
     }
 }

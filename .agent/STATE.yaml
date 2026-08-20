@@ -16,17 +16,17 @@ campaign:
 status: implementing
 current_milestone: M2_DURABLE_DOWNLOADS
 current_gate: G2
-current_work_packet: WP-009-VIDEO-COMMENTS-ACTIONS
+current_work_packet: WP-010-LIBRARY
 current_packet_status: ready
 current_waypoint:
-  id: WP009-W1
-  objective: Complete production video page, comments/replies, supported account actions, and download quality picker.
-  exact_next_action: Add CommentsService (comments.list + replies, comments-disabled handling) over YouTubeAPI, supported account actions (subscribe/unsubscribe, rating) behind AuthSession + typed client, and a DownloadQualityPicker exposing only the available subset of 1080/720/480/360 from a ResolvedMedia. Add deterministic comments/disabled/reply + quality-picker tests.
+  id: WP010-W1
+  objective: Add local history, resume, saves, download library management, and storage reconciliation.
+  exact_next_action: Add SwiftData models for watch history / resume position / saves and a LibraryStore that persists progress across relaunch, reconciles the offline-media index with the filesystem, supports atomic delete (file + metadata), and keeps the library useful offline. Add deterministic reconciliation/delete tests.
   validation_required:
-    - comments read/pagination works
-    - comments-disabled state works
-    - subscribe/unsubscribe and selected rating action are covered if enabled
-    - download picker contains only the actually available subset of 1080/720/480/360
+    - playback progress persists/reloads
+    - file index and metadata reconcile
+    - delete is atomic/safe
+    - offline library remains useful without network
 
 resume_token: IMPLEMENTATION_V1:M1:G1:WP-002:WP002-W1
 repo_baseline:
@@ -84,9 +84,9 @@ research_baseline:
 
 progress:
   packets_total_implementation: 12
-  packets_complete: 9
+  packets_complete: 10
   packets_active: 1
-  packets_pending: 2
+  packets_pending: 1
   implementation_exit_passed: false
   note: Do not infer percentage completion from packet count; risk/size differs by packet.
 
@@ -113,8 +113,8 @@ packets:
   WP-006-AUTH-DATA-API: complete
   WP-007-HOME-SHORTS-FIREWALL: complete
   WP-008-SEARCH: complete
-  WP-009-VIDEO-COMMENTS-ACTIONS: active
-  WP-010-LIBRARY: pending
+  WP-009-VIDEO-COMMENTS-ACTIONS: complete
+  WP-010-LIBRARY: active
   WP-011-BACKGROUND-MEDIA: pending
   WP-012-HARDEN-RELEASE: out_of_campaign
 
@@ -261,6 +261,19 @@ evidence:
       API call, hydrate+filter, quota error). App SearchStore + SearchView (explicit Submit
       button, no per-keystroke remote call, typed quota UX, explicit load-more) wired into
       RootView Search tab. CI pending observation.
+  - id: ev-g6-wp009-video
+    kind: test
+    command: xcodebuild test (FocusTubeCore + FocusTubeTests) on ios-ci
+    commit: pending-ci
+    result: pending
+    detail: >
+      WP-009 video/comments/actions: Core Comment + CommentPage models, YouTubeAPI comments
+      (commentThreads) + account actions (subscribe/unsubscribe/rateVideo) + YouTubeDataClient
+      implementations with commentsDisabled detection (403 reason), CommentsService,
+      AccountActionsService, DownloadQualityPicker (available subset of 1080/720/480/360, never
+      fabricates). VideoActionsTests (disabled state, threads+replies, disabled error, subscribe/
+      rate, quota error) + DownloadQualityPickerTests. App VideoPageView + DownloadQualityPickerView
+      wired from Home/Search selection via shared AuthSession + YouTubeAPI. CI pending observation.
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -273,16 +286,16 @@ deferred_debt:
 
 last_checkpoint:
   kind: complete
-  file: .agent/checkpoints/20260820-1200-wp008-search.md
+  file: .agent/checkpoints/20260820-1230-wp009-video.md
   commit: pending-ci
-  note: WP-008 explicit-submit search + hydration + short-form filter + quota UX implemented; deterministic service tests + App SearchStore/View wired. CI pending observation.
+  note: WP-009 video page, comments (disabled+replies), account actions, and quality picker implemented; deterministic Core tests + App VideoPage/QualityPicker wired. CI pending observation.
   gate_crossed: none
 
 next_transition:
-  when: G5 passes with observed Apple CI + deterministic search evidence
+  when: G6 passes with observed Apple CI + deterministic video/comments/actions evidence
   set:
-    current_milestone: M6_VIDEO_COMMENTS_ACTIONS
-    current_gate: G6
-    current_work_packet: WP-009-VIDEO-COMMENTS-ACTIONS
+    current_milestone: M7_LIBRARY
+    current_gate: G7
+    current_work_packet: WP-010-LIBRARY
     current_packet_status: ready
-    resume_token: IMPLEMENTATION_V1:M6:G6:WP-009
+    resume_token: IMPLEMENTATION_V1:M7:G7:WP-010
