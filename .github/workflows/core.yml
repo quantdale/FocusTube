@@ -18,13 +18,20 @@ jobs:
       - name: Test FocusTubeCore
         run: swift test 2>&1 | tee /tmp/core-build.log || true
 
-      - name: Push diagnostic log
+      - name: Publish diagnostic
         if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p ci-diag
-          cp /tmp/core-build.log ci-diag/core-err.txt
-          git config user.name "ci-diag"
-          git config user.email "ci-diag@local"
-          git add -A
-          git commit -m "diag: core build log" || echo "nothing to commit"
-          git push origin HEAD:ci-diag || echo "push failed"
+          if grep -q "error:" /tmp/core-build.log; then
+            BODY=$(head -c 9000 /tmp/core-build.log \
+              | python3 -c "import sys,json;print(json.dumps(sys.stdin.read()))")
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -d "{\"title\":\"CI diag build error\",\"body\":$BODY}" \
+              https://api.github.com/repos/quantdale/FocusTube/issues \
+              || echo "issue create failed"
+          else
+            echo "no compiler error found in log"
+          fi
