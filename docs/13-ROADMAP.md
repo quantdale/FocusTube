@@ -1,191 +1,258 @@
 # 13 — Comprehensive Roadmap
 
-The roadmap is gate-driven. Feature count does not advance the project if the underlying viability gate is not proven.
+FocusTube uses **campaigns, milestones, work packets, and evidence gates**. Feature count does not advance state; observed acceptance evidence does.
 
-## M0 — Reproducible project and remote Apple CI
+## Campaign model
 
-**Objective:** a Windows-authored repository can deterministically generate/build/test an iOS app on remote macOS.
+### Active now — IMPLEMENTATION_V1
 
-Deliverables:
+Scope: **M0 through M8**, packets **WP-000 through WP-011**.
 
-- FocusTubeCore package runs `swift test` on Windows;
-- XcodeGen spec generates project on macOS;
-- iOS shell builds;
-- simulator boots and launches app;
-- XCUITest verifies four root tabs;
-- CI uploads xcresult/log artifacts;
-- toolchain versions logged.
+Goal: implement the complete V1 architecture and product surface to automated build/test/simulator-complete status with no Critical/High known regressions.
 
-Exit gate: `G0` in `docs/14-ACCEPTANCE-GATES.md`.
+The implementation agent runs continuously through this sequence and does not stop between packets.
 
-## M1 — Media viability proof
+### Later — HARDENING
 
-**Objective:** prove the riskiest path before broad feature work.
+Scope: M9 and `.agent/HARDENING_BACKLOG.md` plus newly discovered torture/a11y/performance/security issues.
 
-Deliverables:
+Broad hardening is deliberately postponed so the implementation campaign does not become an endless cleanup loop. Critical/High defects remain immediate blockers and are never deferred.
 
-- `MediaExtracting` protocol;
-- YouTubeKit local-only adapter;
-- stream normalization into FocusTube-owned models;
-- hard quality filter {1080,720,480,360};
-- native AVPlayer/AVPlayerViewController playback of extracted long-form video;
-- combined-stream background download;
-- final-file validation;
-- offline playback;
-- adaptive 1080p component selection/download/mux proof where source supports it;
-- typed error handling;
-- live extractor smoke test separated from deterministic suite.
+### Later — PERSONAL_RELEASE
 
-Exit gate: `G1`.
+Scope: M10, signing/install and physical-iPhone evidence.
+
+Device-only verification does not block the current implementation campaign.
+
+---
+
+## Current status as of 2026-08-20
+
+- Bootstrap repository/specification scaffold exists on `main` at commit `81384e84127177186eaa9f87f71a36874f47b785`.
+- `FocusTubeCore` has observed passing policy tests in the artifact-construction environment.
+- G0 is **not yet proven** because macOS/XcodeGen/iOS Simulator CI evidence has not been observed.
+- Current implementation packet: `WP-000-BOOTSTRAP`.
+- No media extraction/playback/download viability gate is yet claimed complete.
+
+Always trust `.agent/STATE.yaml` over this dated narrative if implementation has advanced.
+
+---
+
+# IMPLEMENTATION_V1 roadmap
+
+## M0 — Bootstrap / reproducible Apple build plane
+
+**Why first:** every iOS-specific packet depends on a reliable remote Mac/Xcode/Simulator loop because the primary authoring host is Windows.
+
+Deliver:
+
+- Windows/platform-neutral `swift test` path;
+- XcodeGen project generation on macOS;
+- package resolution for pinned dependencies;
+- iOS shell build;
+- dynamic selection/boot of an available iPhone Simulator;
+- app install/launch;
+- root-tab XCUITest;
+- xcresult/log/screenshot artifacts and toolchain-version evidence.
+
+Do not spend time on: production UI styling, auth, feed design.
+
+Exit: **G0**. Immediately advance to WP-001.
+
+## M1 — Media viability
+
+Packets: WP-001 through WP-004.
+
+**Why second:** if local YouTubeKit extraction + native playback + offline download + adaptive 1080 mux cannot be made viable, the product architecture must be revisited before building the rest.
+
+Deliver in risk order:
+
+1. `MediaExtracting` and YouTubeKit local-only adapter;
+2. FocusTube-owned normalized stream models;
+3. hard allowed-quality filtering `{1080,720,480,360}`;
+4. AVPlayer/AVPlayerViewController online playback;
+5. combined-stream background download;
+6. atomic final-file validation/offline playback;
+7. separate 1080p video+audio component download;
+8. native AVFoundation mux/export proof;
+9. typed extraction/playback/download errors;
+10. deterministic fake-extractor suite + isolated live smoke suite.
+
+Do not spend time on: polished Home/Search/comments/library.
+
+Exit: **G1**.
 
 ## M2 — Durable download engine
 
-**Objective:** make downloads resilient across interruption/relaunch.
+Packet: WP-005.
 
-Deliverables:
+Goal: convert the viability download path into a recoverable subsystem suitable for real daily use.
 
-- actor-based DownloadManager;
-- explicit state machine;
-- URLSession background task reconciliation;
-- pause/cancel/retry policy;
-- signed URL re-resolution;
+Deliver:
+
+- actor-owned DownloadManager;
+- explicit states/transitions;
+- background URLSession task reconciliation;
+- pause/cancel/retry semantics where platform-supported;
+- signed-URL re-resolution;
 - storage preflight;
-- temporary-file cleanup;
-- SwiftData DownloadRecord;
+- temp-file lifecycle/cleanup;
+- SwiftData DownloadRecord persistence;
+- file/metadata reconciliation;
 - active/completed Downloads UI;
-- deterministic transport fixtures.
+- deterministic transport/test fixtures.
 
-Exit gate: `G2`.
+Exit: **G2**.
 
-## M3 — Authentication and YouTube Data API
+## M3 — Authentication + typed YouTube Data API
 
-**Objective:** signed-in account-aware client without coupling media extraction to OAuth.
+Packet: WP-006.
 
-Deliverables:
+Deliver:
 
-- GoogleSignIn integration;
-- secure restore of sign-in state;
-- minimal required scopes;
-- typed YouTubeAPIClient;
-- test auth provider;
-- subscription list;
-- API quota/error handling;
-- secrets/config setup documentation.
+- GoogleSignIn adapter and safe restore flow;
+- minimum scopes required by supported actions;
+- fake-auth provider for routine automation;
+- typed URLSession YouTubeAPIClient;
+- request/response/error/quota models;
+- subscription-list integration;
+- secret/log redaction guarantees;
+- configuration docs that keep credentials out of source control.
 
-Exit gate: `G3`.
+Real OAuth evidence may require safe user/project configuration; lack of credentials does not prevent deterministic implementation from proceeding.
+
+Exit: **G3**.
 
 ## M4 — Long-form Home + Shorts firewall
 
-**Objective:** useful daily Home feed that cannot leak short-form discovery.
+Packet: WP-007.
 
-Deliverables:
+Deliver:
 
 - subscription upload aggregation;
 - metadata hydration/duration;
 - chronological merge;
-- ShortFormPolicy applied before rendering;
-- explicit paging/load-more;
-- pull-to-refresh/cache/staleness policy;
-- `/shorts/` deep-link block;
-- deterministic feed tests.
+- caching/staleness policy;
+- ShortFormPolicy applied **before render**;
+- explicit `Load more`, never implicit infinite scroll;
+- `/shorts/` deep-link rejection;
+- deterministic no-leak regression tests.
 
-Exit gate: `G4`.
+Exit: **G4**.
 
-## M5 — Search
+## M5 — Deliberate search
 
-**Objective:** deliberate search within current quota rules.
+Packet: WP-008.
 
-Deliverables:
+Deliver:
 
-- explicit-submit search;
-- local recent query suggestions;
-- result hydration;
-- duration-based short filtering;
-- pagination with quota awareness;
-- quota-exhaustion UX;
-- search test fixtures.
+- remote search only on explicit submit;
+- local recent-query suggestions;
+- hydration/duration lookup;
+- short-form filtering before render;
+- quota-aware pagination;
+- quota-exhaustion/error UX;
+- deterministic search fixtures.
 
-Exit gate: `G5`.
+Exit: **G5**.
 
-## M6 — Video detail and comments/account actions
+## M6 — Video detail / comments / supported account actions
 
-Deliverables:
+Packet: WP-009.
 
-- production video detail composition;
-- comments list/replies pagination;
-- post top-level comment;
-- post reply;
-- subscribe/unsubscribe;
-- like/rate where included;
+Deliver:
+
+- production video detail composition around native player;
+- comments/read/replies pagination;
 - comments-disabled state;
-- download quality sheet with only actual allowed qualities.
+- post top-level comment and reply;
+- subscribe/unsubscribe;
+- selected supported rating/like behavior when enabled by API design;
+- download sheet exposing only available allowed qualities;
+- coherent loading/error/optimistic-state behavior.
 
-Exit gate: `G6`.
+Exit: **G6**.
 
-## M7 — Local library and continuity
+## M7 — Local library + continuity
 
-Deliverables:
+Packet: WP-010.
 
-- local history;
-- continue watching/resume;
+Deliver:
+
+- watch history local to FocusTube;
+- resume/continue-watching state;
 - local saves;
-- downloaded library sorting/filtering;
-- storage usage and delete flow;
-- SwiftData migrations/reconciliation tests.
+- downloaded library sort/filter;
+- storage usage/delete flow;
+- SwiftData migration/reconciliation tests;
+- useful offline behavior without depending on YouTube history access.
 
-Exit gate: `G7`.
+Exit: **G7**.
 
-## M8 — Background media experience
+## M8 — Background media integration
 
-Deliverables:
+Packet: WP-011.
 
-- background audio mode;
-- AVAudioSession behavior;
+Deliver:
+
+- audio-session setup;
+- background-audio capability/config;
 - Now Playing metadata;
-- MPRemoteCommandCenter play/pause/seek handling;
-- PiP;
-- interruption handling;
-- simulator tests where meaningful.
+- MPRemoteCommandCenter play/pause/seek integration;
+- PiP wiring;
+- interruption/route-change handling;
+- automated tests/simulator smoke where the platform meaningfully supports them;
+- explicit list of device-only evidence deferred to release.
 
-Exit gate: `G8` plus designated physical-device checks.
+Exit: **G8**, then run **IC-EXIT** integration-completion gate.
 
-## M9 — Hardening campaign
+---
 
-Deliverables:
+# IC-EXIT — Implementation campaign completion
 
-- full error taxonomy coverage;
-- low-storage tests;
-- network loss/recovery;
-- process termination during download;
-- extraction breakage behavior;
-- SwiftData migration fixtures;
-- accessibility audit;
-- performance/memory pass;
-- security/log redaction audit;
-- no-Shorts regression audit;
-- fresh-session agent recovery test.
+Before marking implementation complete, run a cross-feature automated sweep proving:
 
-Exit gate: `G9` release candidate.
+- app/project generation/build remains reproducible;
+- deterministic suite is green;
+- simulator app launches and core navigation works;
+- extraction adapter boundaries remain local-only;
+- download ladder is still exactly 1080/720/480/360;
+- no Shorts surface/route/vertical swipe path exists;
+- download/offline/library flows integrate without known Critical/High defect;
+- auth/API uses deterministic test seams and no secrets are committed;
+- background-media implementation builds and device-only checks are documented;
+- durable state/checkpoints are coherent enough for a fresh agent to recover.
+
+When IC-EXIT passes set:
+
+```text
+status = implementation_complete_ready_for_hardening
+campaign IMPLEMENTATION_V1 = complete
+```
+
+Do not automatically launch the broad hardening campaign.
+
+---
+
+# Later campaigns
+
+## M9 — Hardening
+
+Use `.agent/HARDENING_BACKLOG.md` plus full error taxonomy, network loss/recovery, process termination, low storage, extraction breakage behavior, persistence migration, accessibility, performance/memory, security/log redaction, no-Shorts regression, and fresh-session recovery audits.
+
+Exit: G9 release candidate.
 
 ## M10 — Personal-device release
 
-Deliverables:
+Perform signing/profile setup, physical iPhone install, real extraction/playback/download/offline validation, quality-ladder checks, PiP/background/lock-screen verification, and document limitations/recovery.
 
-- signing/profile process documented;
-- physical iPhone install;
-- physical media extraction/playback/download/offline validation;
-- PiP/background/lock-screen validation;
-- rollback/reinstall/backup expectations documented;
-- final checkpoint.
+Exit: G10 personal release.
 
-Exit gate: `G10` usable personal release.
+## Deferred beyond V1
 
-## Deferred until after V1
-
-- iPad optimization;
+- iPad-specific optimization;
 - richer playlist synchronization;
-- AirPlay enhancements beyond native support;
-- captions/subtitle improvements;
-- optional related-video discovery mode;
-- richer download scheduling;
-- alternate extraction provider (explicitly not planned unless architecture is reconsidered).
+- richer captions/subtitle work;
+- discovery/recommendation modes beyond intentional product scope;
+- alternate extractor/provider architecture;
+- backend/cloud sync not required by V1.

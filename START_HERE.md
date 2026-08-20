@@ -1,102 +1,151 @@
-# START HERE — FocusTube Agent Entry Point
+# START HERE — FocusTube Autonomous Implementation Entry Point
 
-This repository is designed so a fresh coding agent can recover the project state without relying on chat history.
+FocusTube is designed to be executable by a fresh AI coding agent with **zero chat history and minimal human supervision**. Repository state, not conversation memory, is authoritative.
 
-## 1. Mission
+## Mission
 
-Build FocusTube: a personal native iOS YouTube client for intentional long-form viewing, with native playback and offline downloads, while eliminating Shorts and short-form consumption mechanics.
+Build the complete V1 implementation of FocusTube: a personal native iOS YouTube client for deliberate long-form viewing, with native playback, comments/account features, and first-class offline downloads, while structurally excluding Shorts and short-form consumption mechanics.
 
-The first engineering objective is **not UI completeness**. The first objective is to prove the riskiest technical path end-to-end:
+The implementation campaign is continuous. **Do not stop after one task or one work packet.** Finish the active packet, validate it, checkpoint it, advance the durable state, select the next unblocked packet, and continue until the implementation-campaign exit gate is reached or a true stop condition exists.
+
+## Current campaign
+
+- Campaign: `IMPLEMENTATION_V1`
+- Scope: milestones M0 through M8 / work packets WP-000 through WP-011.
+- Current waypoint: read `.agent/STATE.yaml`; at authoring time this is WP-000 / G0.
+- Hardening is **not** the current campaign. Medium/Low cleanup discovered during implementation goes to `.agent/HARDENING_BACKLOG.md` unless it blocks correctness.
+- Physical-iPhone-only validation is deferred to later hardening/release unless a device is already available to the agent.
+
+## Mandatory reading order
+
+Before making changes in a fresh session, read in this exact order:
+
+1. `START_HERE.md`
+2. `AGENTS.md`
+3. `.agent/STATE.yaml`
+4. `.agent/AUTONOMOUS_EXECUTION.md`
+5. `.agent/WAYPOINTS.yaml`
+6. `.agent/OPERATING_CONTRACT.md`
+7. `.agent/STATE_MACHINE.md`
+8. current packet under `.agent/work-packets/`
+9. subsystem docs referenced by that packet
+10. `docs/14-ACCEPTANCE-GATES.md`
+11. `docs/16-IMPLEMENTATION-CAMPAIGN.md`
+
+Only read the entire documentation set when a decision actually spans multiple subsystems. Prefer targeted context over repeatedly rereading every file.
+
+## Five-minute recovery algorithm
+
+A fresh agent must be able to resume with this algorithm:
+
+1. `git status --short --branch` and inspect the current HEAD.
+2. Read `.agent/STATE.yaml` and `.agent/WAYPOINTS.yaml`.
+3. If the worktree contains changes, determine whether they are documented in state/checkpoint notes before touching them. Do not discard unknown work.
+4. Read the active work packet.
+5. Inspect the implementation/tests relevant to its acceptance criteria.
+6. Run the cheapest deterministic baseline available in the current environment.
+7. Continue from `current_waypoint`, not from the beginning of the project.
+8. After the packet passes, update state and immediately continue to the next packet.
+
+Do not ask the user to restate project history that exists in the repository.
+
+## Locked architecture
+
+These are not open design questions:
+
+- Native iOS, iPhone-first, minimum iOS 17.0.
+- SwiftUI + Swift 6 language mode.
+- AVPlayer + AVPlayerViewController for playback.
+- YouTubeKit is the only extractor; `.local` extraction only.
+- No yt-dlp fallback and no remote extraction service.
+- Download qualities are exactly **1080p, 720p, 480p, 360p**; 1080p is the absolute ceiling.
+- Never transcode merely to manufacture a missing quality.
+- URLSession background sessions for downloads.
+- AVFoundation native composition/export for adaptive muxing before any reconsideration of FFmpeg.
+- SwiftData for metadata; filesystem for downloaded media.
+- GoogleSignIn for OAuth; typed direct URLSession client for YouTube Data API v3.
+- No Alamofire, Firebase, Supabase, React Native, Expo, YouTube WebView player, or backend in V1.
+- Windows is the authoring/orchestration host; macOS CI is the Apple build/test plane.
+- XcodeGen owns project generation; generated `.xcodeproj` state is not committed.
+- Shorts are hard-disabled. No Shorts tab/shelf, `/shorts/` route, vertical swipe player, or implicit autoplay-next.
+
+If real evidence makes a locked decision impossible, create an ADR proposal and mark only the affected path blocked. Do not silently rewrite architecture.
+
+## Autonomy directive
+
+The default behavior is **continue, not ask**.
+
+The agent may autonomously:
+
+- implement planned V1 functionality;
+- refactor locally when required to satisfy the active packet;
+- add deterministic tests and test seams;
+- repair CI/build failures caused by project code/configuration;
+- update docs/state/checkpoints to match verified reality;
+- fix Critical/High bugs immediately;
+- defer nonblocking Medium/Low cleanup to the hardening backlog;
+- advance from one packet to the next when its gate evidence passes.
+
+Do **not** pause for subjective confirmation about naming, minor UI details, file organization, or implementation choices already constrained by the specs. Choose the simplest maintainable option consistent with the architecture.
+
+## True stop conditions
+
+Stop the affected path only when one of these is true:
+
+1. a required secret/account action cannot be safely synthesized or mocked;
+2. Apple signing or physical-device action is required and no automated environment can perform it;
+3. an upstream dependency is demonstrably broken and there is no compliant local fix;
+4. two repository specifications materially contradict each other and precedence rules cannot resolve them;
+5. satisfying the packet requires changing a locked architectural decision;
+6. continuing would risk credential exposure, destructive data loss, or irreversible repository damage.
+
+When stopped, record the blocker precisely in `.agent/STATE.yaml`, add evidence, continue any independent unblocked work, and only then request human input if nothing useful remains.
+
+## Continuous execution loop
+
+```text
+RECOVER STATE
+    -> SELECT ACTIVE WAYPOINT
+    -> INSPECT CODE + TESTS
+    -> IMPLEMENT SMALLEST COHERENT SLICE
+    -> LOCAL DETERMINISTIC VALIDATION
+    -> REMOTE APPLE VALIDATION when required
+    -> FIX FAILURES
+    -> RECORD EVIDENCE
+    -> CHECKPOINT
+    -> ADVANCE STATE
+    -> NEXT WAYPOINT
+    -> repeat until IMPLEMENTATION_COMPLETE
+```
+
+A claim such as "should work" is never evidence. Evidence is an observed command result, test result, CI run, simulator launch, screenshot/artifact, or device-validation record.
+
+## Initial technical priority
+
+Do not spend significant effort on UI polish before proving the media path:
 
 ```text
 YouTube video ID
   -> YouTubeKit local extraction
-  -> allowed stream selection (1080/720/480/360 only)
-  -> AVPlayer playback
+  -> allowed stream normalization {1080,720,480,360}
+  -> native AVPlayer playback
   -> background download
-  -> adaptive audio/video mux when necessary
+  -> native adaptive mux when required
   -> validated local file
   -> offline AVPlayer playback
 ```
 
-Until that path is proven on the iOS Simulator and later on a physical iPhone, the project is not allowed to spend significant effort on polish.
+## Windows baseline
 
-## 2. Required reading order
-
-Before editing code, read these files in order:
-
-1. `AGENTS.md`
-2. `.agent/STATE.yaml`
-3. `.agent/GOAL.md`
-4. `.agent/OPERATING_CONTRACT.md`
-5. `.agent/STATE_MACHINE.md`
-6. `docs/00-PRODUCT-SPEC.md`
-7. `docs/01-ARCHITECTURE.md`
-8. `docs/02-MEDIA-EXTRACTION-PLAYBACK.md`
-9. `docs/03-DOWNLOAD-SYSTEM.md`
-10. `docs/08-WINDOWS-REMOTE-IOS-DEVELOPMENT.md`
-11. `docs/09-TESTING-QA.md`
-12. `docs/13-ROADMAP.md`
-13. `docs/14-ACCEPTANCE-GATES.md`
-14. Current work packet under `.agent/work-packets/`.
-
-Do not infer requirements from memory when the repository contains a specification.
-
-## 3. Locked decisions
-
-These are not open design questions:
-
-- Product name: **FocusTube**.
-- Target: iPhone-first native iOS application.
-- Minimum deployment target: iOS 17.0.
-- SwiftUI + Swift 6 language mode.
-- Playback: AVPlayer + AVPlayerViewController via a SwiftUI wrapper.
-- Extraction: YouTubeKit only, local extraction only.
-- No yt-dlp fallback.
-- No remote extraction server.
-- Download quality set: **1080p, 720p, 480p, 360p only**.
-- Never expose 1440p/2160p even if YouTubeKit returns them.
-- No custom transcoding merely to manufacture a missing resolution.
-- Background downloads: Foundation URLSession background sessions.
-- Adaptive muxing: native AVFoundation composition/export first; do not add FFmpeg without a new ADR.
-- Metadata persistence: SwiftData.
-- Media persistence: filesystem under Application Support.
-- OAuth: GoogleSignIn.
-- YouTube metadata/account API: direct typed URLSession client for YouTube Data API v3.
-- No Alamofire, Firebase, Supabase, React Native, Expo, embedded YouTube WebView, or generic backend.
-- Windows is the authoring/orchestration environment; macOS CI is the Apple build/test plane.
-- XcodeGen owns project generation. Do not commit generated `.xcodeproj` state.
-- Shorts are prohibited by product design; no vertical swipe player may be introduced.
-
-If implementation evidence forces a locked decision to change, stop and create an ADR proposal instead of silently changing architecture.
-
-## 4. Current waypoint
-
-Read `.agent/STATE.yaml`. The current starting milestone is **M0 — Bootstrap and reproducible Apple CI**, followed by **M1 — Media viability proof**.
-
-The first work packet is `.agent/work-packets/WP-000-BOOTSTRAP.md`.
-
-## 5. Definition of an acceptable agent iteration
-
-Every implementation iteration must:
-
-1. identify the active work packet;
-2. make the smallest coherent change that advances its acceptance criteria;
-3. run every locally available deterministic test;
-4. push through the repository's remote macOS CI when Apple-only verification is required;
-5. inspect failures rather than merely retrying them;
-6. update `.agent/STATE.yaml` with evidence and the next waypoint;
-7. leave the repository buildable at checkpoint boundaries.
-
-A statement like "should work" is not evidence. Accepted evidence is a command result, test result, simulator launch, screenshot, artifact, or physical-device validation record.
-
-## 6. Initial commands on Windows
+From Windows, use the platform-neutral package whenever possible:
 
 ```powershell
 swift --version
 swift test
 ```
 
-If Swift is not installed, follow `docs/08-WINDOWS-REMOTE-IOS-DEVELOPMENT.md`.
+SwiftUI/AVKit/AVFoundation/SwiftData/GoogleSignIn behavior must be validated through macOS/Xcode CI. See `docs/08-WINDOWS-REMOTE-IOS-DEVELOPMENT.md`.
 
-The Windows machine is not expected to build SwiftUI/AVKit. It tests `FocusTubeCore` and authors the repository. iOS-specific verification happens on macOS.
+## End condition for this campaign
+
+The implementation campaign ends only when the `IC-EXIT` criteria in `docs/14-ACCEPTANCE-GATES.md` pass. At that point set state to `implementation_complete_ready_for_hardening`. Do **not** automatically begin the broad hardening campaign unless the state/campaign is explicitly changed.

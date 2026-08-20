@@ -2,64 +2,81 @@
 
 FocusTube is a personal-use, native iOS YouTube client designed around intentional long-form viewing rather than short-form engagement loops.
 
-The product exposes the parts that matter for deliberate viewing: subscriptions/home feed, search, native video playback, comments, account actions, downloads, and a local library. Shorts, the vertical swipe player, creator tools, shopping, and recommendation-driven rabbit holes are intentionally absent.
+The V1 product focuses on subscriptions/Home, deliberate search, native video playback, comments/account actions, downloads, and a local offline library. Shorts, the vertical swipe player, creator tools, shopping, and recommendation-driven rabbit holes are intentionally absent.
 
-> **Status:** specification-complete / implementation bootstrap. Start with [`START_HERE.md`](START_HERE.md).
+> **Status:** implementation campaign initialized. The live progress pointer is [`.agent/STATE.yaml`](.agent/STATE.yaml). Fresh coding agents start with [`START_HERE.md`](START_HERE.md).
 
-## Locked product decisions
+## Autonomous development mode
+
+This repository contains a durable control plane so an AI coding agent can execute the V1 implementation with minimal supervision:
+
+- [`START_HERE.md`](START_HERE.md) — recovery/entry point.
+- [`AGENTS.md`](AGENTS.md) — non-negotiable engineering/autonomy contract.
+- [`.agent/STATE.yaml`](.agent/STATE.yaml) — current status, active packet, exact next waypoint, evidence/blockers.
+- [`.agent/WAYPOINTS.yaml`](.agent/WAYPOINTS.yaml) — machine-readable packet dependencies/status.
+- [`.agent/AUTONOMOUS_EXECUTION.md`](.agent/AUTONOMOUS_EXECUTION.md) — continuous execution algorithm.
+- [`.agent/BOOT_PROMPT.md`](.agent/BOOT_PROMPT.md) — minimal prompt for a fresh agent.
+- [`.agent/checkpoints/`](.agent/checkpoints/) — durable gate/milestone evidence.
+- [`.agent/HARDENING_BACKLOG.md`](.agent/HARDENING_BACKLOG.md) — nonblocking debt intentionally deferred during implementation.
+
+The active campaign is **IMPLEMENTATION_V1 (M0–M8 / WP-000–WP-011)**. An agent is expected to continue from packet to packet until `IC-EXIT` passes. Broad hardening and physical-device release validation are later campaigns.
+
+## Locked product/technical decisions
 
 - Native iOS app, not a WebView wrapper.
-- SwiftUI UI with AVPlayer/AVPlayerViewController for playback.
-- YouTubeKit is the **only** media extractor. Local extraction only; no yt-dlp fallback and no remote extractor.
-- Download resolutions are exactly **1080p, 720p, 480p, and 360p**. 1080p is the hard ceiling.
-- Offline downloads are a first-class, non-negotiable capability.
-- YouTube Data API v3 is used for account-aware metadata/actions where suitable.
-- GoogleSignIn is used for OAuth.
-- SwiftData indexes app metadata; the filesystem stores media files.
-- No backend is required for the core product.
-- Development is Windows-first. iOS build/test runs on remote macOS CI using Xcode and iOS Simulator.
-- XcodeGen generates the `.xcodeproj` from `project.yml`; generated Xcode project files are not committed.
-- Shorts are hard-blocked. FocusTube never implements a vertical swipe feed.
-- Autoplay next and infinite scrolling are off by default.
+- SwiftUI UI with AVPlayer/AVPlayerViewController.
+- YouTubeKit is the only media extractor; **local extraction only**.
+- No yt-dlp fallback and no remote extractor.
+- Download resolutions are exactly **1080p, 720p, 480p, 360p**; 1080p is the hard ceiling.
+- Offline downloads are a first-class requirement.
+- URLSession background transfer + native AVFoundation muxing path.
+- YouTube Data API v3 for supported account-aware metadata/actions; GoogleSignIn for OAuth.
+- SwiftData indexes metadata; filesystem stores media.
+- No backend for core V1.
+- Windows-first authoring; remote macOS/Xcode/iOS Simulator build/test plane.
+- XcodeGen generates the Xcode project; generated `.xcodeproj` is not committed.
+- Shorts are hard-blocked; no vertical swipe feed.
+- Autoplay-next and infinite scrolling are off by default.
 
 ## Repository map
 
 ```text
 FocusTube/
-├── START_HERE.md                 # first file every coding agent reads
-├── AGENTS.md                     # non-negotiable agent operating contract
-├── project.yml                   # reproducible Xcode project definition
-├── Package.swift                 # cross-platform FocusTubeCore package
-├── App/                          # iOS application shell
-├── Sources/FocusTubeCore/        # platform-neutral domain logic
-├── Tests/FocusTubeCoreTests/     # Windows/macOS runnable core tests
-├── FocusTubeUITests/             # simulator UI tests
-├── docs/                         # product, architecture, subsystem specs
-├── .agent/                       # durable autonomous-development state
-├── scripts/ci/                   # macOS CI bootstrap utilities
-└── .github/workflows/            # remote Apple build/test workflows
+├── START_HERE.md
+├── AGENTS.md
+├── project.yml
+├── Package.swift
+├── App/
+├── Sources/FocusTubeCore/
+├── Tests/FocusTubeCoreTests/
+├── FocusTubeUITests/
+├── docs/
+├── .agent/
+│   ├── STATE.yaml
+│   ├── WAYPOINTS.yaml
+│   ├── AUTONOMOUS_EXECUTION.md
+│   ├── CHECKPOINT_PROTOCOL.md
+│   ├── HARDENING_BACKLOG.md
+│   ├── checkpoints/
+│   └── work-packets/
+├── scripts/ci/
+└── .github/workflows/
 ```
 
-## Start here
+## Starting an agent
 
-1. Read [`START_HERE.md`](START_HERE.md).
-2. Read [`AGENTS.md`](AGENTS.md).
-3. Read [`.agent/STATE.yaml`](.agent/STATE.yaml).
-4. Execute the current work packet from [`.agent/work-packets/INDEX.md`](.agent/work-packets/INDEX.md).
-5. Never skip milestone gates in [`docs/14-ACCEPTANCE-GATES.md`](docs/14-ACCEPTANCE-GATES.md).
+The short version is:
 
-## Current validated external assumptions
+```text
+Read START_HERE.md and follow the repository's durable state. Execute IMPLEMENTATION_V1 continuously until IC-EXIT, validating and checkpointing every gate. Do not start broad hardening.
+```
 
-As researched on 2026-08-20:
+For the exact reusable prompt, use [`.agent/BOOT_PROMPT.md`](.agent/BOOT_PROMPT.md).
 
-- The current YouTubeKit release discoverable from its GitHub release page is **0.4.8**. It supports direct stream extraction, native-playability filtering, exact-resolution filtering, and local/remote method selection. FocusTube deliberately uses `.local` only.
-- GoogleSignIn iOS documents **9.0.0** for Swift Package Manager integration.
-- Swift is supported on Windows; native iOS build/simulator execution still requires macOS/Xcode.
-- GitHub-hosted macOS runners include `macos-26`; Xcode 26.6 is the stable Xcode version this plan targets.
-- YouTube Data API now has a distinct default bucket of 100 `search.list` calls/day, while most other methods share a 10,000-unit/day default allocation.
+## Current external assumptions
 
-See [`docs/reference/SOURCES.md`](docs/reference/SOURCES.md) for the source register and verification dates.
+The bootstrap research baseline (2026-08-20) records YouTubeKit 0.4.8, GoogleSignIn 9.0.0 documentation, Swift-on-Windows support, and Xcode 26.6 as the targeted stable Apple toolchain. Reverify external assumptions when a packet actually depends on them; do not churn dependencies without evidence. See [`docs/reference/SOURCES.md`](docs/reference/SOURCES.md).
 
-## Important policy note
+## Policy note
 
-FocusTube's custom stream extraction/download path is not the official YouTube offline-playback path. Google's YouTube API developer-policy guide says API clients must not offer offline YouTube downloads outside the YouTube Premium experience. This repository therefore keeps official YouTube Data API interactions separate from the unofficial media-extraction subsystem and does not claim that extraction/download behavior is authorized by YouTube. See [`docs/11-SECURITY-PRIVACY-POLICY.md`](docs/11-SECURITY-PRIVACY-POLICY.md).
+FocusTube's custom extraction/download path is not the official YouTube offline-playback path. Keep official YouTube Data API interactions separate from the unofficial media-extraction subsystem and do not represent the latter as officially authorized. See [`docs/11-SECURITY-PRIVACY-POLICY.md`](docs/11-SECURITY-PRIVACY-POLICY.md).

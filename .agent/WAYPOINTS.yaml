@@ -1,0 +1,189 @@
+schema_version: 1
+campaign: IMPLEMENTATION_V1
+selection_rule: Select the first ready packet whose dependencies are complete, unless STATE.yaml names an active packet. Critical/High regressions preempt feature work.
+coordinator_owns_status: true
+
+waypoints:
+  - id: WP-000-BOOTSTRAP
+    order: 0
+    milestone: M0_BOOTSTRAP
+    gate: G0
+    status: ready
+    depends_on: []
+    objective: Reproducible Windows-authored, macOS-built/tested iOS shell.
+    primary_risk: Apple build/test plane is not yet proven.
+    exit_evidence:
+      - FocusTubeCore deterministic tests pass
+      - XcodeGen project generation passes on macOS
+      - iOS target builds on accepted Xcode 26.x
+      - available iPhone Simulator boots and app launches
+      - root-tab XCUITest passes
+      - toolchain/runtime versions are recorded
+    next: WP-001-EXTRACTION
+
+  - id: WP-001-EXTRACTION
+    order: 1
+    milestone: M1_MEDIA_VIABILITY
+    gate: G1
+    status: pending
+    depends_on: [WP-000-BOOTSTRAP]
+    objective: Isolate YouTubeKit local extraction behind FocusTube-owned models/protocols.
+    primary_risk: Upstream extraction fragility.
+    exit_evidence:
+      - deterministic adapter/normalization tests pass
+      - real long-form video resolves via local-only extraction
+      - normalized model cannot expose quality above 1080p
+    next: WP-002-PLAYBACK
+
+  - id: WP-002-PLAYBACK
+    order: 2
+    milestone: M1_MEDIA_VIABILITY
+    gate: G1
+    status: pending
+    depends_on: [WP-001-EXTRACTION]
+    objective: Prove native online playback through AVPlayer/AVPlayerViewController.
+    primary_risk: Extracted stream/device compatibility.
+    exit_evidence:
+      - selected native-playable stream creates AVPlayerItem
+      - simulator playback starts for representative long-form source
+      - playback failures are typed/observable
+    next: WP-003-COMBINED-DOWNLOAD
+
+  - id: WP-003-COMBINED-DOWNLOAD
+    order: 3
+    milestone: M1_MEDIA_VIABILITY
+    gate: G1
+    status: pending
+    depends_on: [WP-002-PLAYBACK]
+    objective: Prove background download, final-file validation, and offline playback for a combined stream.
+    primary_risk: Background transfer/file-finalization correctness.
+    exit_evidence:
+      - allowed combined stream downloads through URLSession path
+      - file is atomically finalized and validated
+      - local file plays through native player without network dependency
+    next: WP-004-ADAPTIVE-1080
+
+  - id: WP-004-ADAPTIVE-1080
+    order: 4
+    milestone: M1_MEDIA_VIABILITY
+    gate: G1
+    status: pending
+    depends_on: [WP-003-COMBINED-DOWNLOAD]
+    objective: Prove 1080p video-only + audio download and native mux path.
+    primary_risk: Container/codec compatibility with native AVFoundation export.
+    exit_evidence:
+      - suitable 1080p source selects compliant video/audio components
+      - components download independently
+      - native mux/export creates validated playable final media, or evidence triggers ADR review
+      - no FFmpeg/yt-dlp/remote fallback introduced
+    next: WP-005-DURABLE-DOWNLOAD-MANAGER
+
+  - id: WP-005-DURABLE-DOWNLOAD-MANAGER
+    order: 5
+    milestone: M2_DURABLE_DOWNLOADS
+    gate: G2
+    status: pending
+    depends_on: [WP-004-ADAPTIVE-1080]
+    objective: Make downloads durable across suspension, interruption, relaunch, retry, and signed-URL expiration.
+    primary_risk: State reconciliation/data integrity.
+    exit_evidence:
+      - explicit DownloadManager state machine tests pass
+      - background tasks reconcile on relaunch
+      - transient retry/re-resolution/storage refusal/cancel cleanup pass
+      - SwiftData record and filesystem final state reconcile safely
+    next: WP-006-AUTH-DATA-API
+
+  - id: WP-006-AUTH-DATA-API
+    order: 6
+    milestone: M3_AUTH_DATA_API
+    gate: G3
+    status: pending
+    depends_on: [WP-005-DURABLE-DOWNLOAD-MANAGER]
+    objective: Add GoogleSignIn boundary and typed YouTube Data API client without coupling media extraction to OAuth.
+    primary_risk: Auth configuration/secrets/quota behavior.
+    exit_evidence:
+      - fake auth/API deterministic integration passes
+      - typed API errors/quota handling exist
+      - subscription list integration works with safe development configuration when credentials available
+      - no secret/token logging
+    next: WP-007-HOME-SHORTS-FIREWALL
+
+  - id: WP-007-HOME-SHORTS-FIREWALL
+    order: 7
+    milestone: M4_HOME_FOCUS
+    gate: G4
+    status: pending
+    depends_on: [WP-006-AUTH-DATA-API]
+    objective: Build chronological subscription Home feed with Shorts filtering before render.
+    primary_risk: Short-form leakage and inefficient API fan-out.
+    exit_evidence:
+      - subscription uploads aggregate/hydrate deterministically
+      - <=180s entries are filtered before UI rendering
+      - /shorts/ routes are rejected
+      - explicit load-more replaces infinite scrolling
+    next: WP-008-SEARCH
+
+  - id: WP-008-SEARCH
+    order: 8
+    milestone: M5_SEARCH
+    gate: G5
+    status: pending
+    depends_on: [WP-007-HOME-SHORTS-FIREWALL]
+    objective: Add quota-aware explicit-submit search with hydration and ShortFormPolicy.
+    primary_risk: Search quota consumption and short-form leakage.
+    exit_evidence:
+      - no remote search on each keystroke
+      - hydrated results are short-filtered before render
+      - pagination/quota exhaustion behavior is tested
+    next: WP-009-VIDEO-COMMENTS-ACTIONS
+
+  - id: WP-009-VIDEO-COMMENTS-ACTIONS
+    order: 9
+    milestone: M6_VIDEO_COMMENTS_ACTIONS
+    gate: G6
+    status: pending
+    depends_on: [WP-008-SEARCH]
+    objective: Complete production video page, comments/replies, supported account actions, and download quality picker.
+    primary_risk: Authenticated mutation correctness and UI state consistency.
+    exit_evidence:
+      - comments read/disabled/post/reply paths are covered
+      - subscribe/unsubscribe and selected rating action are covered if enabled
+      - quality picker exposes only available subset of 1080/720/480/360
+    next: WP-010-LIBRARY
+
+  - id: WP-010-LIBRARY
+    order: 10
+    milestone: M7_LIBRARY
+    gate: G7
+    status: pending
+    depends_on: [WP-009-VIDEO-COMMENTS-ACTIONS]
+    objective: Add local history, resume, saves, download library management, and storage reconciliation.
+    primary_risk: Persistence/file divergence and data migration.
+    exit_evidence:
+      - progress/history persists across relaunch
+      - file index and metadata reconcile
+      - delete is atomic/safe
+      - offline library remains useful without network
+    next: WP-011-BACKGROUND-MEDIA
+
+  - id: WP-011-BACKGROUND-MEDIA
+    order: 11
+    milestone: M8_BACKGROUND_MEDIA
+    gate: G8
+    status: pending
+    depends_on: [WP-010-LIBRARY]
+    objective: Implement background audio, Now Playing, remote commands, PiP wiring, and interruption handling to automated implementation-complete level.
+    primary_risk: Apple lifecycle behavior not fully representable in Simulator.
+    exit_evidence:
+      - project capabilities/background modes build correctly
+      - deterministic coordinator/command tests pass
+      - simulator-supported PiP/background/media smoke passes where meaningful
+      - device-only checks are explicitly recorded for later release rather than falsely claimed
+      - IC-EXIT integration sweep passes
+    next: IMPLEMENTATION_COMPLETE
+
+out_of_campaign:
+  - id: WP-012-HARDEN-RELEASE
+    milestone: M9_HARDENING_M10_PERSONAL_RELEASE
+    status: deferred
+    reason: Broad hardening/release is intentionally a later campaign triggered after IMPLEMENTATION_V1 or explicit user direction.

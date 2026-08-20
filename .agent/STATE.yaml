@@ -1,31 +1,73 @@
-schema_version: 1
+schema_version: 2
 project: FocusTube
-plan_version: 1
-updated_at: 2026-08-20 14:03:00+08:00
+plan_version: 2
+updated_at: 2026-08-20T14:13:00+08:00
+
+campaign:
+  id: IMPLEMENTATION_V1
+  status: active
+  autonomy_mode: continuous
+  supervision: minimal
+  scope: M0-M8
+  exit_gate: IC-EXIT
+  on_exit: implementation_complete_ready_for_hardening
+  auto_enter_hardening: false
+
 status: ready
 current_milestone: M0_BOOTSTRAP
 current_gate: G0
 current_work_packet: WP-000-BOOTSTRAP
-next_waypoint: Verify the published bootstrap on main, run Windows FocusTubeCore tests,
-  then execute WP-000 through macOS/XcodeGen/iOS Simulator CI and collect G0 evidence.
+current_packet_status: ready
+current_waypoint:
+  id: WP000-W1
+  objective: Prove the published bootstrap on the Apple build plane.
+  exact_next_action: Run/repair macOS CI so XcodeGen generates the project, the iOS target builds, an available iPhone Simulator boots, FocusTube launches, and LaunchTests pass; record observed toolchain/run evidence.
+  validation_required:
+    - FocusTubeCore swift test
+    - XcodeGen generation on macOS
+    - iOS simulator build
+    - simulator launch
+    - XCUITest root-tab smoke
+
+resume_token: IMPLEMENTATION_V1:M0:G0:WP-000:WP000-W1
+repo_baseline:
+  branch: main
+  commit: 81384e84127177186eaa9f87f71a36874f47b785
+  note: Bootstrap architecture/agent-roadmap commit. Documentation campaign does not claim additional implementation progress.
+
+continuation_policy:
+  continue_after_packet: true
+  continue_after_gate: true
+  ask_user_for_minor_decisions: false
+  fix_critical_high_immediately: true
+  defer_medium_low_to: .agent/HARDENING_BACKLOG.md
+  physical_device_blocks_implementation: false
+  stop_only_when_no_safe_ready_work_remains: true
+
 locked_decisions:
   platform: native_ios
   minimum_ios: '17.0'
+  language_mode: Swift_6
   ui: SwiftUI
   playback: AVPlayer_AVPlayerViewController
   extractor: YouTubeKit
   extractor_methods:
-  - local
+    - local
   yt_dlp_fallback: false
   remote_extractor: false
   download_resolutions:
-  - 1080
-  - 720
-  - 480
-  - 360
+    - 1080
+    - 720
+    - 480
+    - 360
   max_download_resolution: 1080
+  manufacture_missing_resolution_by_transcode: false
+  download_transport: URLSession_background
+  adaptive_mux: AVFoundation_native_first
   persistence_metadata: SwiftData
   persistence_media: filesystem
+  oauth: GoogleSignIn
+  youtube_api: typed_URLSession_Data_API_v3
   project_generation: XcodeGen
   backend: none_v1
   shorts: hard_disabled
@@ -33,14 +75,24 @@ locked_decisions:
   infinite_scroll_default: false
   primary_dev_host: windows
   apple_build_plane: github_actions_macos
+
 research_baseline:
   date: 2026-08-20
   youtube_kit_verified_release: 0.4.8
   google_signin_documented_version: 9.0.0
   xcode_target: '26.6'
   xcodegen_minimum: 2.46.0
+
+progress:
+  packets_total_implementation: 12
+  packets_complete: 0
+  packets_active: 1
+  packets_pending: 11
+  implementation_exit_passed: false
+  note: Do not infer percentage completion from packet count; risk/size differs by packet.
+
 milestones:
-  M0_BOOTSTRAP: pending
+  M0_BOOTSTRAP: active
   M1_MEDIA_VIABILITY: pending
   M2_DURABLE_DOWNLOADS: pending
   M3_AUTH_DATA_API: pending
@@ -49,21 +101,64 @@ milestones:
   M6_VIDEO_COMMENTS_ACTIONS: pending
   M7_LIBRARY: pending
   M8_BACKGROUND_MEDIA: pending
-  M9_HARDENING: pending
-  M10_PERSONAL_RELEASE: pending
-blockers: []
-evidence:
-- kind: design
-  result: complete
-  detail: Architecture/product/roadmap baseline authored and externally researched.
-- kind: test
-  command: swift test
-  environment: linux x86_64 / Swift 6.2.1 (artifact-construction environment)
-  result: pass
-  detail: '5 FocusTubeCore policy tests passed: quality ladder, >1080 ceiling, missing-quality
-    behavior, 180s boundary, /shorts/ route.'
-deferred_debt:
-- id: repository_visibility
-  severity: administrative
-  detail: Repository quantdale/FocusTube is currently public. The original project recommendation was private for personal-use development; visibility does not block WP-000 because no credentials are committed.
+  M9_HARDENING: out_of_campaign
+  M10_PERSONAL_RELEASE: out_of_campaign
 
+packets:
+  WP-000-BOOTSTRAP: ready
+  WP-001-EXTRACTION: pending
+  WP-002-PLAYBACK: pending
+  WP-003-COMBINED-DOWNLOAD: pending
+  WP-004-ADAPTIVE-1080: pending
+  WP-005-DURABLE-DOWNLOAD-MANAGER: pending
+  WP-006-AUTH-DATA-API: pending
+  WP-007-HOME-SHORTS-FIREWALL: pending
+  WP-008-SEARCH: pending
+  WP-009-VIDEO-COMMENTS-ACTIONS: pending
+  WP-010-LIBRARY: pending
+  WP-011-BACKGROUND-MEDIA: pending
+  WP-012-HARDEN-RELEASE: out_of_campaign
+
+blockers: []
+human_inputs_pending: []
+physical_device_checks_deferred:
+  - PiP real-device behavior
+  - background audio under real suspension/interruption
+  - lock-screen/Bluetooth remote command behavior
+  - final install/signing on target iPhone
+
+evidence:
+  - id: ev-bootstrap-design
+    kind: design
+    result: pass
+    detail: Product, architecture, subsystem specifications, work packets, and initial implementation scaffold authored.
+  - id: ev-bootstrap-core-tests
+    kind: test
+    command: swift test
+    environment: linux x86_64 / Swift 6.2.1 artifact-construction environment
+    result: pass
+    detail: 5 FocusTubeCore policy tests passed for quality ladder/ceiling/missing quality and Shorts duration/route rules.
+
+known_unproven:
+  - G0 Apple CI/XcodeGen/iOS Simulator evidence has not yet been observed and must not be assumed.
+  - YouTubeKit live local extraction has not yet passed G1.
+  - No physical-iPhone evidence exists yet.
+
+deferred_debt:
+  - id: repository_visibility
+    severity: administrative
+    detail: Repository was observed public during bootstrap. No credentials are committed. Visibility does not block implementation.
+
+last_checkpoint:
+  kind: bootstrap
+  commit: 81384e84127177186eaa9f87f71a36874f47b785
+  gate_crossed: none
+
+next_transition:
+  when: G0 passes with observed Apple CI/simulator evidence
+  set:
+    current_milestone: M1_MEDIA_VIABILITY
+    current_gate: G1
+    current_work_packet: WP-001-EXTRACTION
+    current_packet_status: ready
+    resume_token: IMPLEMENTATION_V1:M1:G1:WP-001
