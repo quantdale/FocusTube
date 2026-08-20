@@ -67,7 +67,7 @@ final class DownloadManagerTests: XCTestCase {
         record.statusRaw = DownloadStatus.downloading.rawValue
         try context.save()
 
-        // New manager reconciles the persisted record on launch.
+        // New manager reconciles the persisted record on launch (same container).
         let reloaded = await DownloadManager(
             transport: NoopTransport(),
             context: ModelContext(container)

@@ -11,13 +11,14 @@ final class LibraryStoreTests: XCTestCase {
     }
 
     func testProgressPersistsAndResumes() async throws {
-        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        let container = try makeContainer()
+        let store = await LibraryStore(context: ModelContext(container))
         await store.recordProgress(videoID: "v1", title: "T", channelTitle: "C", position: 123.5, duration: 600, completed: false)
         let position = await store.resumePosition(for: "v1")
         XCTAssertEqual(position, 123.5)
 
         // Reload from a fresh store over the same container (simulating relaunch).
-        let reloaded = await LibraryStore(context: ModelContext(try makeContainer()))
+        let reloaded = await LibraryStore(context: ModelContext(container))
         XCTAssertEqual(await reloaded.resumePosition(for: "v1"), 123.5)
         XCTAssertEqual(await reloaded.history.count, 1)
     }
