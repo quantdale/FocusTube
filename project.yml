@@ -70,14 +70,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
     info:
-      properties:
-        CFBundleDisplayName: FocusTube
-        UILaunchScreen: {}
-        UIBackgroundModes:
-          - audio
-        UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationPortrait
-        UISupportedInterfaceOrientations~ipad: []
+      path: Config/Info.plist
 
   FocusTubeUITests:
     type: bundle.ui-testing
