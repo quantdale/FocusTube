@@ -156,7 +156,7 @@ waypoints:
     order: 10
     milestone: M7_LIBRARY
     gate: G7
-    status: pending
+    status: complete
     depends_on: [WP-009-VIDEO-COMMENTS-ACTIONS]
     objective: Add local history, resume, saves, download library management, and storage reconciliation.
     primary_risk: Persistence/file divergence and data migration.

@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct RootView: View {
     @State private var playerCoordinator = PlayerCoordinator()
@@ -6,6 +7,12 @@ struct RootView: View {
     @State private var searchStore = SearchStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
     @State private var auth: AuthSession = GoogleSignInAuthSession()
     @State private var api: YouTubeAPI = YouTubeDataClient()
+    @State private var libraryStore: LibraryStore = {
+        let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let container = try! ModelContainer(for: schema, configurations: config)
+        return LibraryStore(context: ModelContext(container))
+    }()
 
     var body: some View {
         TabView {
@@ -20,12 +27,12 @@ struct RootView: View {
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
 
             NavigationStack {
-                PlaceholderView(title: "Downloads", message: "1080p / 720p / 480p / 360p offline library")
+                DownloadsView(store: libraryStore)
             }
             .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
 
             NavigationStack {
-                PlaceholderView(title: "Library", message: "Local history, progress, saves, and playlists")
+                LibraryView(store: libraryStore)
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
         }
@@ -39,6 +46,61 @@ private struct PlaceholderView: View {
     var body: some View {
         ContentUnavailableView(title, systemImage: "play.rectangle", description: Text(message))
             .navigationTitle(title)
+    }
+}
+
+struct DownloadsView: View {
+    @Bindable var store: LibraryStore
+
+    var body: some View {
+        List {
+            ForEach(store.downloaded, id: \.id) { item in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title).lineLimit(2)
+                        Text("\(item.resolution)p · \(item.sizeBytes) bytes").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(role: .destructive) {
+                        store.deleteDownloadedMedia(id: item.id)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                }
+            }
+            if store.downloaded.isEmpty {
+                Text("No downloaded videos yet.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Downloads")
+        .task { store.reconcileDownloads() }
+    }
+}
+
+struct LibraryView: View {
+    @Bindable var store: LibraryStore
+
+    var body: some View {
+        List {
+            Section("Continue watching") {
+                ForEach(store.history, id: \.videoID) { entry in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.title).lineLimit(2)
+                        Text(entry.channelTitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Section("Saved") {
+                ForEach(store.saved, id: \.videoID) { item in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title).lineLimit(2)
+                        Text(item.channelTitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Library")
     }
 }
 

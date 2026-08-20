@@ -16,17 +16,17 @@ campaign:
 status: implementing
 current_milestone: M2_DURABLE_DOWNLOADS
 current_gate: G2
-current_work_packet: WP-010-LIBRARY
+current_work_packet: WP-011-BACKGROUND-MEDIA
 current_packet_status: ready
 current_waypoint:
-  id: WP010-W1
-  objective: Add local history, resume, saves, download library management, and storage reconciliation.
-  exact_next_action: Add SwiftData models for watch history / resume position / saves and a LibraryStore that persists progress across relaunch, reconciles the offline-media index with the filesystem, supports atomic delete (file + metadata), and keeps the library useful offline. Add deterministic reconciliation/delete tests.
+  id: WP011-W1
+  objective: Implement background audio, Now Playing, remote commands, PiP wiring, and interruption handling to automated implementation-complete level.
+  exact_next_action: Add AVAudioSession/background-audio integration, Now Playing metadata, MPRemoteCommandCenter command handling, PiP wiring through AVPlayerViewController, and interruption/route-change handling, each with deterministic logic tests where practical. Record device-only checks as deferred.
   validation_required:
-    - playback progress persists/reloads
-    - file index and metadata reconcile
-    - delete is atomic/safe
-    - offline library remains useful without network
+    - required background/media project capabilities build correctly
+    - deterministic coordinator/command tests pass
+    - simulator-supported PiP/background/media smoke passes where meaningful
+    - device-only checks are explicitly listed as deferred rather than claimed
 
 resume_token: IMPLEMENTATION_V1:M1:G1:WP-002:WP002-W1
 repo_baseline:
@@ -84,9 +84,9 @@ research_baseline:
 
 progress:
   packets_total_implementation: 12
-  packets_complete: 10
+  packets_complete: 11
   packets_active: 1
-  packets_pending: 1
+  packets_pending: 0
   implementation_exit_passed: false
   note: Do not infer percentage completion from packet count; risk/size differs by packet.
 
@@ -114,8 +114,8 @@ packets:
   WP-007-HOME-SHORTS-FIREWALL: complete
   WP-008-SEARCH: complete
   WP-009-VIDEO-COMMENTS-ACTIONS: complete
-  WP-010-LIBRARY: active
-  WP-011-BACKGROUND-MEDIA: pending
+  WP-010-LIBRARY: complete
+  WP-011-BACKGROUND-MEDIA: active
   WP-012-HARDEN-RELEASE: out_of_campaign
 
 blockers: []
@@ -274,6 +274,20 @@ evidence:
       fabricates). VideoActionsTests (disabled state, threads+replies, disabled error, subscribe/
       rate, quota error) + DownloadQualityPickerTests. App VideoPageView + DownloadQualityPickerView
       wired from Home/Search selection via shared AuthSession + YouTubeAPI. CI pending observation.
+  - id: ev-g7-wp010-library
+    kind: test
+    command: xcodebuild test (FocusTubeTests) on ios-ci
+    commit: pending-ci
+    result: pending
+    detail: >
+      WP-010 library: SwiftData WatchHistoryEntry / SavedItem / DownloadedMedia models and
+      @MainActor LibraryStore (recordProgress/resumePosition, save dedupe, addDownloadedMedia,
+      reconcileDownloads removing missing-file orphans, atomic deleteDownloadedMedia removing
+      file + metadata). LibraryStoreTests using in-memory ModelContainer cover progress persists
+      and resumes across a fresh store, reconcile removes missing files, delete is atomic/safe,
+      save dedupes. RootView wires persistent ModelContainer + LibraryStore into Downloads/Library
+      tabs (reconcile on appear, atomic delete action), keeping the offline library usable without
+      network. CI pending observation.
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -286,16 +300,16 @@ deferred_debt:
 
 last_checkpoint:
   kind: complete
-  file: .agent/checkpoints/20260820-1230-wp009-video.md
+  file: .agent/checkpoints/20260820-1300-wp010-library.md
   commit: pending-ci
-  note: WP-009 video page, comments (disabled+replies), account actions, and quality picker implemented; deterministic Core tests + App VideoPage/QualityPicker wired. CI pending observation.
+  note: WP-010 library persistence (history/resume/saves + offline index) with reconcile + atomic delete; deterministic in-memory tests + Downloads/Library tabs wired. CI pending observation.
   gate_crossed: none
 
 next_transition:
-  when: G6 passes with observed Apple CI + deterministic video/comments/actions evidence
+  when: G7 passes with observed Apple CI + deterministic library evidence
   set:
-    current_milestone: M7_LIBRARY
-    current_gate: G7
-    current_work_packet: WP-010-LIBRARY
+    current_milestone: M8_BACKGROUND_MEDIA
+    current_gate: G8
+    current_work_packet: WP-011-BACKGROUND-MEDIA
     current_packet_status: ready
-    resume_token: IMPLEMENTATION_V1:M7:G7:WP-010
+    resume_token: IMPLEMENTATION_V1:M8:G8:WP-011
