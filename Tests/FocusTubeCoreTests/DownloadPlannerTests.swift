@@ -2,8 +2,9 @@ import XCTest
 @testable import FocusTubeCore
 
 final class DownloadPlannerTests: XCTestCase {
-    func makeStream(id: String, resolution: Int?, kind: StreamKind, nativePlayable: Bool = true) -> MediaStream {
-        MediaStream(
+    func makeStream(resolution: Int?, kind: StreamKind, nativePlayable: Bool = true) -> MediaStream {
+        let id = "\(resolution.map(String.init) ?? "audio")-\(kind)"
+        return MediaStream(
             id: id,
             videoID: "v",
             resolution: resolution,
@@ -12,7 +13,7 @@ final class DownloadPlannerTests: XCTestCase {
             container: "mp4",
             videoCodec: "avc1",
             audioCodec: "mp4a",
-            sourceURL: URL(string: "https://e/\(id)")!,
+            sourceURL: URL(string: "https://e/\(resolution.map(String.init) ?? "audio")")!,
             expiresAt: nil
         )
     }
@@ -21,7 +22,7 @@ final class DownloadPlannerTests: XCTestCase {
         let media = ResolvedMedia(
             videoID: "v",
             extractedAt: Date(),
-            combined: [makeStream(id: "c1080", resolution: 1080, kind: .combined)],
+            combined: [makeStream(resolution: 1080, kind: .combined)],
             videoOnly: [],
             audioOnly: []
         )
@@ -31,7 +32,8 @@ final class DownloadPlannerTests: XCTestCase {
             return
         }
         XCTAssertEqual(resolution, 1080)
-        XCTAssertEqual(component.sourceURL.absoluteString, "https://e/c1080")
+        XCTAssertEqual(component.sourceURL.absoluteString, "https://e/1080")
+        XCTAssertEqual(component.streamID, "1080-combined")
     }
 
     func testAdaptive1080ChosenWhenCombinedMissing() {
@@ -39,8 +41,8 @@ final class DownloadPlannerTests: XCTestCase {
             videoID: "v",
             extractedAt: Date(),
             combined: [],
-            videoOnly: [makeStream(id: "v1080", resolution: 1080, kind: .videoOnly)],
-            audioOnly: [makeStream(id: "a", resolution: nil, kind: .audioOnly)]
+            videoOnly: [makeStream(resolution: 1080, kind: .videoOnly)],
+            audioOnly: [makeStream(resolution: nil, kind: .audioOnly)]
         )
         let plan = DownloadPlanner.plan(for: media, quality: .p1080)
         guard case let .adaptive(video, audio, resolution) = plan else {
@@ -48,15 +50,15 @@ final class DownloadPlannerTests: XCTestCase {
             return
         }
         XCTAssertEqual(resolution, 1080)
-        XCTAssertEqual(video.sourceURL.absoluteString, "https://e/v1080")
-        XCTAssertEqual(audio.sourceURL.absoluteString, "https://e/a")
+        XCTAssertEqual(video.sourceURL.absoluteString, "https://e/1080")
+        XCTAssertEqual(audio.sourceURL.absoluteString, "https://e/audio")
     }
 
     func testRequested1080NeverFallsBackTo720() {
         let media = ResolvedMedia(
             videoID: "v",
             extractedAt: Date(),
-            combined: [makeStream(id: "c720", resolution: 720, kind: .combined)],
+            combined: [makeStream(resolution: 720, kind: .combined)],
             videoOnly: [],
             audioOnly: []
         )
@@ -72,7 +74,7 @@ final class DownloadPlannerTests: XCTestCase {
         let media = ResolvedMedia(
             videoID: "v",
             extractedAt: Date(),
-            combined: [makeStream(id: "c2160", resolution: 2160, kind: .combined)],
+            combined: [makeStream(resolution: 2160, kind: .combined)],
             videoOnly: [],
             audioOnly: []
         )
@@ -84,12 +86,17 @@ final class DownloadPlannerTests: XCTestCase {
         let media = ResolvedMedia(
             videoID: "v",
             extractedAt: Date(),
-            combined: [makeStream(id: "c720", resolution: 720, kind: .combined)],
+            combined: [makeStream(resolution: 720, kind: .combined)],
             videoOnly: [],
             audioOnly: []
         )
         let plan = DownloadPlanner.plan(for: media, quality: .p720)
-        XCTAssertEqual(plan, .combined(DownloadComponent(streamID: "c720", sourceURL: URL(string: "https://e/c720")!), resolution: 720))
+        guard case let .combined(component, resolution) = plan else {
+            XCTFail("Expected combined 720 plan, got \(plan)")
+            return
+        }
+        XCTAssertEqual(resolution, 720)
+        XCTAssertEqual(component.sourceURL.absoluteString, "https://e/720")
     }
 
     func testAdaptive720NotSilentlyDowngradedFrom1080() {
@@ -97,8 +104,8 @@ final class DownloadPlannerTests: XCTestCase {
             videoID: "v",
             extractedAt: Date(),
             combined: [],
-            videoOnly: [makeStream(id: "v720", resolution: 720, kind: .videoOnly)],
-            audioOnly: [makeStream(id: "a", resolution: nil, kind: .audioOnly)]
+            videoOnly: [makeStream(resolution: 720, kind: .videoOnly)],
+            audioOnly: [makeStream(resolution: nil, kind: .audioOnly)]
         )
         let plan = DownloadPlanner.plan(for: media, quality: .p1080)
         XCTAssertEqual(plan, .unavailable(reason: .requestedQualityUnavailable))
