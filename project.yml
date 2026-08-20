@@ -79,6 +79,7 @@ targets:
       - FocusTubeUITests
     dependencies:
       - target: FocusTube
+      - package: YouTubeKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quantdale.FocusTubeUITests

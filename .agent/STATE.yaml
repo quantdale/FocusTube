@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-20T14:13:00+08:00
+updated_at: 2026-08-20T06:40:00+08:00
 
 campaign:
   id: IMPLEMENTATION_V1
@@ -13,27 +13,25 @@ campaign:
   on_exit: implementation_complete_ready_for_hardening
   auto_enter_hardening: false
 
-status: ready
-current_milestone: M0_BOOTSTRAP
-current_gate: G0
-current_work_packet: WP-000-BOOTSTRAP
+status: implementing
+current_milestone: M1_MEDIA_VIABILITY
+current_gate: G1
+current_work_packet: WP-001-EXTRACTION
 current_packet_status: ready
 current_waypoint:
-  id: WP000-W1
-  objective: Prove the published bootstrap on the Apple build plane.
-  exact_next_action: Run/repair macOS CI so XcodeGen generates the project, the iOS target builds, an available iPhone Simulator boots, FocusTube launches, and LaunchTests pass; record observed toolchain/run evidence.
+  id: WP001-W1
+  objective: Define normalized media models and the local-only MediaExtracting boundary.
+  exact_next_action: Add FocusTube-owned ResolvedMedia/stream models, the MediaExtracting protocol, YouTubeKitMediaExtractor (local method only), allowed-resolution filter, and deterministic fake-extractor selection/normalization tests; validate via swift test on CI.
   validation_required:
-    - FocusTubeCore swift test
-    - XcodeGen generation on macOS
-    - iOS simulator build
-    - simulator launch
-    - XCUITest root-tab smoke
+    - FocusTubeCore swift test (deterministic adapter/normalization)
+    - no feature layer imports YouTubeKit directly
+    - no 1440p/2160p escapes normalization
 
-resume_token: IMPLEMENTATION_V1:M0:G0:WP-000:WP000-W1
+resume_token: IMPLEMENTATION_V1:M1:G1:WP-001:WP001-W1
 repo_baseline:
   branch: main
-  commit: 81384e84127177186eaa9f87f71a36874f47b785
-  note: Bootstrap architecture/agent-roadmap commit. Documentation campaign does not claim additional implementation progress.
+  commit: 90e9afe
+  note: G0 bootstrap proven on Apple CI (ios-ci run 32340013958). WP-000 complete; M0 complete; G0 pass.
 
 continuation_policy:
   continue_after_packet: true
@@ -92,8 +90,8 @@ progress:
   note: Do not infer percentage completion from packet count; risk/size differs by packet.
 
 milestones:
-  M0_BOOTSTRAP: active
-  M1_MEDIA_VIABILITY: pending
+  M0_BOOTSTRAP: complete
+  M1_MEDIA_VIABILITY: active
   M2_DURABLE_DOWNLOADS: pending
   M3_AUTH_DATA_API: pending
   M4_HOME_FOCUS: pending
@@ -105,8 +103,8 @@ milestones:
   M10_PERSONAL_RELEASE: out_of_campaign
 
 packets:
-  WP-000-BOOTSTRAP: ready
-  WP-001-EXTRACTION: pending
+  WP-000-BOOTSTRAP: complete
+  WP-001-EXTRACTION: ready
   WP-002-PLAYBACK: pending
   WP-003-COMBINED-DOWNLOAD: pending
   WP-004-ADAPTIVE-1080: pending
@@ -138,11 +136,21 @@ evidence:
     environment: linux x86_64 / Swift 6.2.1 artifact-construction environment
     result: pass
     detail: 5 FocusTubeCore policy tests passed for quality ladder/ceiling/missing quality and Shorts duration/route rules.
+  - id: ev-g0-apple-ci
+    kind: ci
+    workflow: ios-ci
+    run: 32340013958
+    commit: 90e9afe
+    result: pass
+    detail: >
+      All G0 stages green on macOS-26: swift test (FocusTubeCore), XcodeGen 2.46.0
+      generation, iOS build/test, iPhone 17 Pro (iOS-26-4) boot, app launch,
+      LaunchTests testRootTabsExist. Xcode 26.6, Apple Swift 6.3.3. Artifact
+      focustube-ios-ci (3.3MB) uploaded.
 
 known_unproven:
-  - G0 Apple CI/XcodeGen/iOS Simulator evidence has not yet been observed and must not be assumed.
-  - YouTubeKit live local extraction has not yet passed G1.
-  - No physical-iPhone evidence exists yet.
+  - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
+  - No physical-iPhone evidence exists yet (deferred to G10).
 
 deferred_debt:
   - id: repository_visibility
@@ -150,15 +158,16 @@ deferred_debt:
     detail: Repository was observed public during bootstrap. No credentials are committed. Visibility does not block implementation.
 
 last_checkpoint:
-  kind: bootstrap
-  commit: 81384e84127177186eaa9f87f71a36874f47b785
-  gate_crossed: none
+  kind: gate
+  file: .agent/checkpoints/20260820-0637-g0-bootstrap.md
+  commit: 90e9afe
+  gate_crossed: G0
 
 next_transition:
-  when: G0 passes with observed Apple CI/simulator evidence
+  when: G1 passes with observed Apple CI + deterministic extraction evidence
   set:
-    current_milestone: M1_MEDIA_VIABILITY
-    current_gate: G1
-    current_work_packet: WP-001-EXTRACTION
+    current_milestone: M2_DURABLE_DOWNLOADS
+    current_gate: G2
+    current_work_packet: WP-002-PLAYBACK
     current_packet_status: ready
-    resume_token: IMPLEMENTATION_V1:M1:G1:WP-001
+    resume_token: IMPLEMENTATION_V1:M2:G2:WP-002

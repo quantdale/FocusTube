@@ -8,7 +8,7 @@ waypoints:
     order: 0
     milestone: M0_BOOTSTRAP
     gate: G0
-    status: ready
+    status: complete
     depends_on: []
     objective: Reproducible Windows-authored, macOS-built/tested iOS shell.
     primary_risk: Apple build/test plane is not yet proven.
@@ -25,7 +25,7 @@ waypoints:
     order: 1
     milestone: M1_MEDIA_VIABILITY
     gate: G1
-    status: pending
+    status: active
     depends_on: [WP-000-BOOTSTRAP]
     objective: Isolate YouTubeKit local extraction behind FocusTube-owned models/protocols.
     primary_risk: Upstream extraction fragility.
