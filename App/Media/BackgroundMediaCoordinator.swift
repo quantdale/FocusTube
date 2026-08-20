@@ -61,15 +61,15 @@ public final class BackgroundMediaCoordinator {
     public func registerRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
-            self?.handleRemoteCommand(.play)
+            Task { @MainActor in self?.handleRemoteCommand(.play) }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
-            self?.handleRemoteCommand(.pause)
+            Task { @MainActor in self?.handleRemoteCommand(.pause) }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.handleRemoteCommand(.togglePlayPause)
+            Task { @MainActor in self?.handleRemoteCommand(.togglePlayPause) }
             return .success
         }
     }

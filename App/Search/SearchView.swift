@@ -6,10 +6,12 @@ struct SearchView: View {
     let playerCoordinator: PlayerCoordinator
     let auth: AuthSession
     let api: YouTubeAPI
+    let downloadService: DownloadService
+    let library: LibraryStore
 
     @State private var queryText = ""
     @State private var showVideo = false
-    @State private var selectedVideoID: String?
+    @State private var selectedVideo: VideoSummary?
 
     var body: some View {
         List {
@@ -36,7 +38,7 @@ struct SearchView: View {
 
             ForEach(store.results) { video in
                 Button {
-                    selectedVideoID = video.id
+                    selectedVideo = video
                     showVideo = true
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
@@ -56,14 +58,21 @@ struct SearchView: View {
         }
         .navigationTitle("Search")
         .sheet(isPresented: $showVideo) {
-            if let id = selectedVideoID {
+            if let video = selectedVideo {
                 NavigationStack {
-                    VideoPageView(videoID: id, coordinator: playerCoordinator, auth: auth, api: api)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button("Close") { showVideo = false }
-                            }
+                    VideoPageView(
+                        video: video,
+                        coordinator: playerCoordinator,
+                        auth: auth,
+                        api: api,
+                        downloadService: downloadService,
+                        library: library
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Close") { showVideo = false }
                         }
+                    }
                 }
             }
         }

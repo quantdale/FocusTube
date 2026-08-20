@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import AVKit
+import CoreMedia
 import Observation
 import FocusTubeCore
 
@@ -22,7 +23,12 @@ public final class PlayerCoordinator {
     public let player: AVPlayer
     public let playerViewController: AVPlayerViewController
 
+    /// Called periodically with the current playback time (seconds) so callers
+    /// can persist resume position without polling.
+    public var onProgress: (@MainActor (TimeInterval) -> Void)?
+
     private var playerItem: AVPlayerItem?
+    private var timeObserver: Any?
     private var itemObservation: NSKeyValueObservation?
     private var timeControlObservation: NSKeyValueObservation?
     private let extractor: MediaExtracting
@@ -86,6 +92,7 @@ public final class PlayerCoordinator {
         observe(item: item)
         player.replaceCurrentItem(with: item)
         state = PlaybackState(status: .loading)
+        startProgressObserver()
         player.play()
     }
 
@@ -104,17 +111,38 @@ public final class PlayerCoordinator {
         observe(item: item)
         player.replaceCurrentItem(with: item)
         state = PlaybackState(status: .loading)
+        startProgressObserver()
         player.play()
     }
+}
 
     public func stop() {
         itemObservation?.invalidate()
         timeControlObservation?.invalidate()
+        stopProgressObserver()
         player.replaceCurrentItem(with: nil)
         playerItem = nil
         currentStream = nil
         currentVideoID = nil
         state = PlaybackState(status: .idle)
+    }
+
+    private func startProgressObserver() {
+        stopProgressObserver()
+        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 5, preferredTimescale: 1)) { [weak self] time in
+            let seconds = time.seconds
+            guard seconds.isFinite else { return }
+            Task { @MainActor in
+                self?.onProgress?(seconds)
+            }
+        }
+    }
+
+    private func stopProgressObserver() {
+        if let observer = timeObserver {
+            player.removeTimeObserver(observer)
+            timeObserver = nil
+        }
     }
 
     // MARK: - Observation

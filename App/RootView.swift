@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import FocusTubeCore
 
 struct RootView: View {
     @State private var playerCoordinator = PlayerCoordinator()
@@ -7,28 +8,50 @@ struct RootView: View {
     @State private var searchStore = SearchStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
     @State private var auth: AuthSession = GoogleSignInAuthSession()
     @State private var api: YouTubeAPI = YouTubeDataClient()
-    @State private var libraryStore: LibraryStore = {
-        let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self])
+    @State private var libraryStore: LibraryStore
+    @State private var downloadManager: DownloadManager
+    @State private var downloadService: DownloadService
+    @State private var backgroundMedia: BackgroundMediaCoordinator? = nil
+
+    init() {
+        let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self, DownloadRecord.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-        let container = try! ModelContainer(for: schema, configurations: config)
-        return LibraryStore(context: ModelContext(container))
-    }()
-    @State private var backgroundMedia: BackgroundMediaCoordinator?
+        let container = try! ModelContainer(for: schema, configurations: [config])
+        let library = LibraryStore(context: ModelContext(container))
+        let manager = DownloadManager(transport: URLSessionDownloadTransport(), context: ModelContext(container))
+        _libraryStore = State(initialValue: library)
+        _downloadManager = State(initialValue: manager)
+        _downloadService = State(initialValue: DownloadService(downloadManager: manager, library: library))
+    }
 
     var body: some View {
         TabView {
             NavigationStack {
-                HomeFeedView(store: homeStore, playerCoordinator: playerCoordinator, auth: auth, api: api)
+                HomeFeedView(
+                    store: homeStore,
+                    playerCoordinator: playerCoordinator,
+                    auth: auth,
+                    api: api,
+                    downloadService: downloadService,
+                    library: libraryStore
+                )
             }
             .tabItem { Label("Home", systemImage: "house") }
 
             NavigationStack {
-                SearchView(store: searchStore, playerCoordinator: playerCoordinator, auth: auth, api: api)
+                SearchView(
+                    store: searchStore,
+                    playerCoordinator: playerCoordinator,
+                    auth: auth,
+                    api: api,
+                    downloadService: downloadService,
+                    library: libraryStore
+                )
             }
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
 
             NavigationStack {
-                DownloadsView(store: libraryStore)
+                DownloadsView(store: libraryStore, playerCoordinator: playerCoordinator)
             }
             .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
 
@@ -58,14 +81,19 @@ private struct PlaceholderView: View {
 
 struct DownloadsView: View {
     @Bindable var store: LibraryStore
+    let playerCoordinator: PlayerCoordinator
 
     var body: some View {
         List {
             ForEach(store.downloaded, id: \.id) { item in
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.title).lineLimit(2)
-                        Text("\(item.resolution)p · \(item.sizeBytes) bytes").font(.caption).foregroundStyle(.secondary)
+                    Button {
+                        playerCoordinator.playLocalFile(item.fileURL)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title).lineLimit(2)
+                            Text("\(item.resolution)p · \(item.sizeBytes) bytes").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     Button(role: .destructive) {
@@ -118,9 +146,11 @@ private struct HomeFeedView: View {
     let playerCoordinator: PlayerCoordinator
     let auth: AuthSession
     let api: YouTubeAPI
+    let downloadService: DownloadService
+    let library: LibraryStore
 
     @State private var showVideo = false
-    @State private var selectedVideoID: String?
+    @State private var selectedVideo: VideoSummary?
 
     var body: some View {
         List {
@@ -129,7 +159,7 @@ private struct HomeFeedView: View {
             }
             ForEach(store.videos) { video in
                 Button {
-                    selectedVideoID = video.id
+                    selectedVideo = video
                     showVideo = true
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
@@ -144,7 +174,7 @@ private struct HomeFeedView: View {
                 Label("Load more", systemImage: "arrow.down.circle")
             }
             Button {
-                selectedVideoID = "aqz-KE-bpKQ"
+                selectedVideo = VideoSummary(id: "aqz-KE-bpKQ", title: "Big Buck Bunny", channelTitle: "Demo", durationSeconds: nil, publishedAt: nil, thumbnailURL: nil, description: nil)
                 showVideo = true
             } label: {
                 Label("Open native player (M1 demo)", systemImage: "play.circle")
@@ -156,14 +186,21 @@ private struct HomeFeedView: View {
             await store.load()
         }
         .sheet(isPresented: $showVideo) {
-            if let id = selectedVideoID {
+            if let video = selectedVideo {
                 NavigationStack {
-                    VideoPageView(videoID: id, coordinator: playerCoordinator, auth: auth, api: api)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button("Close") { showVideo = false }
-                            }
+                    VideoPageView(
+                        video: video,
+                        coordinator: playerCoordinator,
+                        auth: auth,
+                        api: api,
+                        downloadService: downloadService,
+                        library: library
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Close") { showVideo = false }
                         }
+                    }
                 }
             }
         }
