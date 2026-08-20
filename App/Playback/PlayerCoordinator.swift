@@ -1,0 +1,172 @@
+import Foundation
+import AVFoundation
+import AVKit
+import Observation
+import FocusTubeCore
+
+/// Owns the `AVPlayer` / `AVPlayerViewController` lifecycle and maps native
+/// playback status into the deterministic `PlaybackState` machine so UI and
+/// failure handling stay decoupled from AVFoundation specifics.
+///
+/// `FocusTubeCore` stays free of AVFoundation; this coordinator is the only
+/// place that touches `AVPlayer`. View recreation never resets the player
+/// because the coordinator is created once and injected, not reconstructed per
+/// view render.
+@MainActor
+@Observable
+public final class PlayerCoordinator {
+    public private(set) var state: PlaybackState
+    public private(set) var currentStream: MediaStream?
+    public private(set) var currentVideoID: String?
+
+    public let player: AVPlayer
+    public let playerViewController: AVPlayerViewController
+
+    private var playerItem: AVPlayerItem?
+    private var itemObservation: NSKeyValueObservation?
+    private var timeControlObservation: NSKeyValueObservation?
+    private let extractor: MediaExtracting
+
+    public init(extractor: MediaExtracting = YouTubeKitMediaExtractor()) {
+        self.extractor = extractor
+        self.state = PlaybackState()
+        self.player = AVPlayer()
+        self.playerViewController = AVPlayerViewController()
+        self.playerViewController.player = player
+        self.playerViewController.allowsPictureInPictureByDefault = true
+    }
+
+    // MARK: - Selection (delegated to Core policy)
+
+    /// Picks the highest allowed natively playable combined stream. Pure and
+    /// deterministic; never selects above 1080p (enforced by Core).
+    public func selectOnlineStream(from media: ResolvedMedia) -> MediaStream? {
+        MediaStreamFilter.selectOnlineStream(media)
+    }
+
+    // MARK: - Native status mapping (deterministic, testable)
+
+    public static func playbackError(for status: AVPlayerItem.Status) -> PlaybackError {
+        switch status {
+        case .readyToPlay:
+            return .unknown
+        case .failed:
+            return .itemFailed
+        case .unknown:
+            return .unknown
+        @unknown default:
+            return .unknown
+        }
+    }
+
+    // MARK: - Loading / playback
+
+    /// Resolves a video ID through the extractor, selects the online stream, and
+    /// begins native playback. Extraction and selection failures are typed and
+    /// observable via `state`.
+    public func loadAndPlay(videoID: String) async {
+        currentVideoID = videoID
+        do {
+            let media = try await extractor.resolve(videoID: videoID)
+            guard let stream = selectOnlineStream(from: media) else {
+                state = PlaybackState(status: .failed, error: .noPlayableStream)
+                return
+            }
+            prepare(stream: stream)
+        } catch {
+            state = PlaybackState(status: .failed, error: mapExtractionFailure(error))
+        }
+    }
+
+    /// Attaches an already-selected stream to the player and starts playback.
+    public func prepare(stream: MediaStream) {
+        currentStream = stream
+        let item = AVPlayerItem(url: stream.sourceURL)
+        playerItem = item
+        observe(item: item)
+        player.replaceCurrentItem(with: item)
+        state = PlaybackState(status: .loading)
+        player.play()
+    }
+
+    public func pause() {
+        player.pause()
+    }
+
+    public func resume() {
+        player.play()
+    }
+
+    public func stop() {
+        itemObservation?.invalidate()
+        timeControlObservation?.invalidate()
+        player.replaceCurrentItem(with: nil)
+        playerItem = nil
+        currentStream = nil
+        currentVideoID = nil
+        state = PlaybackState(status: .idle)
+    }
+
+    // MARK: - Observation
+
+    private func observe(item: AVPlayerItem) {
+        itemObservation?.invalidate()
+        itemObservation = item.observe(\.status, options: [.new]) { [weak self] observed, _ in
+            Task { @MainActor in
+                self?.handle(itemStatus: observed.status)
+            }
+        }
+
+        timeControlObservation?.invalidate()
+        timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
+            Task { @MainActor in
+                self?.handle(timeControlStatus: observed.timeControlStatus)
+            }
+        }
+    }
+
+    private func handle(itemStatus: AVPlayerItem.Status) {
+        switch itemStatus {
+        case .readyToPlay:
+            if state.status == .loading {
+                try? state.transition(to: .ready)
+                if player.timeControlStatus == .playing {
+                    try? state.transition(to: .playing)
+                }
+            }
+        case .failed:
+            state = PlaybackState(status: .failed, error: .itemFailed)
+        case .unknown:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    private func handle(timeControlStatus: AVPlayer.TimeControlStatus) {
+        switch timeControlStatus {
+        case .playing:
+            if state.status == .ready {
+                try? state.transition(to: .playing)
+            }
+        case .paused:
+            if state.status == .playing {
+                try? state.transition(to: .paused)
+            }
+        case .waitingToPlayAtSpecifiedRate:
+            if state.status == .ready {
+                // Stalled while buffering after ready; treat as stalled failure.
+                state = PlaybackState(status: .failed, error: .stalled)
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    private func mapExtractionFailure(_ error: Error) -> PlaybackError {
+        if error is ExtractionError {
+            return .itemFailed
+        }
+        return .unknown
+    }
+}

@@ -1,10 +1,12 @@
 import SwiftUI
 
 struct RootView: View {
+    @State private var playerCoordinator = PlayerCoordinator()
+
     var body: some View {
         TabView {
             NavigationStack {
-                PlaceholderView(title: "Home", message: "Chronological long-form subscription feed")
+                HomePlaceholder(playerCoordinator: playerCoordinator)
             }
             .tabItem { Label("Home", systemImage: "house") }
 
@@ -33,5 +35,38 @@ private struct PlaceholderView: View {
     var body: some View {
         ContentUnavailableView(title, systemImage: "play.rectangle", description: Text(message))
             .navigationTitle(title)
+    }
+}
+
+/// M1 viability demo: opens the native player for a representative long-form
+/// sample. Replaced by the real subscription Home feed in a later milestone.
+private struct HomePlaceholder: View {
+    let playerCoordinator: PlayerCoordinator
+
+    @State private var showPlayer = false
+    private let sampleVideoID = "aqz-KE-bpKQ"
+
+    var body: some View {
+        List {
+            PlaceholderView(title: "Home", message: "Chronological long-form subscription feed")
+            Button {
+                showPlayer = true
+            } label: {
+                Label("Open native player (M1 demo)", systemImage: "play.circle")
+            }
+        }
+        .navigationTitle("Home")
+        .sheet(isPresented: $showPlayer) {
+            NavigationStack {
+                PlayerView(coordinator: playerCoordinator)
+                    .navigationTitle("Playback")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Close") { showPlayer = false }
+                        }
+                    }
+                    .task { await playerCoordinator.loadAndPlay(videoID: sampleVideoID) }
+            }
+        }
     }
 }

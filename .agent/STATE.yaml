@@ -16,16 +16,16 @@ campaign:
 status: implementing
 current_milestone: M1_MEDIA_VIABILITY
 current_gate: G1
-current_work_packet: WP-002-PLAYBACK
+current_work_packet: WP-003-COMBINED-DOWNLOAD
 current_packet_status: ready
 current_waypoint:
-  id: WP002-W1
-  objective: Prove native online playback through AVPlayer/AVPlayerViewController.
-  exact_next_action: Add app-side PlayerCoordinator (AVPlayer/AVPlayerViewController) over MediaStreamFilter.selectOnlineStream, typed playback failures, and an opt-in/simulator playback-start smoke; validate build/test on CI.
+  id: WP003-W1
+  objective: Prove background download, final-file validation, and offline playback for a combined stream.
+  exact_next_action: Add explicit DownloadManager state machine (idle/queued/downloading/paused/finalizing/completed/failed) over URLSession background transport, atomic file finalization + validation, and offline AVPlayerItem creation from a local file. Add deterministic state-machine tests.
   validation_required:
-    - selected native-playable stream creates AVPlayerItem
-    - simulator playback starts for representative long-form source
-    - playback failures are typed/observable
+    - allowed combined stream downloads through URLSession path
+    - file is atomically finalized and validated
+    - local file plays through native player without network dependency
 
 resume_token: IMPLEMENTATION_V1:M1:G1:WP-002:WP002-W1
 repo_baseline:
@@ -83,9 +83,9 @@ research_baseline:
 
 progress:
   packets_total_implementation: 12
-  packets_complete: 0
+  packets_complete: 3
   packets_active: 1
-  packets_pending: 11
+  packets_pending: 8
   implementation_exit_passed: false
   note: Do not infer percentage completion from packet count; risk/size differs by packet.
 
@@ -105,8 +105,8 @@ milestones:
 packets:
   WP-000-BOOTSTRAP: complete
   WP-001-EXTRACTION: complete
-  WP-002-PLAYBACK: ready
-  WP-003-COMBINED-DOWNLOAD: pending
+  WP-002-PLAYBACK: complete
+  WP-003-COMBINED-DOWNLOAD: active
   WP-004-ADAPTIVE-1080: pending
   WP-005-DURABLE-DOWNLOAD-MANAGER: pending
   WP-006-AUTH-DATA-API: pending
@@ -171,6 +171,19 @@ evidence:
       typed PlaybackError + PlaybackStateTests (valid transitions, failure clearing,
       invalid-transition rejection, no-playable-stream selection). swift test and full
       iOS build/test pass on macOS-26 (Xcode 26.6, iPhone 17 Pro iOS-26-4).
+  - id: ev-g1-wp002-playback-coordinator
+    kind: test
+    command: xcodebuild test (FocusTubeTests) on ios-ci
+    commit: pending-ci
+    result: pending
+    detail: >
+      App-side PlayerCoordinator (AVPlayer/AVPlayerViewController) added over
+      MediaStreamFilter.selectOnlineStream with KVO status mapping into the
+      PlaybackState machine, typed PlaybackError, SwiftUI AVPlayerViewController
+      wrapper + PlayerView, deterministic PlayerCoordinatorTests (selection delegation,
+      AVPlayerItem creation for selected stream, error mapping, no-playable-stream and
+      extraction-error typed failures), and opt-in PlaybackStartSmoke (FOCUSTUBE_LIVE_SMOKE=1).
+      CI run triggered by push; evidence to be observed on Apple build plane.
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -182,10 +195,10 @@ deferred_debt:
     detail: Repository was observed public during bootstrap. No credentials are committed. Visibility does not block implementation.
 
 last_checkpoint:
-  kind: partial
-  file: .agent/checkpoints/20260820-0710-wp001-extraction.md
-  commit: d559196
-  note: WP-002 deterministic foundation merged and green; AVPlayer wiring + simulator playback-start smoke remain.
+  kind: complete
+  file: .agent/checkpoints/20260820-0900-wp002-playback.md
+  commit: pending-ci
+  note: WP-002 native online playback implemented; PlayerCoordinator + SwiftUI wrapper + deterministic tests + opt-in live smoke. CI pending observation.
   gate_crossed: none
 
 next_transition:
@@ -193,6 +206,6 @@ next_transition:
   set:
     current_milestone: M2_DURABLE_DOWNLOADS
     current_gate: G2
-    current_work_packet: WP-002-PLAYBACK
+    current_work_packet: WP-003-COMBINED-DOWNLOAD
     current_packet_status: ready
-    resume_token: IMPLEMENTATION_V1:M2:G2:WP-002
+    resume_token: IMPLEMENTATION_V1:M2:G2:WP-003
