@@ -37,6 +37,7 @@ schemes:
       targets:
         FocusTube: all
         FocusTubeUITests: [test]
+        FocusTubeTests: [test]
     run:
       config: Debug
     test:
@@ -44,6 +45,9 @@ schemes:
       gatherCoverageData: true
       targets:
         - name: FocusTubeUITests
+          parallelizable: false
+          randomExecutionOrder: false
+        - name: FocusTubeTests
           parallelizable: false
           randomExecutionOrder: false
     archive:
@@ -79,8 +83,18 @@ targets:
       - FocusTubeUITests
     dependencies:
       - target: FocusTube
-      - package: YouTubeKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quantdale.FocusTubeUITests
         TEST_TARGET_NAME: FocusTube
+
+  FocusTubeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - FocusTubeTests
+    dependencies:
+      - target: FocusTube
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quantdale.FocusTubeTests

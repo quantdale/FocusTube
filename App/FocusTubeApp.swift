@@ -1,4 +1,5 @@
 import SwiftUI
+@_exported import FocusTubeCore
 
 @main
 struct FocusTubeApp: App {
