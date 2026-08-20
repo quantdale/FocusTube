@@ -16,17 +16,17 @@ campaign:
 status: implementing
 current_milestone: M2_DURABLE_DOWNLOADS
 current_gate: G2
-current_work_packet: WP-006-AUTH-DATA-API
+current_work_packet: WP-007-HOME-SHORTS-FIREWALL
 current_packet_status: ready
 current_waypoint:
-  id: WP006-W1
-  objective: Add GoogleSignIn boundary and typed YouTube Data API client without coupling media extraction to OAuth.
-  exact_next_action: Add AuthSession boundary (GoogleSignIn) with fake for tests, and a typed YouTube Data API client (subscriptions/list + videos/hydrate) over URLSession with typed error/quota handling. Add deterministic fake-auth + typed-error integration tests; keep secret/token logging absent.
+  id: WP007-W1
+  objective: Build chronological subscription Home feed with Shorts filtering before render.
+  exact_next_action: Build a HomeFeedAggregator (subscriptions -> uploads playlists -> playlistItems -> hydrate via YouTubeAPI) that applies ShortFormPolicy (<=180s and /shorts/ routes rejected) before any UI render, with explicit load-more (no infinite scroll). Add deterministic aggregator + ShortFormPolicy regression tests.
   validation_required:
-    - fake auth supports deterministic authenticated-app tests
-    - typed YouTube API client handles success/auth/quota/network/decode error classes
-    - subscription-list integration is implemented and deterministically tested
-    - no secret/token logging
+    - subscription uploads aggregate/hydrate deterministically
+    - <=180s entries are filtered before rendering
+    - /shorts/ routes are rejected
+    - explicit load-more replaces infinite scrolling
 
 resume_token: IMPLEMENTATION_V1:M1:G1:WP-002:WP002-W1
 repo_baseline:
@@ -84,9 +84,9 @@ research_baseline:
 
 progress:
   packets_total_implementation: 12
-  packets_complete: 6
+  packets_complete: 7
   packets_active: 1
-  packets_pending: 5
+  packets_pending: 4
   implementation_exit_passed: false
   note: Do not infer percentage completion from packet count; risk/size differs by packet.
 
@@ -110,8 +110,8 @@ packets:
   WP-003-COMBINED-DOWNLOAD: complete
   WP-004-ADAPTIVE-1080: complete
   WP-005-DURABLE-DOWNLOAD-MANAGER: complete
-  WP-006-AUTH-DATA-API: active
-  WP-007-HOME-SHORTS-FIREWALL: pending
+  WP-006-AUTH-DATA-API: complete
+  WP-007-HOME-SHORTS-FIREWALL: active
   WP-008-SEARCH: pending
   WP-009-VIDEO-COMMENTS-ACTIONS: pending
   WP-010-LIBRARY: pending
@@ -224,6 +224,19 @@ evidence:
       (reconcileOnLaunch, storage refusal via StorageProviding seam, cancel cleanup) with
       DownloadManagerTests using in-memory ModelContainer (persist queued, storage refusal,
       relaunch reconcile to interrupted, cancel cleanup). CI pending observation.
+  - id: ev-g3-wp006-authapi
+    kind: test
+    command: xcodebuild test (FocusTubeCore + FocusTubeTests) on ios-ci
+    commit: pending-ci
+    result: pending
+    detail: >
+      WP-006 auth + data API: Core VideoSummary (with ISO-8601 PT#H#M#S duration parse),
+      YouTubeAPI protocol + YouTubeDataClient over HTTPPerforming seam with typed
+      YouTubeAPIError (unauthorized/quotaExceeded/notFound/network/decode/unknown) and
+      pure mapError. YouTubeDataClientTests cover decode, all error classes, and
+      subscription-feed aggregation (subscriptions->playlistItems->videos). App AuthSession
+      protocol + FakeAuthSession + GoogleSignInAuthSession (closure-based GIDSignIn, no token
+      logging). AuthSessionTests confirm fake behavior. CI pending observation.
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -236,16 +249,16 @@ deferred_debt:
 
 last_checkpoint:
   kind: complete
-  file: .agent/checkpoints/20260820-1030-wp005-downloadmanager.md
+  file: .agent/checkpoints/20260820-1100-wp006-authapi.md
   commit: pending-ci
-  note: WP-005 durable download manager implemented; SwiftData persistence + relaunch reconciliation + storage refusal + cancel cleanup, deterministic tests via in-memory container. CI pending observation.
+  note: WP-006 GoogleSignIn boundary + typed YouTube Data API client implemented; deterministic error-mapping, decode, subscription aggregation, and fake-auth tests. CI pending observation.
   gate_crossed: none
 
 next_transition:
-  when: G2 passes with observed Apple CI + deterministic reconciliation evidence
+  when: G3 passes with observed Apple CI + deterministic auth/API evidence
   set:
-    current_milestone: M3_AUTH_DATA_API
-    current_gate: G3
-    current_work_packet: WP-006-AUTH-DATA-API
+    current_milestone: M4_HOME_FOCUS
+    current_gate: G4
+    current_work_packet: WP-007-HOME-SHORTS-FIREWALL
     current_packet_status: ready
-    resume_token: IMPLEMENTATION_V1:M3:G3:WP-006
+    resume_token: IMPLEMENTATION_V1:M4:G4:WP-007

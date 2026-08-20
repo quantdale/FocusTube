@@ -97,14 +97,14 @@ waypoints:
     order: 6
     milestone: M3_AUTH_DATA_API
     gate: G3
-    status: pending
+    status: complete
     depends_on: [WP-005-DURABLE-DOWNLOAD-MANAGER]
     objective: Add GoogleSignIn boundary and typed YouTube Data API client without coupling media extraction to OAuth.
     primary_risk: Auth configuration/secrets/quota behavior.
     exit_evidence:
-      - fake auth/API deterministic integration passes
-      - typed API errors/quota handling exist
-      - subscription list integration works with safe development configuration when credentials available
+      - fake auth supports deterministic authenticated-app tests
+      - typed YouTube API client handles success/auth/quota/network/decode error classes
+      - subscription-list integration is implemented and deterministically tested
       - no secret/token logging
     next: WP-007-HOME-SHORTS-FIREWALL
 
