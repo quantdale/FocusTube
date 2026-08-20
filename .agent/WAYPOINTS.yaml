@@ -112,14 +112,14 @@ waypoints:
     order: 7
     milestone: M4_HOME_FOCUS
     gate: G4
-    status: pending
+    status: complete
     depends_on: [WP-006-AUTH-DATA-API]
     objective: Build chronological subscription Home feed with Shorts filtering before render.
     primary_risk: Short-form leakage and inefficient API fan-out.
     exit_evidence:
       - subscription uploads aggregate/hydrate deterministically
-      - <=180s entries are filtered before UI rendering
-      - /shorts/ routes are rejected
+      - <=180s entries are filtered before rendering
+      - /shorts/ routes are blocked
       - explicit load-more replaces infinite scrolling
     next: WP-008-SEARCH
 

@@ -16,17 +16,16 @@ campaign:
 status: implementing
 current_milestone: M2_DURABLE_DOWNLOADS
 current_gate: G2
-current_work_packet: WP-007-HOME-SHORTS-FIREWALL
+current_work_packet: WP-008-SEARCH
 current_packet_status: ready
 current_waypoint:
-  id: WP007-W1
-  objective: Build chronological subscription Home feed with Shorts filtering before render.
-  exact_next_action: Build a HomeFeedAggregator (subscriptions -> uploads playlists -> playlistItems -> hydrate via YouTubeAPI) that applies ShortFormPolicy (<=180s and /shorts/ routes rejected) before any UI render, with explicit load-more (no infinite scroll). Add deterministic aggregator + ShortFormPolicy regression tests.
+  id: WP008-W1
+  objective: Add quota-aware explicit-submit search with hydration and ShortFormPolicy.
+  exact_next_action: Add a SearchService over YouTubeAPI.search (explicit submit only, never per-keystroke), hydrate results via videos.list, apply ShortFormPolicy before render, and implement pagination/quota-exhaustion typed UX. Add deterministic explicit-submit + short-form filtering + quota tests.
   validation_required:
-    - subscription uploads aggregate/hydrate deterministically
-    - <=180s entries are filtered before rendering
-    - /shorts/ routes are rejected
-    - explicit load-more replaces infinite scrolling
+    - no remote search on each keystroke
+    - hydrated results are short-filtered before render
+    - pagination/quota exhaustion behavior is tested
 
 resume_token: IMPLEMENTATION_V1:M1:G1:WP-002:WP002-W1
 repo_baseline:
@@ -84,9 +83,9 @@ research_baseline:
 
 progress:
   packets_total_implementation: 12
-  packets_complete: 7
+  packets_complete: 8
   packets_active: 1
-  packets_pending: 4
+  packets_pending: 3
   implementation_exit_passed: false
   note: Do not infer percentage completion from packet count; risk/size differs by packet.
 
@@ -111,8 +110,8 @@ packets:
   WP-004-ADAPTIVE-1080: complete
   WP-005-DURABLE-DOWNLOAD-MANAGER: complete
   WP-006-AUTH-DATA-API: complete
-  WP-007-HOME-SHORTS-FIREWALL: active
-  WP-008-SEARCH: pending
+  WP-007-HOME-SHORTS-FIREWALL: complete
+  WP-008-SEARCH: active
   WP-009-VIDEO-COMMENTS-ACTIONS: pending
   WP-010-LIBRARY: pending
   WP-011-BACKGROUND-MEDIA: pending
@@ -237,6 +236,18 @@ evidence:
       subscription-feed aggregation (subscriptions->playlistItems->videos). App AuthSession
       protocol + FakeAuthSession + GoogleSignInAuthSession (closure-based GIDSignIn, no token
       logging). AuthSessionTests confirm fake behavior. CI pending observation.
+  - id: ev-g4-wp007-home
+    kind: test
+    command: xcodebuild test (FocusTubeCore + FocusTubeTests) on ios-ci
+    commit: pending-ci
+    result: pending
+    detail: >
+      WP-007 Home firewall: Core HomeFeedAggregator (fetchFeed via YouTubeAPI +
+      filterShortForm applying ShortFormPolicy <=180s) with HomeFeedAggregatorTests (short
+      removed before render, unknown-duration kept). App HomeFeedStore (@MainActor @Observable)
+      wiring fetch/loadMore with explicit load-more (no infinite scroll) and RootView Home tab
+      rendering the long-form feed. ShortFormPolicyTests already cover 180/181 boundary and
+      /shorts/ route. CI pending observation.
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -249,16 +260,16 @@ deferred_debt:
 
 last_checkpoint:
   kind: complete
-  file: .agent/checkpoints/20260820-1100-wp006-authapi.md
+  file: .agent/checkpoints/20260820-1130-wp007-home.md
   commit: pending-ci
-  note: WP-006 GoogleSignIn boundary + typed YouTube Data API client implemented; deterministic error-mapping, decode, subscription aggregation, and fake-auth tests. CI pending observation.
+  note: WP-007 Home feed aggregator + short-form firewall before render + explicit load-more; deterministic aggregator tests and HomeFeedStore wiring. CI pending observation.
   gate_crossed: none
 
 next_transition:
-  when: G3 passes with observed Apple CI + deterministic auth/API evidence
+  when: G4 passes with observed Apple CI + deterministic Home/Shorts evidence
   set:
-    current_milestone: M4_HOME_FOCUS
-    current_gate: G4
-    current_work_packet: WP-007-HOME-SHORTS-FIREWALL
+    current_milestone: M5_SEARCH
+    current_gate: G5
+    current_work_packet: WP-008-SEARCH
     current_packet_status: ready
-    resume_token: IMPLEMENTATION_V1:M4:G4:WP-007
+    resume_token: IMPLEMENTATION_V1:M5:G5:WP-008
