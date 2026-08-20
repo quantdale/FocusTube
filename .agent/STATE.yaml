@@ -16,17 +16,17 @@ campaign:
 status: implementing
 current_milestone: M1_MEDIA_VIABILITY
 current_gate: G1
-current_work_packet: WP-004-ADAPTIVE-1080
+current_work_packet: WP-005-DURABLE-DOWNLOAD-MANAGER
 current_packet_status: ready
 current_waypoint:
-  id: WP004-W1
-  objective: Prove 1080p video-only + audio download and native mux path.
-  exact_next_action: Add component selection (1080p video-only + matching audio-only) from MediaStreamFilter, per-component download via URLSession transport, and native AVFoundation export/mux into a single validated playable file (or document native-mux incompatibility via ADR review). Add deterministic selection + mux-policy tests.
+  id: WP005-W1
+  objective: Make downloads durable across suspension, interruption, relaunch, retry, and signed-URL expiration.
+  exact_next_action: Persist DownloadTask records (SwiftData metadata + filesystem) behind a DownloadManager that reconciles on relaunch, implements retry/re-resolution, refuses on insufficient storage, and cleans up on cancel/failure without orphaning. Add deterministic state-machine reconciliation tests.
   validation_required:
-    - suitable 1080p source selects compliant video/audio components
-    - components download independently
-    - native mux/export creates validated playable final media, or evidence triggers ADR review
-    - no FFmpeg/yt-dlp/remote fallback introduced
+    - explicit DownloadManager state machine tests pass
+    - background tasks reconcile on relaunch
+    - transient retry/re-resolution/storage refusal/cancel cleanup pass
+    - SwiftData record and filesystem final state reconcile safely
 
 resume_token: IMPLEMENTATION_V1:M1:G1:WP-002:WP002-W1
 repo_baseline:
@@ -84,9 +84,9 @@ research_baseline:
 
 progress:
   packets_total_implementation: 12
-  packets_complete: 4
+  packets_complete: 5
   packets_active: 1
-  packets_pending: 7
+  packets_pending: 6
   implementation_exit_passed: false
   note: Do not infer percentage completion from packet count; risk/size differs by packet.
 
@@ -108,8 +108,8 @@ packets:
   WP-001-EXTRACTION: complete
   WP-002-PLAYBACK: complete
   WP-003-COMBINED-DOWNLOAD: complete
-  WP-004-ADAPTIVE-1080: active
-  WP-005-DURABLE-DOWNLOAD-MANAGER: pending
+  WP-004-ADAPTIVE-1080: complete
+  WP-005-DURABLE-DOWNLOAD-MANAGER: active
   WP-006-AUTH-DATA-API: pending
   WP-007-HOME-SHORTS-FIREWALL: pending
   WP-008-SEARCH: pending
@@ -200,6 +200,18 @@ evidence:
       transport-failure) and OfflinePlaybackTests (local file -> AVPlayerItem, no network).
       Opt-in DownloadLiveSmoke (FOCUSTUBE_LIVE_SMOKE=1) proves combined download + offline playback.
       CI run triggered by push; evidence pending observation on Apple build plane.
+  - id: ev-g1-wp004-adaptive
+    kind: test
+    command: xcodebuild test (FocusTubeTests) on ios-ci
+    commit: pending-ci
+    result: pending
+    detail: >
+      WP-004 adaptive 1080p: Core AdaptiveSelection.select1080 (1080p video-only + audio,
+      never >1080, returns nil without both components) with AdaptiveSelectionTests; App
+      AdaptiveMuxer (native AVFoundation AVMutableComposition + AVAssetExportSession
+      passthrough) with AdaptiveMuxerTests (typed failure on non-media input, no fallback);
+      opt-in AdaptiveLiveSmoke (FOCUSTUBE_LIVE_SMOKE=1) downloads both components and muxes.
+      CI run triggered by push; evidence pending observation on Apple build plane.
 
 known_unproven:
   - YouTubeKit live local extraction has not yet passed G1 (WP-001 in progress).
@@ -212,9 +224,9 @@ deferred_debt:
 
 last_checkpoint:
   kind: complete
-  file: .agent/checkpoints/20260820-0930-wp003-download.md
+  file: .agent/checkpoints/20260820-1000-wp004-adaptive.md
   commit: pending-ci
-  note: WP-003 combined download + offline playback implemented; deterministic DownloadCoordinator + OfflinePlayback tests + opt-in live smoke. CI pending observation.
+  note: WP-004 adaptive 1080p component selection + native mux implemented; deterministic selection + mux tests + opt-in live smoke. CI pending observation.
   gate_crossed: none
 
 next_transition:
@@ -222,6 +234,6 @@ next_transition:
   set:
     current_milestone: M2_DURABLE_DOWNLOADS
     current_gate: G2
-    current_work_packet: WP-004-ADAPTIVE-1080
+    current_work_packet: WP-005-DURABLE-DOWNLOAD-MANAGER
     current_packet_status: ready
-    resume_token: IMPLEMENTATION_V1:M2:G2:WP-004
+    resume_token: IMPLEMENTATION_V1:M2:G2:WP-005
