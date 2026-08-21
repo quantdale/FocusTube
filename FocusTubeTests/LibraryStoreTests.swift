@@ -3,6 +3,7 @@ import SwiftData
 @testable import FocusTube
 import FocusTubeCore
 
+@MainActor
 final class LibraryStoreTests: XCTestCase {
     func makeContainer() throws -> ModelContainer {
         let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self])

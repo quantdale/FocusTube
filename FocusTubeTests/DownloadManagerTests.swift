@@ -41,6 +41,7 @@ private struct FakeStorage: StorageProviding {
     func availableCapacity(for url: URL) -> Int64 { capacity }
 }
 
+@MainActor
 final class DownloadManagerTests: XCTestCase {
     func makeContainer() throws -> ModelContainer {
         let schema = Schema([DownloadRecord.self])
