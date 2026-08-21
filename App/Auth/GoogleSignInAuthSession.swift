@@ -4,36 +4,48 @@ import os
 
 /// Concrete GoogleSignIn adapter. Keeps the GoogleSignIn surface behind the
 /// `AuthSession` boundary. No token is ever printed, logged, or persisted
-/// outside the secure GoogleSignIn store. Uses the stable closure-based
-/// `GIDSignIn` API wrapped in continuations.
+/// outside the secure GoogleSignIn store.
+///
+/// GoogleSignIn 9.x exposes a single argument-less `configure()` (async
+/// throws) that reads `GIDClientID` from Info.plist. Without that key the
+/// adapter stays inert — typed nil/false results instead of the unconfigured-
+/// use crash — and real sign-in steps live in PERSONAL_RELEASE_CHECKLIST.md.
 public final class GoogleSignInAuthSession: AuthSession {
-    /// Lock-protected one-time configuration state for the shared GIDSignIn
-    /// instance (RootView constructs several session instances). A plain
-    /// static var would be non-concurrency-safe global mutable state.
-    private static let configurationState =
-        OSAllocatedUnfairLock<(clientID: String?, configured: Bool)>(initialState: (nil, false))
+    /// One-shot configuration claim for the shared GIDSignIn instance
+    /// (RootView constructs several session instances). A plain static var
+    /// would be non-concurrency-safe global mutable state, hence the lock.
+    private static let configured = OSAllocatedUnfairLock<Bool>(initialState: false)
 
-    /// True only when a `GIDClientID` was found in Info.plist. Without it the
-    /// GoogleSignIn surface stays inert (typed nil/false results) instead of
-    /// crashing on unconfigured use; real sign-in requires the owner to add
-    /// the client id (see PERSONAL_RELEASE_CHECKLIST.md).
-    private let isConfigured: Bool
-
-    public init(clientID: String? = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String) {
-        let configured = Self.configurationState.withLock { state -> Bool in
-            let effectiveClientID = clientID ?? state.clientID
-            guard let effectiveClientID else { return state.configured }
-            if !state.configured {
-                // GoogleSignIn 9.x configures via GIDConfiguration.
-                let configuration = GIDConfiguration(clientID: effectiveClientID)
-                GIDSignIn.sharedInstance.configure(configuration: configuration)
-            }
-            state.clientID = effectiveClientID
-            state.configured = true
+    /// Configures the shared instance exactly once; subsequent callers await
+    /// the same outcome. Returns whether GoogleSignIn is usable.
+    private static func ensureConfigured() async -> Bool {
+        if configured.withLock({ $0 }) { return true }
+        let hasClientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") != nil
+        guard hasClientID else { return false }
+        // Claim the one-shot configure before awaiting; on failure release so
+        // a later caller can retry.
+        let claimed = configured.withLock { state -> Bool in
+            if state { return false }
+            state = true
             return true
         }
-        self.isConfigured = configured
+        guard claimed else {
+            // Another caller is configuring right now; give it a moment and
+            // report its outcome.
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            return configured.withLock { $0 }
+        }
+        do {
+            try await GIDSignIn.sharedInstance.configure()
+            return true
+        } catch {
+            os_log("GoogleSignIn configure failed: %{public}@", String(describing: error))
+            configured.withLock { $0 = false }
+            return false
+        }
     }
+
+    public init() {}
 
     public var isAuthenticated: Bool {
         get async { await restore() }
@@ -41,7 +53,7 @@ public final class GoogleSignInAuthSession: AuthSession {
 
     @discardableResult
     public func restore() async -> Bool {
-        guard isConfigured else { return false }
+        guard await Self.ensureConfigured() else { return false }
         await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
                 continuation.resume(returning: user != nil && error == nil)
@@ -50,11 +62,10 @@ public final class GoogleSignInAuthSession: AuthSession {
     }
 
     public func accessToken() async -> String? {
-        guard isConfigured else { return nil }
+        guard await Self.ensureConfigured() else { return nil }
         await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
                 if let user, error == nil {
-                    // GoogleSignIn 9.x: accessToken is non-optional GIDToken.
                     continuation.resume(returning: user.accessToken.tokenString)
                 } else {
                     continuation.resume(returning: nil)
@@ -64,7 +75,7 @@ public final class GoogleSignInAuthSession: AuthSession {
     }
 
     public func signOut() async {
-        guard isConfigured else { return }
+        guard await Self.ensureConfigured() else { return }
         GIDSignIn.sharedInstance.signOut()
     }
 }
