@@ -60,8 +60,9 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
     /// background-URL-session wake-up. Invoked once all events for that session
     /// have been delivered.
     public func setBackgroundCompletionHandler(_ handler: (() -> Void)?) {
+        let box = handler.map(CompletionHandlerBox.init)
         lock.withLock { state in
-            state.backgroundCompletionHandler = handler.map(CompletionHandlerBox.init)
+            state.backgroundCompletionHandler = box
         }
     }
 
@@ -101,12 +102,12 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
     /// Retained for explicit teardown only; relaunch reconciliation reattaches
     /// live transfers via `reattach(onEvent:)` instead of discarding them.
     public func cancelAll() {
-        var captured: [URLSessionDownloadTask] = []
-        lock.withLock { state in
-            captured = Array(state.tasksByRequest.values).flatMap { $0 }
+        let captured: [URLSessionDownloadTask] = lock.withLock { state in
+            let tasks = Array(state.tasksByRequest.values).flatMap { $0 }
             state.handlers.removeAll()
             state.componentIndex.removeAll()
             state.tasksByRequest.removeAll()
+            return tasks
         }
         for task in captured {
             task.cancel()
@@ -139,9 +140,11 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
                   let (requestID, index) = DownloadTransferIdentity.decode(task.taskDescription) else { continue }
             grouped[requestID, default: [:]][index] = task
         }
+        // `withLock`'s closure is `@Sendable`; capture an immutable copy.
+        let groups = grouped
 
         lock.withLock { state in
-            for (requestID, tasksByIndex) in grouped {
+            for (requestID, tasksByIndex) in groups {
                 for (index, task) in tasksByIndex.sorted(by: { $0.key < $1.key }) {
                     guard state.handlers[task.taskIdentifier] == nil else { continue }
                     state.handlers[task.taskIdentifier] = { event in onEvent(requestID, event) }
@@ -239,16 +242,16 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
             // URLSession deletes `location` the moment this delegate method
             // returns, while consumers process events asynchronously. Move the
             // file into durable staging synchronously, then hand off that URL.
-            var staged = transport?.stagingDirectory.appendingPathComponent("component-\(downloadTask.taskIdentifier)")
-            if let staged {
-                try? FileManager.default.removeItem(at: staged)
+            var stagedURL: URL? = transport?.stagingDirectory.appendingPathComponent("component-\(downloadTask.taskIdentifier)")
+            if let destination = stagedURL {
+                try? FileManager.default.removeItem(at: destination)
                 do {
-                    try FileManager.default.moveItem(at: location, to: staged)
+                    try FileManager.default.moveItem(at: location, to: destination)
                 } catch {
-                    staged = nil // fall back to the original URL, best effort
+                    stagedURL = nil // fall back to the original URL, best effort
                 }
             }
-            transport?.deliverCompleted(taskIdentifier: downloadTask.taskIdentifier, location: staged ?? location)
+            transport?.deliverCompleted(taskIdentifier: downloadTask.taskIdentifier, location: stagedURL ?? location)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

@@ -105,8 +105,7 @@ extension FileManager: FileManaging {
     public func replaceItem(at destination: URL, withItemAt item: URL) throws {
         _ = try replaceItemAt(destination, withItemAt: item, backupItemName: nil, options: [])
     }
-
-    public func moveItem(at item: URL, to destination: URL) throws {
-        try moveItem(at: item, to: destination)
-    }
+    // moveItem(at:to:) is intentionally NOT redeclared here: Foundation already
+    // provides it with the exact required signature, and a redeclaration would
+    // shadow it (ambiguous call sites) and recurse into itself.
 }

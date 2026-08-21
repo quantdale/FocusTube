@@ -136,7 +136,7 @@ final class DownloadService {
     /// the coordinator rejects cancel transitions out of those phases, so a
     /// final file can never be corrupted mid-write.
     public func cancel(videoID: String, quality: DownloadQuality) async {
-        await downloadManager.cancel(taskID: "\(videoID)-\(quality.rawValue)")
+        await downloadManager.cancel("\(videoID)-\(quality.rawValue)")
     }
 
     private func fail(videoID: String, title: String, quality: DownloadQuality, error: DownloadError) {
