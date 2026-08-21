@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import os
 import FocusTubeCore
 
 /// Library store: watch history / resume, saves, and the offline-media index.
@@ -7,6 +8,7 @@ import FocusTubeCore
 /// deletes files + metadata atomically (no half-deleted final state).
 @MainActor
 final class LibraryStore {
+    private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "library-store")
     private let context: ModelContext
     private let fileManager: FileManaging
 
@@ -36,7 +38,7 @@ final class LibraryStore {
                 completed: completed
             ))
         }
-        try? context.save()
+        save()
     }
 
     public func resumePosition(for videoID: String) -> Double? {
@@ -52,7 +54,7 @@ final class LibraryStore {
     public func save(videoID: String, title: String, channelTitle: String) {
         if savedItem(videoID) == nil {
             context.insert(SavedItem(videoID: videoID, title: title, channelTitle: channelTitle, savedAt: Date()))
-            try? context.save()
+            save()
         }
     }
 
@@ -74,7 +76,7 @@ final class LibraryStore {
         } else {
             context.insert(media)
         }
-        try? context.save()
+        save()
     }
 
     public var downloaded: [DownloadedMedia] {
@@ -85,8 +87,9 @@ final class LibraryStore {
     public func reconcileDownloads() {
         for item in downloaded where !fileManager.fileExists(at: item.fileURL) {
             context.delete(item)
+            pruneEmptyAncestors(of: item.fileURL)
         }
-        try? context.save()
+        save()
     }
 
     /// Atomically removes both the file and its metadata. A missing file is not
@@ -94,8 +97,9 @@ final class LibraryStore {
     public func deleteDownloadedMedia(id: String) {
         guard let item = downloaded.first(where: { $0.id == id }) else { return }
         try? fileManager.removeItem(at: item.fileURL)
+        pruneEmptyAncestors(of: item.fileURL)
         context.delete(item)
-        try? context.save()
+        save()
     }
 
     // MARK: - Helpers
@@ -106,5 +110,31 @@ final class LibraryStore {
 
     private func savedItem(_ videoID: String) -> SavedItem? {
         saved.first { $0.videoID == videoID }
+    }
+
+    // MARK: - Persistence / filesystem hygiene
+
+    /// Persists pending changes; a failed save is logged loudly instead of
+    /// silently dropped, so metadata loss is diagnosable.
+    private func save() {
+        do {
+            try context.save()
+        } catch {
+            Self.logger.fault("SwiftData save failed (\(error.localizedDescription, privacy: .public))")
+        }
+    }
+
+    /// Removes the quality and video directories when a delete leaves them
+    /// empty, so the per-quality layout never accumulates hollow directories
+    /// under FocusTube/Media (bounded to two ancestor levels).
+    private func pruneEmptyAncestors(of fileURL: URL) {
+        guard fileURL.path.contains("/FocusTube/Media/") else { return }
+        var directory = fileURL.deletingLastPathComponent()
+        for _ in 0..<2 {
+            let remaining = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? ["nonempty"]
+            guard remaining.isEmpty else { return }
+            try? FileManager.default.removeItem(at: directory)
+            directory.deleteLastPathComponent()
+        }
     }
 }

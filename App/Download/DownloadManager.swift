@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import os
 import FocusTubeCore
 import AVFoundation
 
@@ -13,6 +14,7 @@ import AVFoundation
 @Observable
 public final class DownloadManager {
     public private(set) var liveTasks: [DownloadTask] = []
+    private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "download-manager")
 
     /// Invoked on the main actor when a download reaches `.completed` through
     /// the reattached-background path. RootView wires this to library
@@ -129,7 +131,7 @@ public final class DownloadManager {
                 record.apply(task)
             }
         }
-        try? context.save()
+        saveContext()
 
         for record in records {
             guard let info = recoveredByID[record.id] else { continue }
@@ -225,7 +227,7 @@ public final class DownloadManager {
                 state: DownloadState(status: .failed, error: .storageRefused)
             )
             context.insert(DownloadRecord(task: task))
-            try? context.save()
+            saveContext()
             return task
         }
 
@@ -237,7 +239,7 @@ public final class DownloadManager {
         } else {
             context.insert(DownloadRecord(task: task))
         }
-        try? context.save()
+        saveContext()
         return task
     }
 
@@ -335,6 +337,14 @@ public final class DownloadManager {
         liveTasks.removeAll { $0.id == taskID }
     }
 
+    private func saveContext() {
+        do {
+            try context.save()
+        } catch {
+            Self.logger.fault("SwiftData save failed (\(error.localizedDescription, privacy: .public)) for task state")
+        }
+    }
+
     // MARK: - Helpers
 
     private func fetchRecords() -> [DownloadRecord] {
@@ -349,7 +359,7 @@ public final class DownloadManager {
         guard let record = fetchRecords().first(where: { $0.id == taskID }) else { return }
         guard let task = await coordinator.task(taskID) else { return }
         record.apply(task)
-        try? context.save()
+        saveContext()
     }
 
     /// Projects a coordinator event's resulting task into the UI and persists
