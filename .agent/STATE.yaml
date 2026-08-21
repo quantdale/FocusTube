@@ -20,41 +20,47 @@ campaign:
 
 status: physical_device_validation_in_progress
 current_milestone: DEVICE_VALIDATION
-current_gate: DV-0
-current_work_packet: DV-0-RELEASE-BASELINE
-current_packet_status: in_progress
+current_gate: DV-0_PASSED
+current_work_packet: DV-3..DV-7-DEVICE-EVIDENCE
+current_packet_status: awaiting_owner_device_evidence
 current_waypoint:
-  id: PERSONAL_RELEASE_CANDIDATE
+  id: DEVICE_VALIDATION_BATCH_A_PENDING
   objective: >
-    INTEGRATION_COMPLETION_V1 + HARDENING_V1 complete with observed evidence,
-    and the deferred Medium/Low backlog now fully closed on top. On commit
-    03ce6f6: Core Tests run 32501838807 green; ios-ci run 32501839603 fully
-    green — Build (Debug), app-hosted unit tests (Gate unit=0) and LaunchTests
-    UI leg (Gate ui=0). HB-011 test gaps (malformed payloads per endpoint,
-    store error paths incl. stale-response generation guards, commentsDisabled
-    403 envelope) and all remaining HB-012 Low items (event-chain retention/
-    allocation, removeTarget(nil) blast radius, try! in container fallback,
-    silent decode failures) are implemented, tested, and dispositioned in
-    .agent/HARDENING_BACKLOG.md. No open Medium/Low items remain.
+    DV-0 baseline verified and all agent-actionable release blockers fixed
+    with green CI on 5a90b74. OAuth/signing plumbing is fully automated:
+    Secrets.local.xcconfig now flows GOOGLE_CLIENT_ID/GOOGLE_REVERSED_CLIENT_ID/
+    DEVELOPMENT_TEAM into the app (GIDClientID, CFBundleURLTypes, signing);
+    the app delegate routes the OAuth redirect; Home offers interactive
+    sign-in requesting youtube.readonly + youtube.force-ssl; an opt-in
+    live_smoke workflow_dispatch runs real-YouTube extraction/download/mux
+    smokes on CI.
   exact_next_action: >
-    Owner-only steps remain, all listed in PERSONAL_RELEASE_CHECKLIST.md:
-    Apple signing/install on the physical iPhone, real Google OAuth
-    configuration, and device-only verifications (PiP, background audio,
-    lock-screen/Bluetooth controls, genuine suspension download). No further
-    agent implementation work is pending.
+    Owner completes Part 0 setup (Apple team + Google Cloud iOS OAuth client +
+    YouTube Data API enablement + fill Config/Secrets.local.xcconfig), then
+    executes DEVICE_VALIDATION_BATCH_A.md items A1-A14 on the physical iPhone
+    and returns per-item evidence; agent diagnoses any failures (DV-8),
+    fixes, re-runs CI, and re-tests affected items until gates pass; then
+    triggers one live-smoke dispatch for real extraction evidence and writes
+    the final validation report (DV-9).
   validation_required:
-    - none for agent scope; device/credential checks deferred to owner
+    - device evidence A1-A14 (owner)
+    - live smoke run result (one manual dispatch)
+    - no Critical/High defect open at close
 
-resume_token: PERSONAL_RELEASE_CANDIDATE:03ce6f6
+resume_token: DEVICE_VALIDATION_V1:5a90b74
 repo_baseline:
   branch: main
-  commit: 03ce6f6
+  commit: 5a90b74
   note: >
-    Hardening backlog closure (HB-011 + HB-012 remainder) validated on the same
-    commit for both planes: Core Tests run 32501838807 success; ios-ci run
-    32501839603 success (job 96833085436 — Test FocusTubeCore, Build Debug,
-    Unit tests, UI tests, Gate all green). Backlog fully dispositioned; no open
-    Medium/Low items remain.
+    DEVICE_VALIDATION_V1 DV-0/DV-1/DV-2 complete on 5a90b74. DV-0 audit found
+    four High release blockers (dead xcconfig chain, missing GIDClientID/
+    CFBundleURLTypes, no OAuth URL routing, no interactive sign-in/YouTube
+    scopes); all fixed in 6a0d48e with a Swift 6 MainActor isolation follow-up
+    in 5a90b74 after the first run went red. Observed green on 5a90b74:
+    Core Tests run 32531796101; iOS CI run 32531796047 (job 96925106175 —
+    Build, Unit tests, UI tests, Gate all success). Live-smoke leg wired as
+    opt-in workflow_dispatch input (7a651ee). Secrets scan clean. Owner
+    handoff prepared in DEVICE_VALIDATION_BATCH_A.md.
 
 continuation_policy:
   continue_after_packet: true
@@ -146,7 +152,13 @@ packets:
 
 blockers: []
 
-human_inputs_pending: []
+human_inputs_pending:
+  - id: device-batch-a
+    detail: >
+      Owner Part 0 setup (Apple team, Google Cloud iOS OAuth client, YouTube
+      Data API enablement, Config/Secrets.local.xcconfig values) plus
+      DEVICE_VALIDATION_BATCH_A.md items A1-A14 on the physical iPhone with
+      per-item pass/fail evidence. See current_waypoint.exact_next_action.
 
 physical_device_checks_deferred:
   - PiP real-device behavior
