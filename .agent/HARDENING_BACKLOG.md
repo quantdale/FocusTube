@@ -60,6 +60,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: observable state may briefly show older results.
 - Suggested hardening action: generation token or task cancellation per load.
 - Blocks implementation: no
+- Resolved 2026-08-21: monotonic loadGeneration in both stores; superseded responses no longer mutate results/error, and isLoading ownership follows the newest load.
 
 ### HB-005 — Now Playing metadata never published
 - Severity: Medium

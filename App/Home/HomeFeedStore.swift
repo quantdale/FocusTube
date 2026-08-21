@@ -16,6 +16,9 @@ public final class HomeFeedStore {
     private let auth: AuthSession
     private let api: YouTubeAPI
     private let aggregator: HomeFeedAggregator
+    /// Monotonic token for in-flight fetches: a response may only mutate state
+    /// while no newer load/load-more has started (HB-004 stale-response race).
+    private var loadGeneration = 0
 
     public init(auth: AuthSession, api: YouTubeAPI) {
         self.auth = auth
@@ -45,10 +48,17 @@ public final class HomeFeedStore {
             return
         }
         isAuthenticated = true
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            // Only the newest fetch owns the spinner; a superseded response
+            // must not clear it out from under the in-flight one.
+            if generation == loadGeneration { isLoading = false }
+        }
         do {
             let page = try await aggregator.fetchFeed(accessToken: token, pageToken: pageToken)
+            guard generation == loadGeneration else { return }
             if replacing {
                 videos = page.videos
             } else {
@@ -57,8 +67,10 @@ public final class HomeFeedStore {
             nextPageToken = page.nextPageToken
             error = nil
         } catch let err as YouTubeAPIError {
+            guard generation == loadGeneration else { return }
             error = err
         } catch {
+            guard generation == loadGeneration else { return }
             self.error = .unknown(status: -1)
         }
     }
