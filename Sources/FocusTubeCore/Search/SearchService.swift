@@ -16,7 +16,7 @@ public struct SearchResultPage: Sendable {
 /// Quota-aware, explicit-submit search. Never performs a remote request except
 /// when the caller explicitly submits a query. Results are hydrated (durations
 /// known) and passed through `ShortFormPolicy` before any UI render.
-public struct SearchService {
+public struct SearchService: Sendable {
     private let api: YouTubeAPI
 
     public init(api: YouTubeAPI) {

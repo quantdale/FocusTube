@@ -2,7 +2,7 @@ import Foundation
 
 /// Supported authenticated account actions. Each is a single typed call over the
 /// `YouTubeAPI` boundary so mutation logic stays testable and decoupled from UI.
-public struct AccountActionsService {
+public struct AccountActionsService: Sendable {
     private let api: YouTubeAPI
 
     public init(api: YouTubeAPI) {

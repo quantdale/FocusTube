@@ -16,7 +16,7 @@ public struct HomeFeedPage: Sendable {
 /// firewall (`ShortFormPolicy`) *before* any UI render. There is no Shorts
 /// surface, route, or implicit autoplay path; load-more is an explicit caller
 /// decision, never automatic infinite pagination.
-public struct HomeFeedAggregator {
+public struct HomeFeedAggregator: Sendable {
     private let api: YouTubeAPI
 
     public init(api: YouTubeAPI) {
