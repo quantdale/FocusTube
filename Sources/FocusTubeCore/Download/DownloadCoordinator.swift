@@ -112,6 +112,9 @@ public actor DownloadCoordinator {
         var updated = task
         updated.apply(DownloadState(status: .failed, error: .cancelled))
         tasks[taskID] = updated
+        for url in (componentTempLocations[taskID] ?? [:]).values {
+            try? fileManager.removeItem(at: url)
+        }
         componentTempLocations[taskID] = nil
         componentProgress[taskID] = nil
         try? fileManager.removeItem(at: task.destinationURL)
@@ -150,6 +153,11 @@ public actor DownloadCoordinator {
             state.error = error
             task.apply(state)
             tasks[taskID] = task
+            // Remove any component temp files staged for this job so failed
+            // attempts never orphan bytes in the incomplete-work area.
+            for url in (componentTempLocations[taskID] ?? [:]).values {
+                try? fileManager.removeItem(at: url)
+            }
             componentTempLocations[taskID] = nil
             componentProgress[taskID] = nil
         }

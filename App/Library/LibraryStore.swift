@@ -6,7 +6,7 @@ import FocusTubeCore
 /// Persists across relaunch, reconciles the file index with the filesystem, and
 /// deletes files + metadata atomically (no half-deleted final state).
 @MainActor
-public final class LibraryStore {
+final class LibraryStore {
     private let context: ModelContext
     private let fileManager: FileManaging
 
@@ -63,7 +63,17 @@ public final class LibraryStore {
     // MARK: - Downloaded media index
 
     public func addDownloadedMedia(_ media: DownloadedMedia) {
-        context.insert(media)
+        // Upsert by the unique id: re-downloading the same video+quality must
+        // refresh the entry, never duplicate it.
+        if let existing = downloaded.first(where: { $0.id == media.id }) {
+            existing.title = media.title
+            existing.resolution = media.resolution
+            existing.fileURL = media.fileURL
+            existing.sizeBytes = media.sizeBytes
+            existing.createdAt = media.createdAt
+        } else {
+            context.insert(media)
+        }
         try? context.save()
     }
 

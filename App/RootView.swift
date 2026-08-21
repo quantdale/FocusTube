@@ -33,6 +33,22 @@ struct RootView: View {
         }
         let library = LibraryStore(context: ModelContext(container))
         let manager = DownloadManager(transport: BackgroundDownloadTransport.shared, context: ModelContext(container))
+        // Transfers that finish via the relaunched background session bypass
+        // DownloadService; register them so offline media is never orphaned.
+        // The library upserts by id, so this stays idempotent with in-app
+        // registration.
+        manager.onMediaFinalized = { [library] task in
+            let size = (try? task.destinationURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            library.addDownloadedMedia(DownloadedMedia(
+                id: task.id,
+                videoID: task.videoID,
+                title: task.videoID,
+                resolution: task.resolution,
+                fileURL: task.destinationURL,
+                sizeBytes: Int64(size),
+                createdAt: Date()
+            ))
+        }
         let player = PlayerCoordinator()
         _libraryStore = State(initialValue: library)
         _downloadManager = State(initialValue: manager)

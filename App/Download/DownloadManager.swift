@@ -14,6 +14,11 @@ import AVFoundation
 public final class DownloadManager {
     public private(set) var liveTasks: [DownloadTask] = []
 
+    /// Invoked on the main actor when a download reaches `.completed` through
+    /// the reattached-background path. RootView wires this to library
+    /// registration so offline media finished outside the app is not orphaned.
+    public var onMediaFinalized: (@MainActor (DownloadTask) -> Void)?
+
     private let coordinator: DownloadCoordinator
     private let context: ModelContext
     private let storage: StorageProviding
@@ -25,8 +30,8 @@ public final class DownloadManager {
         transport: DownloadTransport,
         context: ModelContext,
         storage: StorageProviding = VolumeStorage(),
-        mediaDirectory: URL = Self.defaultMediaDirectory(),
-        incompleteDirectory: URL = Self.defaultIncompleteDirectory()
+        mediaDirectory: URL = DownloadManager.defaultMediaDirectory(),
+        incompleteDirectory: URL = DownloadManager.defaultIncompleteDirectory()
     ) {
         self.context = context
         self.storage = storage
@@ -267,5 +272,11 @@ public final class DownloadManager {
         guard let task = await coordinator.task(taskID) else { return }
         applyLive(task)
         await syncRecord(taskID)
+        // A transfer that finishes via the relaunched background session never
+        // passes through DownloadService, so register it here; the library
+        // upserts by id so in-app registration stays idempotent.
+        if task.state.status == .completed {
+            onMediaFinalized?(task)
+        }
     }
 }

@@ -31,10 +31,15 @@ public final class PlayerCoordinator {
     private var timeObserver: Any?
     private var itemObservation: NSKeyValueObservation?
     private var timeControlObservation: NSKeyValueObservation?
+    private var waitingSince: Date?
+    /// How long `waitingToPlayAtSpecifiedRate` may persist after `.ready`
+    /// before playback is declared stalled. Injectable for deterministic tests.
+    private let stallTimeout: TimeInterval
     private let extractor: MediaExtracting
 
-    public init(extractor: MediaExtracting = YouTubeKitMediaExtractor()) {
+    public init(extractor: MediaExtracting = YouTubeKitMediaExtractor(), stallTimeout: TimeInterval = 10) {
         self.extractor = extractor
+        self.stallTimeout = stallTimeout
         self.state = PlaybackState()
         self.player = AVPlayer()
         self.playerViewController = AVPlayerViewController()
@@ -193,6 +198,7 @@ public final class PlayerCoordinator {
     private func handle(timeControlStatus: AVPlayer.TimeControlStatus) {
         switch timeControlStatus {
         case .playing:
+            waitingSince = nil
             if state.status == .ready {
                 try? state.transition(to: .playing)
             }
@@ -201,9 +207,14 @@ public final class PlayerCoordinator {
                 try? state.transition(to: .paused)
             }
         case .waitingToPlayAtSpecifiedRate:
+            // Buffering right after ready is normal; only a sustained wait
+            // (no `playing` transition within the stall timeout) is a stall.
             if state.status == .ready {
-                // Stalled while buffering after ready; treat as stalled failure.
-                state = PlaybackState(status: .failed, error: .stalled)
+                if waitingSince == nil { waitingSince = Date() }
+                if Date().timeIntervalSince(waitingSince!) > stallTimeout {
+                    waitingSince = nil
+                    state = PlaybackState(status: .failed, error: .stalled)
+                }
             }
         @unknown default:
             break

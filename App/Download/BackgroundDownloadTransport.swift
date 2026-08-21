@@ -33,6 +33,10 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
     private let session: URLSession
     private let bridge: Bridge
     private let lock = OSAllocatedUnfairLock<State>(initialState: State())
+    /// Durable staging area for finished component files. URLSession deletes
+    /// the delegate's temp URL as soon as `didFinishDownloadingTo` returns, so
+    /// the file MUST be moved here synchronously before async consumers run.
+    private let stagingDirectory: URL
 
     public override init() {
         let config = URLSessionConfiguration.background(withIdentifier: Self.sessionIdentifier)
@@ -40,6 +44,10 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         config.isDiscretionary = false
         config.allowsCellularAccess = true
         config.httpMaximumConnectionsPerHost = 4
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let staging = base.appendingPathComponent("FocusTube").appendingPathComponent("Incomplete")
+        try? FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        self.stagingDirectory = staging
         let bridge = Bridge()
         let session = URLSession(configuration: config, delegate: bridge, delegateQueue: nil)
         self.session = session
@@ -187,13 +195,21 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         boxed?.handler()
     }
 
-    fileprivate func clearRequest(_ requestID: String) {
+    /// Removes only the finished task from its request group so the sibling
+    /// components of an adaptive download stay cancellable.
+    fileprivate func clearRequest(_ requestID: String, taskIdentifier: Int) {
         lock.withLock { state in
-            state.tasksByRequest.removeValue(forKey: requestID)
+            guard var tasks = state.tasksByRequest[requestID] else { return }
+            tasks.removeAll { $0.taskIdentifier == taskIdentifier }
+            if tasks.isEmpty {
+                state.tasksByRequest[requestID] = nil
+            } else {
+                state.tasksByRequest[requestID] = tasks
+            }
         }
     }
 
-    private class Bridge: NSObject, URLSessionDownloadDelegate {
+    private final class Bridge: NSObject, URLSessionDownloadDelegate {
         weak var transport: BackgroundDownloadTransport?
 
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
@@ -213,7 +229,19 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
                 )
                 return
             }
-            transport?.deliverCompleted(taskIdentifier: downloadTask.taskIdentifier, location: location)
+            // URLSession deletes `location` the moment this delegate method
+            // returns, while consumers process events asynchronously. Move the
+            // file into durable staging synchronously, then hand off that URL.
+            var staged = transport?.stagingDirectory.appendingPathComponent("component-\(downloadTask.taskIdentifier)")
+            if let staged {
+                try? FileManager.default.removeItem(at: staged)
+                do {
+                    try FileManager.default.moveItem(at: location, to: staged)
+                } catch {
+                    staged = nil // fall back to the original URL, best effort
+                }
+            }
+            transport?.deliverCompleted(taskIdentifier: downloadTask.taskIdentifier, location: staged ?? location)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -222,7 +250,7 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
             if !cancelled, error != nil {
                 transport?.deliverFailed(taskIdentifier: task.taskIdentifier)
             }
-            transport?.clearRequest(task.taskDescription ?? "")
+            transport?.clearRequest(task.taskDescription ?? "", taskIdentifier: task.taskIdentifier)
         }
 
         func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
