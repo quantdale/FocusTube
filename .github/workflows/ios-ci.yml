@@ -149,6 +149,10 @@ jobs:
           grep -E "error:" Artifacts/xcodebuild*.log 2>/dev/null | head -20 | while IFS= read -r line; do
             echo "::error::$line"
           done || true
+          echo "--- XCTest assertion failures ---"
+          grep -E "error: -\[" Artifacts/xcodebuild-unit.log 2>/dev/null | head -25 | while IFS= read -r line; do
+            echo "::error::$line"
+          done || true
 
       # continue-on-error on the test steps exists only to guarantee both bundles
       # always run and diagnostics publish; this gate restores an honest verdict.
