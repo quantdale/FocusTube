@@ -79,6 +79,9 @@ public actor DownloadCoordinator {
         tasks[request.id] = task
         componentTempLocations[request.id] = [:]
         componentProgress[request.id] = [:]
+        // A fresh (re-)enqueue starts a clean event chain; any straggler from a
+        // previous generation keeps its own captured chain and cannot interleave.
+        eventChains[request.id] = nil
         return task
     }
 
@@ -119,10 +122,7 @@ public actor DownloadCoordinator {
         )
         await transport.begin(request) { [self] event in
             Task { [self] in
-                await self.handle(event, taskID: taskID)
-                if let current = await self.task(taskID) {
-                    onUpdate?(current)
-                }
+                await self.handle(event, taskID: taskID, onUpdate: onUpdate)
             }
         }
     }
@@ -140,11 +140,36 @@ public actor DownloadCoordinator {
         componentTempLocations[taskID] = nil
         componentProgress[taskID] = nil
         try? fileManager.removeItem(at: task.destinationURL)
+        eventChains[taskID] = nil
     }
 
     // MARK: - Event handling
 
-    public func handle(_ event: DownloadEvent, taskID: String) async {
+    /// Per-task serialization chain: each event's processing Task awaits the
+    /// previous one, so events apply strictly in arrival order no matter which
+    /// spawning Task the actor schedules first (HB-006). Without this, a late
+    /// `.failed` could clobber a settled `.completed` state.
+    private var eventChains: [String: Task<Void, Never>] = [:]
+
+    public func handle(
+        _ event: DownloadEvent,
+        taskID: String,
+        onUpdate: (@Sendable (DownloadTask) -> Void)? = nil
+    ) async {
+        let previous = eventChains[taskID]
+        let current = Task { [weak self] in
+            await previous?.value
+            await self?.process(event, taskID: taskID, onUpdate: onUpdate)
+        }
+        eventChains[taskID] = current
+        _ = await current.value
+    }
+
+    private func process(
+        _ event: DownloadEvent,
+        taskID: String,
+        onUpdate: (@Sendable (DownloadTask) -> Void)?
+    ) async {
         guard var task = tasks[taskID] else { return }
         switch event {
         case let .progress(component, bytes, total):
@@ -182,6 +207,9 @@ public actor DownloadCoordinator {
             }
             componentTempLocations[taskID] = nil
             componentProgress[taskID] = nil
+        }
+        if let updated = tasks[taskID] {
+            onUpdate?(updated)
         }
     }
 

@@ -80,6 +80,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: a late progress/completed Task can overtake a failed event; benign today because transitions guard, but ordering is not guaranteed.
 - Suggested hardening action: serialize events per task (AsyncStream mailbox).
 - Blocks implementation: no
+- Resolved 2026-08-21: DownloadCoordinator.handle chains each event's processing Task onto the previous one per taskID, so events apply strictly in arrival order; begin()'s onUpdate fires from the serialized path, and chains reset on enqueue/cancel.
 
 ### HB-007 — RootView.init side effects run on every struct evaluation
 - Severity: Medium
