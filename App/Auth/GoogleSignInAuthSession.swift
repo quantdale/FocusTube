@@ -64,6 +64,8 @@ public final class GoogleSignInAuthSession: AuthSession {
     /// SwiftUI callers stay UIKit-free. Returns whether a user is signed in
     /// afterwards; false when unconfigured, no scene is available, or the user
     /// cancelled. Tokens remain inside the GoogleSignIn store.
+    /// MainActor-isolated because it resolves the presenting UI.
+    @MainActor
     public func signIn() async -> Bool {
         guard await Self.ensureConfigured() else { return false }
         guard let presenting = Self.topPresentingViewController() else { return false }
@@ -78,6 +80,7 @@ public final class GoogleSignInAuthSession: AuthSession {
         }
     }
 
+    @MainActor
     private static func topPresentingViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let keyWindow = scenes.flatMap(\.windows).first { $0.isKeyWindow }
