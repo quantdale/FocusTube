@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import os
 import FocusTubeCore
 
 /// SwiftData-persisted download record. Mirrors the deterministic `DownloadTask`
@@ -32,8 +33,16 @@ final class DownloadRecord {
         self.componentsData = (try? JSONEncoder().encode(task.components)) ?? Data()
     }
 
+    /// Degrades to an empty list on an undecodable payload (e.g. schema drift
+    /// after an app update), but logs the failure instead of swallowing it.
+    /// The payload itself is never logged — component JSON contains source URLs.
     var components: [DownloadComponent] {
-        (try? JSONDecoder().decode([DownloadComponent].self, from: componentsData)) ?? []
+        do {
+            return try JSONDecoder().decode([DownloadComponent].self, from: componentsData)
+        } catch {
+            Self.logger.error("Components decode failed (\(error.localizedDescription, privacy: .public)); treating as empty")
+            return []
+        }
     }
 
     var downloadTask: DownloadTask {
@@ -59,4 +68,6 @@ final class DownloadRecord {
         self.bytesDownloaded = task.state.bytesDownloaded
         self.totalBytes = task.state.totalBytes
     }
+
+    private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "download-record")
 }

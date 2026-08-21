@@ -20,16 +20,21 @@ final class AppDependencies {
         let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self, DownloadRecord.self])
         // Resilience over durability: a corrupted/unopenable store must not crash
         // the app at launch, so fall back to an in-memory container (personal-use
-        // tradeoff: library metadata then lasts only this session). The fallback
-        // force-try cannot fail for disk reasons — in-memory storage does no I/O.
+        // tradeoff: library metadata then lasts only this session). In-memory
+        // storage does no I/O, so if even that fallback fails the model itself is
+        // unusable and aborting with context is the deliberate last resort.
         let container: ModelContainer
         do {
             let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
             container = try ModelContainer(for: schema, configurations: [config])
         } catch {
             Self.logger.fault("Persistent ModelContainer failed to open (\(error.localizedDescription, privacy: .public)); using in-memory store")
-            let memoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            container = try! ModelContainer(for: schema, configurations: [memoryConfig])
+            do {
+                let memoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+                container = try ModelContainer(for: schema, configurations: [memoryConfig])
+            } catch let memoryError {
+                fatalError("In-memory ModelContainer fallback failed: \(memoryError)")
+            }
         }
         let library = LibraryStore(context: ModelContext(container))
         let manager = DownloadManager(transport: BackgroundDownloadTransport.shared, context: ModelContext(container))

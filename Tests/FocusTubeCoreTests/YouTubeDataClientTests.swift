@@ -77,6 +77,89 @@ final class YouTubeDataClientTests: XCTestCase {
         catch { XCTFail("unexpected error: \(error)") }
     }
 
+    // HB-011a: every endpoint that decodes a success body must surface
+    // malformed payloads as the typed `.decode` error, never crash or
+    // mis-decode into partial results.
+    private enum DecodingEndpoint: String {
+        case subscriptions
+        case playlistItems
+        case videos
+        case search
+        case commentThreads
+    }
+
+    func testMalformedPayloadsMapToDecodeErrorOnEveryDecodingEndpoint() async {
+        for entry in Self.malformedPayloadCases {
+            let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: Data(entry.payload.utf8), statusCode: 200))
+            do {
+                _ = try await Self.call(entry.endpoint, on: client)
+                XCTFail("\(entry.endpoint.rawValue) [\(entry.category)]: expected .decode, got success")
+            } catch let error as YouTubeAPIError {
+                XCTAssertEqual(error, .decode, "\(entry.endpoint.rawValue) [\(entry.category)]")
+            } catch {
+                XCTFail("\(entry.endpoint.rawValue) [\(entry.category)]: unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testMalformedErrorBodyFallsBackToStatusMapping() async {
+        // A non-2xx body that fails error-envelope decoding must map by status
+        // code alone, never crash or leak decoder internals.
+        let bodies: [(category: String, body: String)] = [
+            ("truncated", "{\"error\":{\"errors\":[{\"reason\":\"comm"),
+            ("wrong-typed", "{\"error\":{\"errors\":\"quota\"}}"),
+            ("missing-errors", "{\"error\":{\"message\":\"blocked\"}}"),
+            ("envelope-array", "[]")
+        ]
+        for entry in bodies {
+            let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: Data(entry.body.utf8), statusCode: 403))
+            do {
+                _ = try await client.fetchVideoDetails(ids: ["v1"], accessToken: "tok")
+                XCTFail("\(entry.category): expected .quotaExceeded, got success")
+            } catch let error as YouTubeAPIError {
+                XCTAssertEqual(error, .quotaExceeded, entry.category)
+            } catch {
+                XCTFail("\(entry.category): unexpected error: \(error)")
+            }
+        }
+    }
+
+    // HB-011a: the documented detection condition — HTTP 403 whose error
+    // envelope carries reason "commentsDisabled" — must surface as the typed
+    // outcome through CommentsService, not as a generic quota failure.
+    func testCommentsDisabled403EnvelopeSurfacesTypedErrorThroughCommentsService() async {
+        let envelope = """
+        {"error":{"code":403,"message":"The video identified by the videoId parameter has disabled comments.","errors":[{"message":"The video identified by the videoId parameter has disabled comments.","domain":"youtube.commentThread","reason":"commentsDisabled","location":"videoId","locationType":"parameter"}]}}
+        """.data(using: .utf8)!
+        let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: envelope, statusCode: 403))
+        let service = CommentsService(api: client)
+        do {
+            _ = try await service.comments(videoID: "v1", accessToken: "tok")
+            XCTFail()
+        } catch let error as YouTubeAPIError {
+            XCTAssertEqual(error, .commentsDisabled)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+
+    func testQuota403EnvelopeWithoutCommentsDisabledReasonStaysGeneric() async {
+        let envelope = """
+        {"error":{"code":403,"message":"Quota exceeded.","errors":[{"message":"quota","domain":"youtube.global","reason":"quotaExceeded","location":"","locationType":""}]}}
+        """.data(using: .utf8)!
+        let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: envelope, statusCode: 403))
+        let service = CommentsService(api: client)
+        do {
+            _ = try await service.comments(videoID: "v1", accessToken: "tok")
+            XCTFail()
+        } catch let error as YouTubeAPIError {
+            XCTAssertEqual(error, .quotaExceeded)
+            XCTAssertNotEqual(error, .commentsDisabled)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+
     func testSubscriptionFeedAggregates() async throws {
         let subsJSON = """
         {"items":[{"contentDetails":{"relatedPlaylists":{"uploads":"PL1"}}}]}
@@ -152,6 +235,75 @@ final class YouTubeDataClientTests: XCTestCase {
         XCTAssertEqual(idLists[1].count, 11)
         XCTAssertEqual(idLists.flatMap { $0 }, ids)
         XCTAssertEqual(feed.videos.count, 122) // each scripted response decodes all 61 items
+    }
+
+    private static let malformedPayloadCases: [(endpoint: DecodingEndpoint, category: String, payload: String)] = [
+        (.subscriptions, "truncated", """
+        {"items":[{"contentDetails":{"relatedPlaylists":{"uploads":"PL1"
+        """),
+        (.subscriptions, "wrong-typed-field", """
+        {"items":[{"contentDetails":{"relatedPlaylists":{"uploads":123}}}]}
+        """),
+        (.subscriptions, "missing-required-field", """
+        {"items":[{"contentDetails":{"relatedPlaylists":{}}}]}
+        """),
+        (.subscriptions, "unexpected-envelope", "[]"),
+        (.playlistItems, "truncated", """
+        {"items":[{"contentDetails":{"videoId":"v1"
+        """),
+        (.playlistItems, "wrong-typed-field", """
+        {"items":[{"contentDetails":{"videoId":42}}]}
+        """),
+        (.playlistItems, "missing-required-field", """
+        {"items":[{"contentDetails":{}}]}
+        """),
+        (.playlistItems, "unexpected-envelope", """
+        {"items":null}
+        """),
+        (.videos, "truncated", """
+        {"items":[{"id":"v1","snippet":{"title":"T"
+        """),
+        (.videos, "wrong-typed-field", """
+        {"items":[{"id":"v1","snippet":{"title":"T","channelTitle":"C","publishedAt":"2024-01-01T00:00:00Z","description":"d","thumbnails":{"medium":{"url":"https://t/x.jpg"}}},"contentDetails":{"duration":3723}}]}
+        """),
+        (.videos, "missing-required-field", """
+        {"items":[{"id":"v1","contentDetails":{"duration":"PT1M"}}]}
+        """),
+        (.videos, "unexpected-envelope", "null"),
+        (.search, "truncated", """
+        {"items":[{"id":{"videoId":"v1"
+        """),
+        (.search, "wrong-typed-field", """
+        {"items":[{"id":"not-an-object"}]}
+        """),
+        (.search, "missing-required-field", """
+        {"items":[{"videoId":"v1"}]}
+        """),
+        (.search, "unexpected-envelope", """
+        {"unexpected":true}
+        """),
+        (.commentThreads, "truncated", """
+        {"items":[{"id":"t1","snippet":{"topLevelComment":{"id":"c1"
+        """),
+        (.commentThreads, "wrong-typed-field", """
+        {"items":[{"id":"t1","snippet":{"topLevelComment":{"id":"c1","snippet":{"authorDisplayName":5,"textDisplay":"T","publishedAt":"2024-01-01T00:00:00Z"}},"totalReplyCount":0}}]}
+        """),
+        (.commentThreads, "missing-required-field", """
+        {"items":[{"id":"t1","snippet":{"topLevelComment":{"id":"c1","snippet":{"authorDisplayName":"A","publishedAt":"2024-01-01T00:00:00Z"}}}}]}
+        """),
+        (.commentThreads, "unexpected-envelope", """
+        {"error":{"message":"nope"}}
+        """)
+    ]
+
+    private static func call(_ endpoint: DecodingEndpoint, on client: YouTubeDataClient) async throws {
+        switch endpoint {
+        case .subscriptions: _ = try await client.fetchSubscriptionUploadsPlaylistIDs(accessToken: "tok")
+        case .playlistItems: _ = try await client.fetchPlaylistVideoIDs(playlistID: "PL1", accessToken: "tok", pageToken: nil)
+        case .videos: _ = try await client.fetchVideoDetails(ids: ["v1"], accessToken: "tok")
+        case .search: _ = try await client.searchVideoIDs(query: "q", accessToken: "tok", pageToken: nil)
+        case .commentThreads: _ = try await client.fetchComments(videoID: "v1", accessToken: "tok", pageToken: nil)
+        }
     }
 
     private static func query(of request: URLRequest) -> [String: String] {

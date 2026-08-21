@@ -120,9 +120,12 @@ public actor DownloadCoordinator {
             destinationURL: task.destinationURL,
             components: task.components
         )
-        await transport.begin(request) { [self] event in
-            Task { [self] in
-                await self.handle(event, taskID: taskID, onUpdate: onUpdate)
+        // Weak self: a long-lived background transport holds this handler
+        // until the transfer's terminal event (or cancel); it must not retain
+        // the coordinator past that (HB-012).
+        await transport.begin(request) { [weak self] event in
+            Task { [weak self] in
+                await self?.handle(event, taskID: taskID, onUpdate: onUpdate)
             }
         }
     }
@@ -145,24 +148,66 @@ public actor DownloadCoordinator {
 
     // MARK: - Event handling
 
-    /// Per-task serialization chain: each event's processing Task awaits the
-    /// previous one, so events apply strictly in arrival order no matter which
-    /// spawning Task the actor schedules first (HB-006). Without this, a late
-    /// `.failed` could clobber a settled `.completed` state.
-    private var eventChains: [String: Task<Void, Never>] = [:]
+    /// One link of a task's serialization chain (HB-006/HB-012): the handled
+    /// event appends its node, awaits the previous node, applies inline on its
+    /// own calling task, then signals its node. This keeps events applying in
+    /// arrival order without allocating an unstructured Task per event, and the
+    /// coordinator retains only the live tail node instead of every historical
+    /// chain link.
+    private final class EventChainNode: @unchecked Sendable {
+        private let lock = NSLock()
+        private var isSignaled = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        /// Returns once every earlier event in the chain has been applied.
+        func wait() async {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                lock.lock()
+                if isSignaled {
+                    lock.unlock()
+                    continuation.resume()
+                } else {
+                    waiters.append(continuation)
+                    lock.unlock()
+                }
+            }
+        }
+
+        func signal() {
+            lock.lock()
+            isSignaled = true
+            let waiters = self.waiters
+            self.waiters = []
+            lock.unlock()
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+
+    /// Per-task chain tail: each event's processing awaits the previous one,
+    /// so events apply strictly in arrival order no matter which spawning Task
+    /// the actor schedules first (HB-006). Without this, a late `.failed`
+    /// could clobber a settled `.completed` state. Reset on enqueue/cancel so a
+    /// fresh (re-)enqueue starts a clean chain; stragglers from a previous
+    /// generation keep their captured nodes and cannot interleave into it.
+    private var eventChains: [String: EventChainNode] = [:]
 
     public func handle(
         _ event: DownloadEvent,
         taskID: String,
         onUpdate: (@Sendable (DownloadTask) -> Void)? = nil
     ) async {
+        let node = EventChainNode()
+        // No suspension between reading and replacing the tail, so each call's
+        // position in the chain is fixed atomically at actor entry.
         let previous = eventChains[taskID]
-        let current = Task { [weak self] in
-            await previous?.value
-            await self?.process(event, taskID: taskID, onUpdate: onUpdate)
+        eventChains[taskID] = node
+        if let previous {
+            await previous.wait()
         }
-        eventChains[taskID] = current
-        _ = await current.value
+        await process(event, taskID: taskID, onUpdate: onUpdate)
+        node.signal()
     }
 
     private func process(

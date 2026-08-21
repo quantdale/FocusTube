@@ -10,6 +10,12 @@ import MediaPlayer
 @MainActor
 public final class BackgroundMediaCoordinator {
     private let target: PlayerCommandTarget
+    /// Tokens returned by `addTarget` for the commands this coordinator itself
+    /// registered; non-nil while installed. Re-registration removes exactly
+    /// these targets, never handlers owned by other components.
+    private var playCommandToken: Any?
+    private var pauseCommandToken: Any?
+    private var togglePlayPauseCommandToken: Any?
     /// Token for the installed audio-session interruption observer; non-nil
     /// while a subscription is active.
     private var interruptionObserver: NSObjectProtocol?
@@ -64,20 +70,23 @@ public final class BackgroundMediaCoordinator {
 
     public func registerRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
-        // Remove-before-add keeps repeated registrations (view re-appearance)
-        // from stacking duplicate handlers on the shared command center.
-        center.playCommand.removeTarget(nil)
-        center.pauseCommand.removeTarget(nil)
-        center.togglePlayPauseCommand.removeTarget(nil)
-        center.playCommand.addTarget { [weak self] _ in
+        // Remove only the targets this coordinator previously installed, keeping
+        // repeated registrations (view re-appearance) from stacking duplicates
+        // without detaching handlers other components own on the shared center.
+        if let token = playCommandToken { center.playCommand.removeTarget(token) }
+        if let token = pauseCommandToken { center.pauseCommand.removeTarget(token) }
+        if let token = togglePlayPauseCommandToken {
+            center.togglePlayPauseCommand.removeTarget(token)
+        }
+        playCommandToken = center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.handleRemoteCommand(.play) }
             return .success
         }
-        center.pauseCommand.addTarget { [weak self] _ in
+        pauseCommandToken = center.pauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.handleRemoteCommand(.pause) }
             return .success
         }
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+        togglePlayPauseCommandToken = center.togglePlayPauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.handleRemoteCommand(.togglePlayPause) }
             return .success
         }

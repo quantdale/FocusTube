@@ -67,9 +67,10 @@ final class BackgroundMediaTests: XCTestCase {
     /// Repeated registration (TabView re-appearance) must be safe and leave
     /// exactly-once command delivery. MPRemoteCommandCenter exposes no way to
     /// dispatch or count targets in a unit test, so stacking is prevented
-    /// structurally (removeTarget(nil) before addTarget) and this test pins
-    /// the observable contract: double registration never crashes and each
-    /// logical command still maps to exactly one target invocation.
+    /// structurally (each registration removes exactly the targets it
+    /// previously installed) and this test pins the observable contract: double
+    /// registration never crashes and each logical command still maps to
+    /// exactly one target invocation.
     func testRegisterRemoteCommandsIsIdempotent() async {
         let spy = SpyTarget()
         let coordinator = BackgroundMediaCoordinator(target: spy)
