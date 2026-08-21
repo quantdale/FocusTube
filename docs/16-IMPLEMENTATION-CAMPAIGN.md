@@ -47,7 +47,7 @@ WP-010  Library/continuity
    |
 WP-011  Background media
    |
-IC-EXIT -> implementation_complete_ready_for_hardening
+IC-EXIT -> HARDENING_V1 -> personal_release_candidate
 ```
 
 This sequence intentionally front-loads the highest existential technical risks.
