@@ -3,8 +3,10 @@ import MediaPlayer
 @testable import FocusTube
 import FocusTubeCore
 
+/// Class (reference semantics) so assertions observe mutations made through the
+/// coordinator's stored target.
 @MainActor
-private struct SpyTarget: PlayerCommandTarget {
+private final class SpyTarget: PlayerCommandTarget {
     var playCount = 0
     var pauseCount = 0
     var toggleCount = 0
@@ -19,7 +21,7 @@ private struct SpyTarget: PlayerCommandTarget {
 @MainActor
 final class BackgroundMediaTests: XCTestCase {
     func testRemoteCommandMapping() {
-        var spy = SpyTarget()
+        let spy = SpyTarget()
         let coordinator = BackgroundMediaCoordinator(target: spy)
         coordinator.handleRemoteCommand(.play)
         coordinator.handleRemoteCommand(.pause)
@@ -32,7 +34,7 @@ final class BackgroundMediaTests: XCTestCase {
     }
 
     func testInterruptionBeganPausesAndResumesWhenAllowed() {
-        var spy = SpyTarget()
+        let spy = SpyTarget()
         let coordinator = BackgroundMediaCoordinator(target: spy)
         coordinator.handleInterruption(.began)
         XCTAssertEqual(spy.pauseCount, 1)
@@ -41,7 +43,7 @@ final class BackgroundMediaTests: XCTestCase {
     }
 
     func testInterruptionEndedWithoutResumeDoesNotPlay() {
-        var spy = SpyTarget()
+        let spy = SpyTarget()
         let coordinator = BackgroundMediaCoordinator(target: spy)
         coordinator.handleInterruption(.ended(shouldResume: false))
         XCTAssertEqual(spy.playCount, 0)
@@ -59,5 +61,36 @@ final class BackgroundMediaTests: XCTestCase {
     func testAudioSessionPolicyIsPlayback() {
         XCTAssertEqual(BackgroundMediaPolicy.audioSessionCategory, .playback)
         XCTAssertEqual(BackgroundMediaPolicy.audioSessionMode, .moviePlayback)
+    }
+
+    /// Repeated registration (TabView re-appearance) must leave exactly one
+    /// handler per command on the shared center — duplicates are forbidden.
+    func testRegisterRemoteCommandsIsIdempotent() async {
+        let spy = SpyTarget()
+        let coordinator = BackgroundMediaCoordinator(target: spy)
+        let center = MPRemoteCommandCenter.shared()
+
+        // Hermetic start: drop anything registered earlier in the process.
+        center.playCommand.removeTarget(nil)
+        center.pauseCommand.removeTarget(nil)
+        center.togglePlayPauseCommand.removeTarget(nil)
+
+        coordinator.registerRemoteCommands()
+        coordinator.registerRemoteCommands()
+
+        _ = center.playCommand.send(to: nil, with: nil)
+        _ = center.pauseCommand.send(to: nil, with: nil)
+        _ = center.togglePlayPauseCommand.send(to: nil, with: nil)
+
+        // Handlers forward asynchronously onto the MainActor.
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline,
+              spy.playCount < 1 || spy.pauseCount < 1 || spy.toggleCount < 1 {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(spy.playCount, 1)
+        XCTAssertEqual(spy.pauseCount, 1)
+        XCTAssertEqual(spy.toggleCount, 1)
     }
 }

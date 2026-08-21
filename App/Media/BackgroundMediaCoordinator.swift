@@ -60,6 +60,11 @@ public final class BackgroundMediaCoordinator {
 
     public func registerRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
+        // Remove-before-add keeps repeated registrations (view re-appearance)
+        // from stacking duplicate handlers on the shared command center.
+        center.playCommand.removeTarget(nil)
+        center.pauseCommand.removeTarget(nil)
+        center.togglePlayPauseCommand.removeTarget(nil)
         center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.handleRemoteCommand(.play) }
             return .success

@@ -1,9 +1,12 @@
 import SwiftUI
 import SwiftData
+import os
 import FocusTubeCore
 
 struct RootView: View {
-    @State private var playerCoordinator = PlayerCoordinator()
+    private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "app-shell")
+
+    @State private var playerCoordinator: PlayerCoordinator
     @State private var homeStore = HomeFeedStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
     @State private var searchStore = SearchStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
     @State private var auth: AuthSession = GoogleSignInAuthSession()
@@ -11,17 +14,31 @@ struct RootView: View {
     @State private var libraryStore: LibraryStore
     @State private var downloadManager: DownloadManager
     @State private var downloadService: DownloadService
-    @State private var backgroundMedia: BackgroundMediaCoordinator? = nil
+    @State private var backgroundMedia: BackgroundMediaCoordinator
 
     init() {
         let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self, DownloadRecord.self])
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-        let container = try! ModelContainer(for: schema, configurations: [config])
+        // Resilience over durability: a corrupted/unopenable store must not crash
+        // the app at launch, so fall back to an in-memory container (personal-use
+        // tradeoff: library metadata then lasts only this session). The fallback
+        // force-try cannot fail for disk reasons — in-memory storage does no I/O.
+        let container: ModelContainer
+        do {
+            let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            container = try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            Self.logger.fault("Persistent ModelContainer failed to open (\(error.localizedDescription, privacy: .public)); using in-memory store")
+            let memoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            container = try! ModelContainer(for: schema, configurations: [memoryConfig])
+        }
         let library = LibraryStore(context: ModelContext(container))
         let manager = DownloadManager(transport: BackgroundDownloadTransport.shared, context: ModelContext(container))
+        let player = PlayerCoordinator()
         _libraryStore = State(initialValue: library)
         _downloadManager = State(initialValue: manager)
         _downloadService = State(initialValue: DownloadService(downloadManager: manager, library: library))
+        _playerCoordinator = State(initialValue: player)
+        _backgroundMedia = State(initialValue: BackgroundMediaCoordinator(target: player))
     }
 
     var body: some View {
@@ -65,21 +82,11 @@ struct RootView: View {
             .tabItem { Label("Library", systemImage: "books.vertical") }
         }
         .task {
-            let coordinator = BackgroundMediaCoordinator(target: playerCoordinator)
-            backgroundMedia = coordinator
-            try? coordinator.configureAudioSession()
-            coordinator.registerRemoteCommands()
+            // The coordinator is created once in init; re-appearance only
+            // re-configures the session and re-registers (idempotent) commands.
+            try? backgroundMedia.configureAudioSession()
+            backgroundMedia.registerRemoteCommands()
         }
-    }
-}
-
-private struct PlaceholderView: View {
-    let title: String
-    let message: String
-
-    var body: some View {
-        ContentUnavailableView(title, systemImage: "play.rectangle", description: Text(message))
-            .navigationTitle(title)
     }
 }
 
@@ -199,12 +206,6 @@ private struct HomeFeedView: View {
                 Task { await store.loadMore() }
             } label: {
                 Label("Load more", systemImage: "arrow.down.circle")
-            }
-            Button {
-                selectedVideo = VideoSummary(id: "aqz-KE-bpKQ", title: "Big Buck Bunny", channelTitle: "Demo", durationSeconds: nil, publishedAt: nil, thumbnailURL: nil, description: nil)
-                showVideo = true
-            } label: {
-                Label("Open native player (M1 demo)", systemImage: "play.circle")
             }
         }
         .navigationTitle("Home")
