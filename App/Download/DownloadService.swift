@@ -138,6 +138,46 @@ public final class DownloadService {
         resolution: Int,
         components: [DownloadComponent]
     ) async {
+        await runOnce(
+            videoID: videoID, title: title, channelTitle: channelTitle,
+            quality: quality, resolution: resolution, components: components
+        )
+
+        // Signed media URLs expire; one bounded automatic retry re-resolves
+        // fresh stream URLs through the extractor before surfacing failure.
+        if let failure = lastFailure, failure.videoID == videoID,
+           failure.error == .expiredMediaURL || failure.error == .transportFailed {
+            lastFailure = nil
+            guard let retried = try? await extractor.resolve(videoID: videoID) else {
+                fail(videoID: videoID, title: title, quality: quality, error: .extractionFailed)
+                return
+            }
+            let plan = DownloadPlanner.plan(for: retried, quality: quality)
+            switch plan {
+            case let .combined(component, resolution):
+                await runOnce(
+                    videoID: videoID, title: title, channelTitle: channelTitle,
+                    quality: quality, resolution: resolution, components: [component]
+                )
+            case let .adaptive(video, audio, resolution):
+                await runOnce(
+                    videoID: videoID, title: title, channelTitle: channelTitle,
+                    quality: quality, resolution: resolution, components: [video, audio]
+                )
+            case .unavailable:
+                fail(videoID: videoID, title: title, quality: quality, error: .requestedQualityUnavailable)
+            }
+        }
+    }
+
+    private func runOnce(
+        videoID: String,
+        title: String,
+        channelTitle: String,
+        quality: DownloadQuality,
+        resolution: Int,
+        components: [DownloadComponent]
+    ) async {
         let id = "\(videoID)-\(quality.rawValue)"
         let destination = destination(videoID: videoID, quality: quality)
         let request = DownloadRequest(

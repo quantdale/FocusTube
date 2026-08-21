@@ -168,14 +168,14 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         handler(.completed(tempLocation: location, component: index))
     }
 
-    fileprivate func deliverFailed(taskIdentifier: Int) {
+    fileprivate func deliverFailed(taskIdentifier: Int, error: DownloadError = .transportFailed) {
         let handler = lock.withLock { state -> (@Sendable (DownloadEvent) -> Void)? in
             guard let handler = state.handlers[taskIdentifier] else { return nil }
             state.handlers[taskIdentifier] = nil
             state.componentIndex[taskIdentifier] = nil
             return handler
         }
-        handler?(.failed(.transportFailed))
+        handler?(.failed(error))
     }
 
     fileprivate func finishEvents() {
@@ -201,6 +201,18 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         }
 
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+            // Non-2xx responses arrive here as a successful transfer of an
+            // error body. Signed media URLs expire with 403; surface that as
+            // the typed expired-URL error so callers can re-resolve and retry.
+            let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 200
+            if !(200..<300).contains(status) {
+                try? FileManager.default.removeItem(at: location)
+                transport?.deliverFailed(
+                    taskIdentifier: downloadTask.taskIdentifier,
+                    error: status == 403 ? .expiredMediaURL : .transportFailed
+                )
+                return
+            }
             transport?.deliverCompleted(taskIdentifier: downloadTask.taskIdentifier, location: location)
         }
 

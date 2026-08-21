@@ -144,7 +144,13 @@ public final class DownloadManager {
         }
 
         let task = await coordinator.enqueue(request)
-        context.insert(DownloadRecord(task: task))
+        // Upsert: retries/re-resolutions reuse the same request id, and
+        // duplicate SwiftData records would corrupt reconciliation.
+        if let existing = fetchRecords().first(where: { $0.id == request.id }) {
+            existing.apply(task)
+        } else {
+            context.insert(DownloadRecord(task: task))
+        }
         try? context.save()
         return task
     }

@@ -36,6 +36,28 @@ private struct CompletingTransport: DownloadTransport {
     func cancel(taskID: String) async {}
 }
 
+/// First begin reports an expired signed URL; the retry (after re-resolution)
+/// completes so the service's bounded automatic-retry path can be tested.
+private final class ExpiredThenCompletingTransport: DownloadTransport, @unchecked Sendable {
+    let tempLocation: URL
+    private var hasFailedOnce = false
+
+    init(tempLocation: URL) {
+        self.tempLocation = tempLocation
+    }
+
+    func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {
+        if !hasFailedOnce {
+            hasFailedOnce = true
+            onEvent(.failed(.expiredMediaURL))
+            return
+        }
+        onEvent(.completed(tempLocation: tempLocation, component: 0))
+    }
+
+    func cancel(taskID: String) async {}
+}
+
 final class DownloadServiceTests: XCTestCase {
     private func combinedMedia(videoID: String, resolution: Int) -> ResolvedMedia {
         let stream = MediaStream(
@@ -179,6 +201,42 @@ final class DownloadServiceTests: XCTestCase {
         XCTAssertEqual(downloaded.count, 1)
         XCTAssertEqual(downloaded.first?.videoID, "v5")
         XCTAssertEqual(downloaded.first?.sizeBytes, 2)
+    }
+
+    func testExpiredURLRetriesOnceWithFreshResolutionAndSucceeds() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let mediaDirectory = root.appendingPathComponent("Media")
+        let destination = mediaDirectory
+            .appendingPathComponent("v6")
+            .appendingPathComponent("720")
+            .appendingPathComponent("media.mp4")
+        let temp = root.appendingPathComponent("component-\(UUID().uuidString).mp4")
+        try Data([0x01, 0x02]).write(to: temp)
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([0x00]).write(to: destination)
+
+        let library = try await makeLibrary()
+        let service = await DownloadService(
+            extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v6", resolution: 720))),
+            downloadManager: DownloadManager(
+                transport: ExpiredThenCompletingTransport(tempLocation: temp),
+                context: ModelContext(try makeContainer())
+            ),
+            library: library,
+            mediaDirectory: mediaDirectory
+        )
+        await service.download(videoID: "v6", title: "T", channelTitle: "C", quality: .p720)
+
+        let failure = await service.lastFailure
+        XCTAssertNil(failure)
+        let downloaded = await library.downloaded
+        XCTAssertEqual(downloaded.count, 1)
     }
 
     private func makeContainer() throws -> ModelContainer {

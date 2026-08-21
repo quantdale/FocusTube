@@ -67,6 +67,17 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(records.first?.state.status, .queued)
     }
 
+    func testReEnqueueSameIDUpsertsInsteadOfDuplicating() async throws {
+        let manager = await DownloadManager(
+            transport: NoopTransport(),
+            context: ModelContext(try makeContainer())
+        )
+        _ = await manager.enqueue(makeRequest(id: "dup"))
+        _ = await manager.enqueue(makeRequest(id: "dup"))
+        let records = await manager.records
+        XCTAssertEqual(records.count, 1)
+    }
+
     func testStorageRefusalPersistsFailedRecord() async throws {
         let manager = await DownloadManager(
             transport: NoopTransport(),
