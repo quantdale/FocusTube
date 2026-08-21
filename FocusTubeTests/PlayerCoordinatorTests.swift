@@ -56,7 +56,12 @@ final class PlayerCoordinatorTests: XCTestCase {
         await coordinator.prepare(stream: stream)
 
         XCTAssertEqual(coordinator.currentStream?.id, "c720")
-        XCTAssertEqual(coordinator.state.status, .loading)
+        // A local file can already have reached .ready via KVO by the time we
+        // assert; only the transient states are wrong here.
+        XCTAssertTrue(
+            coordinator.state.status == .loading || coordinator.state.status == .ready,
+            "unexpected status: \(coordinator.state.status)"
+        )
         XCTAssertEqual((coordinator.player.currentItem?.asset as? AVURLAsset)?.url, url)
     }
 
