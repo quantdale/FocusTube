@@ -42,7 +42,7 @@ schemes:
       config: Debug
     test:
       config: Debug
-      gatherCoverageData: true
+      gatherCoverageData: false
       targets:
         - name: FocusTubeUITests
           parallelizable: false

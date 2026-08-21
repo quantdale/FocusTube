@@ -52,17 +52,80 @@ jobs:
           set -o pipefail
           xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-build.log
 
-      # Full test pass: builds test bundles and runs them on the simulator.
-      - name: Build and test
+      # App-hosted unit tests, bounded per test so one hung test cannot eat the
+      # job. A watchdog emits the last observed test line as an annotation while
+      # the step runs, because remote agents cannot read Actions logs without
+      # authentication but CAN read check-run annotations.
+      - name: Unit tests (FocusTubeTests)
+        timeout-minutes: 20
+        continue-on-error: true
         run: |
+          mkdir -p Artifacts
           set -o pipefail
-          xcodebuild test             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -resultBundlePath Artifacts/FocusTube.xcresult             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild.log
+          xcodebuild test             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -only-testing:FocusTubeTests             -test-timeouts-enabled YES             -default-test-execution-time-allowance 180             -resultBundlePath Artifacts/UnitTests.xcresult             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-unit.log &
+          XPID=$!
+          LAST=""
+          COUNT=0
+          while kill -0 "$XPID" 2>/dev/null; do
+            sleep 45
+            CUR="$(grep -E "Test Case .* (started|passed|failed)|Test Suite .* (started|passed|failed)|error:" Artifacts/xcodebuild-unit.log 2>/dev/null | tail -1)"
+            if [ -n "$CUR" ] && [ "$CUR" != "$LAST" ] && [ "$COUNT" -lt 9 ]; then
+              echo "::warning::unit-progress: $CUR"
+              LAST="$CUR"
+              COUNT=$((COUNT+1))
+            fi
+          done
+          wait "$XPID"; RC=$?
+          echo "$RC" > Artifacts/unit.exit
+          exit $RC
 
-      # Always surface the log tail (even on timeout/cancel) so a remote agent
-      # can diagnose hangs without authenticated API access.
+      # UI tests in their own bounded step so a hang in either bundle leaves the
+      # other bundle's verdict intact.
+      - name: UI tests (FocusTubeUITests)
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          mkdir -p Artifacts
+          set -o pipefail
+          xcodebuild test             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -only-testing:FocusTubeUITests             -test-timeouts-enabled YES             -default-test-execution-time-allowance 180             -resultBundlePath Artifacts/UITests.xcresult             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-ui.log &
+          XPID=$!
+          LAST=""
+          COUNT=0
+          while kill -0 "$XPID" 2>/dev/null; do
+            sleep 45
+            CUR="$(grep -E "Test Case .* (started|passed|failed)|Test Suite .* (started|passed|failed)|error:" Artifacts/xcodebuild-ui.log 2>/dev/null | tail -1)"
+            if [ -n "$CUR" ] && [ "$CUR" != "$LAST" ] && [ "$COUNT" -lt 9 ]; then
+              echo "::warning::ui-progress: $CUR"
+              LAST="$CUR"
+              COUNT=$((COUNT+1))
+            fi
+          done
+          wait "$XPID"; RC=$?
+          echo "$RC" > Artifacts/ui.exit
+          exit $RC
+
+      # Always surface diagnostics (even on timeout/cancel) so a remote agent
+      # can diagnose hangs without authenticated API access. Log tails are
+      # emitted as multi-line warning annotations; failures as error annotations.
       - name: Publish diagnostics
         if: always()
         run: |
+          python3 - <<'PY'
+          import pathlib
+
+          def tail_annotation(label: str, path: str, lines: int = 12) -> None:
+              p = pathlib.Path(path)
+              if not p.exists():
+                  return
+              text = "".join(p.read_text(errors="replace").splitlines(keepends=True)[-lines:])
+              enc = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              if enc.strip():
+                  print(f"::warning::{label} log tail:%0A{enc}")
+
+          tail_annotation("unit", "Artifacts/xcodebuild-unit.log")
+          tail_annotation("ui", "Artifacts/xcodebuild-ui.log")
+          tail_annotation("build", "Artifacts/xcodebuild-build.log")
+          PY
           {
             echo "### xcodebuild errors"
             echo '```'
@@ -72,14 +135,31 @@ jobs:
             echo '```'
             tail -40 Artifacts/xcodebuild-build.log 2>/dev/null || true
             echo '```'
-            echo "### Test log tail"
+            echo "### Unit log tail"
             echo '```'
-            tail -60 Artifacts/xcodebuild.log 2>/dev/null || true
+            tail -60 Artifacts/xcodebuild-unit.log 2>/dev/null || true
+            echo '```'
+            echo "### UI log tail"
+            echo '```'
+            tail -60 Artifacts/xcodebuild-ui.log 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          grep -E "error:" Artifacts/xcodebuild*.log 2>/dev/null | head -25 | while IFS= read -r line; do
+          grep -E "error:" Artifacts/xcodebuild*.log 2>/dev/null | head -20 | while IFS= read -r line; do
             echo "::error::$line"
           done || true
+
+      # continue-on-error on the test steps exists only to guarantee both bundles
+      # always run and diagnostics publish; this gate restores an honest verdict.
+      - name: Gate
+        if: always()
+        run: |
+          U="$(cat Artifacts/unit.exit 2>/dev/null || echo missing)"
+          I="$(cat Artifacts/ui.exit 2>/dev/null || echo missing)"
+          echo "unit exit: $U / ui exit: $I"
+          if [ "$U" != "0" ] || [ "$I" != "0" ]; then
+            echo "::error::iOS CI gate failed (unit=$U ui=$I)"
+            exit 1
+          fi
 
       - name: Simulator screenshot
         if: always()

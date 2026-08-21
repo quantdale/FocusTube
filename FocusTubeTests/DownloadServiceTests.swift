@@ -86,7 +86,11 @@ private final class GatedTransport: DownloadTransport, @unchecked Sendable {
         onEvent(.completed(tempLocation: tempLocation, component: 0))
     }
 
-    func cancel(taskID: String) async {}
+    /// Cancelling a gated transfer must end its begin loop promptly instead of
+    /// leaving an eternal poll task behind in the test process.
+    func cancel(taskID: String) async {
+        release()
+    }
 }
 
 /// Fails every transfer until switched to completing; counts begins so tests can
