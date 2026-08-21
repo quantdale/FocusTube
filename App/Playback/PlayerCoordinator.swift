@@ -44,7 +44,7 @@ public final class PlayerCoordinator {
         self.player = AVPlayer()
         self.playerViewController = AVPlayerViewController()
         self.playerViewController.player = player
-        self.playerViewController.allowsPictureInPictureByDefault = true
+        self.playerViewController.allowsPictureInPicturePlayback = true
     }
 
     deinit {
@@ -138,7 +138,7 @@ public final class PlayerCoordinator {
 
     private func startProgressObserver() {
         stopProgressObserver()
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 5, preferredTimescale: 1)) { [weak self] time in
+        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 5, preferredTimescale: 1), queue: .main) { [weak self] time in
             let seconds = time.seconds
             guard seconds.isFinite else { return }
             Task { @MainActor in
