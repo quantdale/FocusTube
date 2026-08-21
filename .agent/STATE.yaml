@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-21T08:10:00+08:00
+updated_at: 2026-08-21T08:55:00+08:00
 
 campaign:
   id: INTEGRATION_COMPLETION_V1
@@ -51,13 +51,13 @@ current_waypoint:
 resume_token: INTEGRATION_COMPLETION_V1:A:WP-000:REAUDIT
 repo_baseline:
   branch: main
-  commit: 63d637d
+  commit: ce9f4cd
   note: >
-    HEAD = ci(core) step-summary diagnostics on top of d21c272 fix(swift6)
-    compile repairs. Prior durable state claimed implementation_complete_
-    ready_for_hardening; that claim is REJECTED as unproven. Every Core Tests
-    run in CI history has failed (early "success" rows were `|| true` masking).
-    Source code + observed CI win over durable state.
+    Core Tests GREEN on Apple CI for the first time in repo history
+    (run 32432643757, job 96627330329, commit be45a41, macos-26). Local
+    Windows Swift 6.3.3 toolchain also green (55 tests). PHASE A complete;
+    PHASE B/C slices landed (background reattachment, typed download errors,
+    shell hardening); awaiting ios-ci verdict on app-target compile.
 
 continuation_policy:
   continue_after_packet: true
