@@ -54,7 +54,7 @@ public final class GoogleSignInAuthSession: AuthSession {
     @discardableResult
     public func restore() async -> Bool {
         guard await Self.ensureConfigured() else { return false }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
                 continuation.resume(returning: user != nil && error == nil)
             }
@@ -63,7 +63,7 @@ public final class GoogleSignInAuthSession: AuthSession {
 
     public func accessToken() async -> String? {
         guard await Self.ensureConfigured() else { return nil }
-        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
                 if let user, error == nil {
                     continuation.resume(returning: user.accessToken.tokenString)
