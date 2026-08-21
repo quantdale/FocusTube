@@ -109,6 +109,7 @@ public final class DownloadManager {
                 await self?.routeReattachedEvent(event, requestID: requestID)
             }
         }
+        sweepMuxingOrphans()
         let recoveredByID = Dictionary(recovered.map { ($0.requestID, $0) }, uniquingKeysWith: { first, _ in first })
 
         let records = fetchRecords()
@@ -193,6 +194,21 @@ public final class DownloadManager {
     private func applyReattachedEvent(_ event: DownloadEvent, requestID: String) async {
         await coordinator.handle(event, taskID: requestID)
         await persistTaskSnapshot(requestID)
+    }
+
+    /// Removes stale `.muxing-` intermediates from the incomplete-work area.
+    /// A mux output exists only while an adaptive export runs within one
+    /// process lifetime (it is moved into place or deleted before the job
+    /// settles), so after a relaunch it can never be consumed — sweep it so
+    /// interrupted exports don't leak bytes.
+    private func sweepMuxingOrphans() {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: incompleteDirectory,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        for file in files where file.lastPathComponent.contains(".muxing-") {
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     // MARK: - Control
