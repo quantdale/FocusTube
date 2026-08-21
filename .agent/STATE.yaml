@@ -19,34 +19,29 @@ current_gate: G0_BOOTSTRAP_REVALIDATION
 current_work_packet: INTEGRATION_COMPLETION_V1
 current_packet_status: in_progress
 current_waypoint:
-  id: INTEGRATION-A
+  id: INTEGRATION-FINAL
   objective: >
-    Reject overstated durable state. Audit found real defects: PlayerCoordinator
-    class closes prematurely after playLocalFile (compile regression);
-    DownloadManager.syncRecord is non-async yet awaits coordinator.task (Swift 6
-    error); URLSessionDownloadTransport is a foreground .shared placeholder with
-    a no-op cancel (not the locked background architecture); DownloadService.
-    selectStream only uses media.combined and silently falls back 1080->720;
-    final media is written under NSTemporaryDirectory (not durable Application
-    Support); no download progress UI / real end-to-end wiring exists.
+    All implementation and hardening work is complete on main through 478b38c
+    (Core suite green on Apple CI across be45a41..478b38c; local Windows Swift
+    6.3.3 suite 63 XCTest + 5 swift-testing green). The single remaining gate is
+    the ios-ci xcodebuild leg: successive runs failed on exactly one compile
+    error per round, each fixed from public ::error:: annotations (access
+    levels, Self default args, Bridge Sendable/final, captured-var mutations,
+    moveItem shadow, argument label, GIDToken optionality, service-struct
+    Sendable). 478b38c is the first commit expected to pass compilation.
   exact_next_action: >
-    PHASE A: fix PlayerCoordinator brace regression and DownloadManager.
-    syncRecord concurrency; regenerate project; get FocusTubeCore + iOS build
-    green on CI. Then PHASE C: implement real BackgroundDownloadTransport (
-    URLSession.background, stable id, delegate-driven, cancel, retry, reconcile),
-    wire component-aware DownloadCoordinator + native AVFoundation mux into
-    DownloadService with exact-quality semantics, move final media to Application
-    Support, add download progress UI, and validate end-to-end on the simulator.
+    Observe ios-ci run for 478b38c or later. On success: flip G0 build/launch
+    boxes in docs/14-ACCEPTANCE-GATES.md, set packets/milestones truthful
+    (WP-003/004/005/011 complete, M1/M2/M8 complete), set status
+    personal_release_candidate, write final report with commit SHA + CI run
+    IDs + test counts + HB debt list. On failure: read ::error:: annotations
+    via GET /repos/quantdale/FocusTube/check-runs/{job_id}/annotations, fix,
+    push, repeat.
   validation_required:
-    - swift test (FocusTubeCore) green on CI and on local Windows Swift if present
-    - XcodeGen generation succeeds
-    - iOS app builds and launches on simulator
-    - FocusTubeTests (coordinator/manager/mux/player/library) green
-    - real background URLSession download validated
-    - adaptive 1080p path actually used and validated
-    - permanent Application Support storage validated
-    - Shorts firewall intact
-    - no known Critical/High defect
+    - ios-ci workflow green on latest main (xcodegen + xcodebuild test)
+    - docs/14 G0 boxes flipped with run id evidence
+    - STATE.yaml terminal status set
+    - final report delivered
 
 resume_token: INTEGRATION_COMPLETION_V1:A:WP-000:REAUDIT
 repo_baseline:
