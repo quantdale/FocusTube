@@ -20,12 +20,19 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         var handlers: [Int: @Sendable (DownloadEvent) -> Void] = [:]
         var componentIndex: [Int: Int] = [:]
         var tasksByRequest: [String: [URLSessionDownloadTask]] = [:]
+        var backgroundCompletionHandler: CompletionHandlerBox?
+    }
+
+    /// Sendable box so the completion handler can share the main state lock
+    /// without leaking a non-Sendable closure type into `State`.
+    private final class CompletionHandlerBox: @unchecked Sendable {
+        let handler: () -> Void
+        init(handler: @escaping () -> Void) { self.handler = handler }
     }
 
     private let session: URLSession
     private let bridge: Bridge
     private let lock = OSAllocatedUnfairLock<State>(initialState: State())
-    private var backgroundCompletionHandler: (() -> Void)?
 
     public override init() {
         let config = URLSessionConfiguration.background(withIdentifier: Self.sessionIdentifier)
@@ -45,7 +52,9 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
     /// background-URL-session wake-up. Invoked once all events for that session
     /// have been delivered.
     public func setBackgroundCompletionHandler(_ handler: (() -> Void)?) {
-        backgroundCompletionHandler = handler
+        lock.withLock { state in
+            state.backgroundCompletionHandler = handler.map(CompletionHandlerBox.init)
+        }
     }
 
     // MARK: - DownloadTransport
@@ -78,9 +87,9 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         }
     }
 
-    /// Cancels every in-flight background task and drops their handlers. Used on
-    /// relaunch to discard tasks from a previous process lifetime that cannot be
-    /// transparently re-bound, so reconciliation can recover their records.
+    /// Cancels every in-flight background task and drops their handlers.
+    /// Retained for explicit teardown only; relaunch reconciliation reattaches
+    /// live transfers via `reattach(onEvent:)` instead of discarding them.
     public func cancelAll() {
         var captured: [URLSessionDownloadTask] = []
         lock.withLock { state in
@@ -91,6 +100,49 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         }
         for task in captured {
             task.cancel()
+        }
+    }
+
+    // MARK: - Reattachment
+
+    /// Reattaches to download tasks that are still alive in the shared
+    /// background session from a previous process lifetime. Live tasks are
+    /// grouped by their `taskDescription` (the request id), per-task handlers
+    /// and component indexes are re-registered so delegate callbacks flow to
+    /// `onEvent`, and every recovered request is reported with its live
+    /// component count. Tasks that can no longer deliver events (already
+    /// finished, cancelled, or missing their request id) stay unregistered so
+    /// their records reconcile as interrupted instead of hanging in
+    /// `.downloading`.
+    public func reattach(
+        onEvent: @escaping @Sendable (_ requestID: String, _ event: DownloadEvent) -> Void
+    ) async -> [ReattachedDownload] {
+        let liveTasks: [URLSessionDownloadTask] = await withCheckedContinuation { continuation in
+            session.getAllTasks { tasks in
+                continuation.resume(returning: tasks.compactMap { $0 as? URLSessionDownloadTask })
+            }
+        }
+
+        var grouped: [String: [URLSessionDownloadTask]] = [:]
+        for task in liveTasks.sorted(by: { $0.taskIdentifier < $1.taskIdentifier }) {
+            guard task.state == .running,
+                  let requestID = task.taskDescription, !requestID.isEmpty else { continue }
+            grouped[requestID, default: []].append(task)
+        }
+
+        lock.withLock { state in
+            for (requestID, tasks) in grouped {
+                for (index, task) in tasks.enumerated() {
+                    guard state.handlers[task.taskIdentifier] == nil else { continue }
+                    state.handlers[task.taskIdentifier] = { event in onEvent(requestID, event) }
+                    state.componentIndex[task.taskIdentifier] = index
+                    state.tasksByRequest[requestID, default: []].append(task)
+                }
+            }
+        }
+
+        return grouped.keys.sorted().map { requestID in
+            ReattachedDownload(requestID: requestID, componentCount: grouped[requestID]?.count ?? 0)
         }
     }
 
@@ -127,8 +179,12 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
     }
 
     fileprivate func finishEvents() {
-        backgroundCompletionHandler?()
-        backgroundCompletionHandler = nil
+        let boxed = lock.withLock { state -> CompletionHandlerBox? in
+            let handler = state.backgroundCompletionHandler
+            state.backgroundCompletionHandler = nil
+            return handler
+        }
+        boxed?.handler()
     }
 
     fileprivate func clearRequest(_ requestID: String) {

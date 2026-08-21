@@ -8,6 +8,18 @@ private struct NoopTransport: DownloadTransport {
     func cancel(taskID: String) async {}
 }
 
+/// Fake transport whose background session "survived" a relaunch and still
+/// holds live transfers for the given request ids.
+private struct RecoveringTransport: DownloadTransport {
+    let recoveredIDs: [String]
+
+    func reattach(onEvent: @escaping @Sendable (String, DownloadEvent) -> Void) async -> [ReattachedDownload] {
+        recoveredIDs.map { ReattachedDownload(requestID: $0, componentCount: 1) }
+    }
+    func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {}
+    func cancel(taskID: String) async {}
+}
+
 private struct FakeStorage: StorageProviding {
     var capacity: Int64
     func availableCapacity(for url: URL) -> Int64 { capacity }
@@ -29,6 +41,19 @@ final class DownloadManagerTests: XCTestCase {
             sourceURL: URL(string: "https://example.com/\(id)")!,
             destinationURL: URL(fileURLWithPath: "/tmp/\(id).mp4")
         )
+    }
+
+    func insertRecord(_ id: String, into context: ModelContext, status: DownloadStatus) throws {
+        var task = DownloadTask(
+            id: id,
+            videoID: "v",
+            resolution: 720,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(id).mp4"),
+            components: [DownloadComponent(streamID: "s\(id)", sourceURL: URL(string: "https://example.com/\(id)")!)]
+        )
+        task.apply(DownloadState(status: status))
+        context.insert(DownloadRecord(task: task))
+        try context.save()
     }
 
     func testEnqueuePersistsQueuedRecord() async throws {
@@ -72,9 +97,48 @@ final class DownloadManagerTests: XCTestCase {
             transport: NoopTransport(),
             context: ModelContext(container)
         )
+        await reloaded.reconcileOnLaunch()
         let records = await reloaded.records
         XCTAssertEqual(records.first?.state.status, .failed)
         XCTAssertEqual(records.first?.state.error, .interrupted)
+    }
+
+    func testReconcileReattachesRecoveredTask() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        try insertRecord("keep", into: context, status: .downloading)
+
+        // The background session survived the relaunch and still holds "keep".
+        let manager = await DownloadManager(
+            transport: RecoveringTransport(recoveredIDs: ["keep"]),
+            context: ModelContext(container)
+        )
+        await manager.reconcileOnLaunch()
+
+        let records = await manager.records
+        XCTAssertEqual(records.first(where: { $0.id == "keep" })?.state.status, .downloading)
+        let coordinatorTask = await manager.coordinatorTask("keep")
+        XCTAssertEqual(coordinatorTask?.id, "keep")
+        XCTAssertEqual(coordinatorTask?.state.status, .downloading)
+    }
+
+    func testReconcileInterruptsUnrecoveredTask() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        try insertRecord("kept", into: context, status: .downloading)
+        try insertRecord("dropped", into: context, status: .downloading)
+
+        // Only "kept" comes back from the background session.
+        let manager = await DownloadManager(
+            transport: RecoveringTransport(recoveredIDs: ["kept"]),
+            context: ModelContext(container)
+        )
+        await manager.reconcileOnLaunch()
+
+        let records = await manager.records
+        XCTAssertEqual(records.first(where: { $0.id == "kept" })?.state.status, .downloading)
+        XCTAssertEqual(records.first(where: { $0.id == "dropped" })?.state.status, .failed)
+        XCTAssertEqual(records.first(where: { $0.id == "dropped" })?.state.error, .interrupted)
     }
 
     func testCancelCleansUpRecord() async throws {

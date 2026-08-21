@@ -61,20 +61,21 @@ public actor DownloadCoordinator {
     }
 
     /// Re-registers an externally-initiated (e.g. relaunched background session)
-    /// task so its completion events drive the same state machine.
+    /// task so its completion events drive the same state machine. `taskID` is
+    /// the single source of truth: the stored task's id equals `taskID`.
     public func attach(taskID: String, request: DownloadRequest) {
         guard tasks[taskID] == nil else { return }
         var task = DownloadTask(
-            id: request.id,
+            id: taskID,
             videoID: request.videoID,
             resolution: request.resolution,
             destinationURL: request.destinationURL,
             components: request.components
         )
         task.apply(DownloadState(status: .downloading))
-        tasks[request.id] = task
-        componentTempLocations[request.id] = [:]
-        componentProgress[request.id] = [:]
+        tasks[taskID] = task
+        componentTempLocations[taskID] = [:]
+        componentProgress[taskID] = [:]
     }
 
     public func begin(_ taskID: String, onUpdate: (@Sendable (DownloadTask) -> Void)? = nil) async {
@@ -185,7 +186,13 @@ public actor DownloadCoordinator {
                 if !fileManager.fileExists(at: parent) {
                     try fileManager.createDirectory(at: parent)
                 }
-                try fileManager.replaceItem(at: destination, withItemAt: tempLocations[0])
+                // replaceItemAt requires an existing destination; first-time
+                // downloads move the temp file into the empty slot instead.
+                if fileManager.fileExists(at: destination) {
+                    try fileManager.replaceItem(at: destination, withItemAt: tempLocations[0])
+                } else {
+                    try fileManager.moveItem(at: tempLocations[0], to: destination)
+                }
             } catch {
                 fail(task: &task, with: .finalizationFailed)
                 return
@@ -228,6 +235,12 @@ public actor DownloadCoordinator {
             guard fileManager.fileExists(at: destination), fileManager.size(of: destination) > 0 else {
                 fail(task: &task, with: .validationFailed)
                 return
+            }
+            // The mux wrote the final file from the component temps; remove the
+            // transient files so nothing is orphaned in the work directory.
+            // (The single-component path moves its temp via replaceItem.)
+            for location in tempLocations {
+                try? fileManager.removeItem(at: location)
             }
             complete(task: &task)
         } catch {

@@ -38,7 +38,9 @@ public final class DownloadManager {
             directory: incompleteDirectory,
             mux: Self.makeMux()
         )
-        reconcileOnLaunch()
+        // Reconciliation awaits transport reattachment, so it runs as a task;
+        // `reconcileOnLaunch()` is idempotent and may also be awaited directly.
+        Task { await reconcileOnLaunch() }
     }
 
     // MARK: - Durable paths
@@ -74,11 +76,21 @@ public final class DownloadManager {
 
     // MARK: - Reconciliation
 
-    public func reconcileOnLaunch() {
-        // Drop background tasks from a previous process lifetime; they cannot be
-        // transparently re-bound, so their records are reconciled to interrupted
-        // and made retryable below.
-        (transport as? BackgroundDownloadTransport)?.cancelAll()
+    /// Reattaches to background transfers that survived the previous process
+    /// lifetime and resumes driving them through the coordinator state machine;
+    /// every other persisted record is reconciled with filesystem reality, so
+    /// in-flight work whose tasks did not come back becomes interrupted and
+    /// retryable. Idempotent: reattachment and reconciliation are no-ops for
+    /// already-attached tasks and settled records.
+    public func reconcileOnLaunch() async {
+        let recovered = await transport.reattach { [weak self] requestID, event in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.coordinator.handle(event, taskID: requestID)
+                await self.persistTaskSnapshot(requestID)
+            }
+        }
+        let recoveredIDs = Set(recovered.map(\.requestID))
 
         let records = fetchRecords()
         let tasks = records.map { $0.downloadTask }
@@ -86,11 +98,31 @@ public final class DownloadManager {
             self?.fileExists(url) ?? false
         }
         for (record, task) in zip(records, reconciled) {
+            // Recovered transfers keep running; everything else settles to
+            // filesystem-backed reality.
+            if recoveredIDs.contains(record.id) { continue }
             if record.statusRaw != task.state.status.rawValue || record.errorRaw != task.state.error?.rawValue {
                 record.apply(task)
             }
         }
         try? context.save()
+
+        for record in records where recoveredIDs.contains(record.id) {
+            let request = DownloadRequest(
+                id: record.id,
+                videoID: record.videoID,
+                resolution: record.resolution,
+                destinationURL: record.destinationURL,
+                components: record.components
+            )
+            await coordinator.attach(taskID: request.id, request: request)
+        }
+        // A recovered transfer without a persisted record would stream orphaned
+        // bytes forever; cancel it so the background session drains.
+        let recordedIDs = Set(records.map(\.id))
+        for requestID in recoveredIDs where !recordedIDs.contains(requestID) {
+            await transport.cancel(taskID: requestID)
+        }
     }
 
     // MARK: - Control
@@ -167,6 +199,12 @@ public final class DownloadManager {
         }
     }
 
+    /// Snapshot of a task currently held by the coordinator, for diagnostics
+    /// and tests (e.g. verifying a reattached background task is driving again).
+    public func coordinatorTask(_ id: String) async -> DownloadTask? {
+        await coordinator.task(id)
+    }
+
     /// Blocks until the coordinator reports the task completed or failed, or the
     /// timeout elapses. Used by `DownloadService` to register finalized media.
     public func waitForCompletion(_ id: String, timeout: TimeInterval = 600) async -> DownloadTask? {
@@ -214,5 +252,14 @@ public final class DownloadManager {
         guard let task = await coordinator.task(taskID) else { return }
         record.apply(task)
         try? context.save()
+    }
+
+    /// Projects a coordinator event's resulting task into the UI and persists
+    /// it. Used by reattached background transfers, whose events bypass
+    /// `begin(_:)`.
+    private func persistTaskSnapshot(_ taskID: String) async {
+        guard let task = await coordinator.task(taskID) else { return }
+        applyLive(task)
+        await syncRecord(taskID)
     }
 }

@@ -21,6 +21,7 @@ private struct FakeFileManager: FileManaging {
     func replaceItem(at destination: URL, withItemAt item: URL) throws {
         if replaceThrows { throw NSError(domain: "fake", code: 2) }
     }
+    func moveItem(at item: URL, to destination: URL) throws {}
     func removeItem(at url: URL) throws {}
 }
 
