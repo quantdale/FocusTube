@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-21T08:55:00+08:00
+updated_at: 2026-08-21T10:20:00+08:00
 
 campaign:
   id: INTEGRATION_COMPLETION_V1
@@ -51,13 +51,16 @@ current_waypoint:
 resume_token: INTEGRATION_COMPLETION_V1:A:WP-000:REAUDIT
 repo_baseline:
   branch: main
-  commit: ce9f4cd
+  commit: 1188870
   note: >
-    Core Tests GREEN on Apple CI for the first time in repo history
-    (run 32432643757, job 96627330329, commit be45a41, macos-26). Local
-    Windows Swift 6.3.3 toolchain also green (55 tests). PHASE A complete;
-    PHASE B/C slices landed (background reattachment, typed download errors,
-    shell hardening); awaiting ios-ci verdict on app-target compile.
+    Core Tests green on Apple CI across be45a41..ed7228d (observed runs).
+    HARDENING_V1 executed: Critical temp-file race fixed (staged component
+    moves), component-index fidelity across relaunch, atomic adaptive mux,
+    data-layer correctness (search zero-hits, <=50-id chunking, feed
+    pagination), download UX safety (duplicate guard, cancel UI), interruption
+    notification wiring. Remaining Medium/Low debt in HARDENING_BACKLOG
+    HB-004..012. Awaiting ios-ci verdict at 1188870 (prior failure was a
+    single access-level error, fixed).
 
 continuation_policy:
   continue_after_packet: true
