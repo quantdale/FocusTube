@@ -255,14 +255,15 @@ final class DownloadServiceTests: XCTestCase {
             .appendingPathComponent("media.mp4")
 
         let temp = root.appendingPathComponent("component-\(UUID().uuidString).mp4")
-        try Data([0x01, 0x02]).write(to: temp)
         // Pre-create the destination so finalization exercises replaceItemAt's
         // documented existing-destination path (first-download creation is a
-        // coordinator/filesystem concern covered elsewhere).
+        // coordinator/filesystem concern covered elsewhere). The directory
+        // chain (including root) must exist before any file writes.
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+        try Data([0x01, 0x02]).write(to: temp)
         try Data([0x00]).write(to: destination)
 
         let library = try await makeLibrary()
@@ -298,11 +299,11 @@ final class DownloadServiceTests: XCTestCase {
             .appendingPathComponent("720")
             .appendingPathComponent("media.mp4")
         let temp = root.appendingPathComponent("component-\(UUID().uuidString).mp4")
-        try Data([0x01, 0x02]).write(to: temp)
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+        try Data([0x01, 0x02]).write(to: temp)
         try Data([0x00]).write(to: destination)
 
         let library = try await makeLibrary()
@@ -335,11 +336,11 @@ final class DownloadServiceTests: XCTestCase {
             .appendingPathComponent("720")
             .appendingPathComponent("media.mp4")
         let temp = root.appendingPathComponent("component-\(UUID().uuidString).mp4")
-        try Data([0x01, 0x02]).write(to: temp)
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+        try Data([0x01, 0x02]).write(to: temp)
         try Data([0x00]).write(to: destination)
 
         let gated = GatedTransport(tempLocation: temp)
@@ -420,11 +421,11 @@ final class DownloadServiceTests: XCTestCase {
             .appendingPathComponent("720")
             .appendingPathComponent("media.mp4")
         let temp = root.appendingPathComponent("component-\(UUID().uuidString).mp4")
-        try Data([0x01, 0x02]).write(to: temp)
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+        try Data([0x01, 0x02]).write(to: temp)
         try Data([0x00]).write(to: destination)
 
         func stream(_ videoID: String, resolution: Int) -> MediaStream {
