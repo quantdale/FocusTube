@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-20T22:00:00+08:00
+updated_at: 2026-08-21T08:10:00+08:00
 
 campaign:
   id: INTEGRATION_COMPLETION_V1
@@ -51,11 +51,13 @@ current_waypoint:
 resume_token: INTEGRATION_COMPLETION_V1:A:WP-000:REAUDIT
 repo_baseline:
   branch: main
-  commit: d3b24544507ddd64267c44d327c7ffb837d26ba1
+  commit: 63d637d
   note: >
-    HEAD is the "unfinished" integration commit. The prior durable state claimed
-    implementation_complete_ready_for_hardening; that claim is REJECTED as
-    unproven. Source code + observed CI win over durable state.
+    HEAD = ci(core) step-summary diagnostics on top of d21c272 fix(swift6)
+    compile repairs. Prior durable state claimed implementation_complete_
+    ready_for_hardening; that claim is REJECTED as unproven. Every Core Tests
+    run in CI history has failed (early "success" rows were `|| true` masking).
+    Source code + observed CI win over durable state.
 
 continuation_policy:
   continue_after_packet: true
@@ -163,13 +165,16 @@ deferred_debt:
     detail: Repository observed public during bootstrap. No credentials committed. Visibility does not block implementation.
 
 last_checkpoint:
-  kind: reaudit
-  file: .agent/checkpoints/20260820-2200-reaudit-reject-false-complete.md
-  commit: d3b24544507ddd64267c44d327c7ffb837d26ba1
+  kind: partial
+  file: .agent/checkpoints/20260821-0805-INTEGRATION-A-phaseA-compile-repairs.md
+  commit: 63d637d
   note: >
-    Independent reaudit rejects the prior implementation_complete_ready_for_
-    hardening claim. Concrete defects A-G are being repaired under
-    INTEGRATION_COMPLETION_V1.
+    PHASE A compile repairs pushed (d21c272). Static audit found the real
+    historical breakers (DownloadState Hashable/finalizationFailed, test stub
+    mutations, non-exhaustive catches, app-layer Swift 6 fixes). Core Tests run
+    32430555251 and iOS CI run 32430555223 observed failing at 63d637d; exact
+    compiler output still unread. Local Windows Swift 6.3.3 toolchain being
+    extracted under .swift-toolchain/ to close the diagnosis loop.
 
 next_transition:
   when: PHASE A compile regressions resolved and CI green
