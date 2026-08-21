@@ -25,7 +25,8 @@ public final class GoogleSignInAuthSession: AuthSession {
         await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
                 if let user, error == nil {
-                    continuation.resume(returning: user.accessToken?.tokenString)
+                    // GoogleSignIn 9.x: accessToken is non-optional GIDToken.
+                    continuation.resume(returning: user.accessToken.tokenString)
                 } else {
                     continuation.resume(returning: nil)
                 }
