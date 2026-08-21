@@ -4,19 +4,23 @@ FocusTube uses **campaigns, milestones, work packets, and evidence gates**. Feat
 
 ## Campaign model
 
-### Active now — IMPLEMENTATION_V1
+### Active now — INTEGRATION_COMPLETION_V1
 
-Scope: **M0 through M8**, packets **WP-000 through WP-011**.
-
-Goal: implement the complete V1 architecture and product surface to automated build/test/simulator-complete status with no Critical/High known regressions.
+Scope: finish integrating the implemented subsystems into a functioning
+product, revalidate every gate against observed evidence, then run
+**HARDENING_V1** and prepare the personal release. The owner has explicitly
+authorized completion of the whole project, including hardening.
 
 The implementation agent runs continuously through this sequence and does not stop between packets.
 
-### Later — HARDENING
+### Active within this campaign — HARDENING_V1
 
 Scope: M9 and `.agent/HARDENING_BACKLOG.md` plus newly discovered torture/a11y/performance/security issues.
 
-Broad hardening is deliberately postponed so the implementation campaign does not become an endless cleanup loop. Critical/High defects remain immediate blockers and are never deferred.
+HARDENING_V1 runs automatically after IC-EXIT under INTEGRATION_COMPLETION_V1
+(the owner has explicitly authorized the full completion campaign).
+Critical/High defects remain immediate blockers and are never deferred;
+Medium/Low items are fixed when bounded or recorded in the backlog.
 
 ### Later — PERSONAL_RELEASE
 
@@ -223,14 +227,16 @@ Before marking implementation complete, run a cross-feature automated sweep prov
 - background-media implementation builds and device-only checks are documented;
 - durable state/checkpoints are coherent enough for a fresh agent to recover.
 
-When IC-EXIT passes set:
+When IC-EXIT passes, record evidence and continue directly into HARDENING_V1.
+The terminal durable state is:
 
 ```text
-status = implementation_complete_ready_for_hardening
-campaign IMPLEMENTATION_V1 = complete
+status = personal_release_candidate
+campaign INTEGRATION_COMPLETION_V1 = complete
 ```
 
-Do not automatically launch the broad hardening campaign.
+or, only if a genuine external blocker remains,
+`implementation_complete_external_validation_required`.
 
 ---
 
