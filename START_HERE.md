@@ -10,11 +10,11 @@ The implementation campaign is continuous. **Do not stop after one task or one w
 
 ## Current campaign
 
-- Campaign: `IMPLEMENTATION_V1`
-- Scope: milestones M0 through M8 / work packets WP-000 through WP-011.
-- Current waypoint: read `.agent/STATE.yaml`; at authoring time this is WP-000 / G0.
-- Hardening is **not** the current campaign. Medium/Low cleanup discovered during implementation goes to `.agent/HARDENING_BACKLOG.md` unless it blocks correctness.
-- Physical-iPhone-only validation is deferred to later hardening/release unless a device is already available to the agent.
+- Campaign: `INTEGRATION_COMPLETION_V1`
+- Scope: finish integrating the implemented subsystems into a functioning product, revalidate every gate against observed evidence, then run `HARDENING_V1` and prepare the personal release. The owner has explicitly authorized the full completion campaign including hardening.
+- Current waypoint: read `.agent/STATE.yaml`.
+- Nonblocking Medium/Low cleanup still goes to `.agent/HARDENING_BACKLOG.md`; Critical/High is fixed immediately.
+- Physical-iPhone-only validation is deferred and recorded until a device/credentials are available.
 
 ## Mandatory reading order
 
@@ -148,4 +148,4 @@ SwiftUI/AVKit/AVFoundation/SwiftData/GoogleSignIn behavior must be validated thr
 
 ## End condition for this campaign
 
-The implementation campaign ends only when the `IC-EXIT` criteria in `docs/14-ACCEPTANCE-GATES.md` pass. At that point set state to `implementation_complete_ready_for_hardening`. Do **not** automatically begin the broad hardening campaign unless the state/campaign is explicitly changed.
+The campaign ends only when the `IC-EXIT` criteria in `docs/14-ACCEPTANCE-GATES.md` pass with observed evidence, followed by the `HARDENING_V1` pass (Critical/High count zero) and release readiness. The terminal durable state is `personal_release_candidate`, or `implementation_complete_external_validation_required` only if a genuine external blocker remains.
