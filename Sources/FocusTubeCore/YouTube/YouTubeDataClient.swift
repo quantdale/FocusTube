@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Typed YouTube Data API v3 client over `HTTPPerforming`. Pure request
 /// building and error mapping are separated so they are deterministically
@@ -7,7 +10,7 @@ public struct YouTubeDataClient: YouTubeAPI {
     private let performer: HTTPPerforming
     private let baseURL: URL
 
-    public init(performer: HTTPPerforming = URLSession.shared, baseURL: URL = URL(string: "https://www.googleapis.com/youtube/v3")!) {
+    public init(performer: HTTPPerforming = URLSessionHTTPPerformer(), baseURL: URL = URL(string: "https://www.googleapis.com/youtube/v3")!) {
         self.performer = performer
         self.baseURL = baseURL
     }
@@ -21,7 +24,7 @@ public struct YouTubeDataClient: YouTubeAPI {
             "maxResults": "50"
         ])
         let data = try await perform(request)
-        let decoded = try JSONDecoder().decode(SubscriptionsResponse.self, from: data)
+        let decoded = try Self.decode(SubscriptionsResponse.self, from: data)
         return decoded.items.map { $0.contentDetails.relatedPlaylists.uploads }
     }
 
@@ -32,7 +35,7 @@ public struct YouTubeDataClient: YouTubeAPI {
             "maxResults": "50"
         ])
         let data = try await perform(request)
-        let decoded = try JSONDecoder().decode(PlaylistItemsResponse.self, from: data)
+        let decoded = try Self.decode(PlaylistItemsResponse.self, from: data)
         return decoded.items.map { $0.contentDetails.videoId }
     }
 
@@ -42,7 +45,7 @@ public struct YouTubeDataClient: YouTubeAPI {
             "id": ids.joined(separator: ",")
         ])
         let data = try await perform(request)
-        let decoded = try JSONDecoder().decode(VideosResponse.self, from: data)
+        let decoded = try Self.decode(VideosResponse.self, from: data)
         return decoded.items.map { item in
             VideoSummary(
                 id: item.id,
@@ -68,8 +71,20 @@ public struct YouTubeDataClient: YouTubeAPI {
         }
         let request = try Self.buildRequest(baseURL: baseURL, path: "search", accessToken: accessToken, query: query)
         let data = try await perform(request)
-        let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
+        let decoded = try Self.decode(SearchResponse.self, from: data)
         return (decoded.items.compactMap { $0.id.videoId }, decoded.nextPageToken)
+    }
+
+    // MARK: - Decoding
+
+    /// Maps raw `DecodingError`s onto the typed `.decode` API error so callers
+    /// never see untyped decoder internals (G3 acceptance).
+    private static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            throw YouTubeAPIError.decode
+        }
     }
 
     // MARK: - Comments
@@ -86,7 +101,7 @@ public struct YouTubeDataClient: YouTubeAPI {
         }
         let request = try Self.buildRequest(baseURL: baseURL, path: "commentThreads", accessToken: accessToken, query: query)
         let data = try await perform(request)
-        let decoded = try JSONDecoder().decode(CommentThreadsResponse.self, from: data)
+        let decoded = try Self.decode(CommentThreadsResponse.self, from: data)
         let comments = decoded.items.map { item -> Comment in
             let top = item.snippet.topLevelComment
             let replies = (item.replies?.comments ?? []).map { rc in

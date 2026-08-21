@@ -4,16 +4,30 @@ import XCTest
 // Class (not struct) so action methods can record invocations for assertions;
 // @unchecked Sendable is safe here because tests exercise calls sequentially.
 private final class FullStubAPI: YouTubeAPI, @unchecked Sendable {
-    var commentsPage: CommentPage = .disabled
+    var commentsPage: CommentPage
     var commentsThrows: YouTubeAPIError?
     var subscribedChannel: String?
     var ratedVideo: (String, VideoRating)?
     var actionThrows: YouTubeAPIError?
 
+    init(
+        commentsPage: CommentPage = .disabled,
+        commentsThrows: YouTubeAPIError? = nil,
+        subscribedChannel: String? = nil,
+        ratedVideo: (String, VideoRating)? = nil,
+        actionThrows: YouTubeAPIError? = nil
+    ) {
+        self.commentsPage = commentsPage
+        self.commentsThrows = commentsThrows
+        self.subscribedChannel = subscribedChannel
+        self.ratedVideo = ratedVideo
+        self.actionThrows = actionThrows
+    }
+
     func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { [] }
     func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String] { [] }
     func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] { [] }
-    func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> ([String], String?) { ([], nil) }
+    func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) { ([], nil) }
     func fetchSubscriptionFeed(accessToken: String) async throws -> [VideoSummary] { [] }
 
     func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage {

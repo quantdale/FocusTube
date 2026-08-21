@@ -9,7 +9,7 @@ private struct SearchStubAPI: YouTubeAPI {
     func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { [] }
     func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String] { [] }
     func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] { details }
-    func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> ([String], String?) {
+    func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
         return (searchIDs, nextPageToken)
     }
     func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage { .disabled }
@@ -49,7 +49,7 @@ final class SearchServiceTests: XCTestCase {
             func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { [] }
             func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String] { [] }
             func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] { [] }
-            func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> ([String], String?) {
+            func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
                 throw YouTubeAPIError.quotaExceeded
             }
             func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage { .disabled }

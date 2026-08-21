@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Typed YouTube Data API error classes required by G3 acceptance.
 public enum YouTubeAPIError: Error, Equatable, Sendable {
@@ -16,7 +19,15 @@ public protocol HTTPPerforming: Sendable {
     func data(for request: URLRequest) async throws -> (Data, URLResponse)
 }
 
-extension URLSession: HTTPPerforming {}
+/// Default production performer. Wrapped in a stateless `Sendable` struct
+/// because `URLSession` itself is not declared `Sendable` on every platform.
+public struct URLSessionHTTPPerformer: HTTPPerforming {
+    public init() {}
+
+    public func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await URLSession.shared.data(for: request)
+    }
+}
 
 /// Boundary for the YouTube Data API v3. Media extraction (YouTubeKit) is never
 /// coupled to this; the API client only needs an OAuth access token (or API

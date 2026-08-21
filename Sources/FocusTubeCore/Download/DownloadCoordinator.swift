@@ -81,7 +81,7 @@ public actor DownloadCoordinator {
         guard let task = tasks[taskID], task.state.status == .queued else { return }
         var updated = task
         do {
-            try updated.state.transition(to: .downloading)
+            try updated.transition(to: .downloading)
         } catch {
             return
         }
@@ -158,7 +158,7 @@ public actor DownloadCoordinator {
 
     private func finalize(task: inout DownloadTask, tempLocations: [URL]) async {
         do {
-            try task.state.transition(to: .validating)
+            try task.transition(to: .validating)
         } catch {
             return
         }
@@ -176,7 +176,7 @@ public actor DownloadCoordinator {
 
         if tempLocations.count == 1 {
             do {
-                try task.state.transition(to: .finalizing)
+                try task.transition(to: .finalizing)
             } catch {
                 return
             }
@@ -200,7 +200,7 @@ public actor DownloadCoordinator {
 
         // Adaptive path: combine components into the final file.
         do {
-            try task.state.transition(to: .muxing)
+            try task.transition(to: .muxing)
         } catch {
             return
         }
@@ -220,7 +220,7 @@ public actor DownloadCoordinator {
                 return
             }
             do {
-                try task.state.transition(to: .finalizing)
+                try task.transition(to: .finalizing)
             } catch {
                 return
             }

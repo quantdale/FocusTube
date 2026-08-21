@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import FocusTubeCore
 
 private struct FakeHTTPPerformer: HTTPPerforming {
@@ -104,6 +107,10 @@ final class YouTubeDataClientTests: XCTestCase {
 private final class ScriptedPerformer: HTTPPerforming, @unchecked Sendable {
     var responses: [(Data, Int)]
     private var index = 0
+
+    init(responses: [(Data, Int)]) {
+        self.responses = responses
+    }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let (data, status) = responses[min(index, responses.count - 1)]

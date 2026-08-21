@@ -61,6 +61,12 @@ public struct DownloadTask: Identifiable, Sendable, Hashable {
     public mutating func apply(_ state: DownloadState) {
         self.state = state
     }
+
+    /// Applies a validated state-machine transition to the task's state.
+    /// Exposed so callers outside this file never need direct setter access.
+    public mutating func transition(to status: DownloadStatus) throws(DownloadState.TransitionError) {
+        try state.transition(to: status)
+    }
 }
 
 /// Input used to enqueue a new download. May carry one component (combined
