@@ -24,7 +24,9 @@ public final class GoogleSignInAuthSession: AuthSession {
             let effectiveClientID = clientID ?? state.clientID
             guard let effectiveClientID else { return state.configured }
             if !state.configured {
-                GIDSignIn.sharedInstance.configure(clientID: effectiveClientID)
+                // GoogleSignIn 9.x configures via GIDConfiguration.
+                let configuration = GIDConfiguration(clientID: effectiveClientID)
+                GIDSignIn.sharedInstance.configure(configuration: configuration)
             }
             state.clientID = effectiveClientID
             state.configured = true
