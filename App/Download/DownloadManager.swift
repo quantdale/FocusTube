@@ -40,7 +40,8 @@ public final class DownloadManager {
         context: ModelContext,
         storage: StorageProviding = VolumeStorage(),
         mediaDirectory: URL = DownloadManager.defaultMediaDirectory(),
-        incompleteDirectory: URL = DownloadManager.defaultIncompleteDirectory()
+        incompleteDirectory: URL = DownloadManager.defaultIncompleteDirectory(),
+        validate: (@Sendable (URL) async throws -> Void)? = MediaAssetValidator.makeSeam()
     ) {
         self.context = context
         self.storage = storage
@@ -51,7 +52,7 @@ public final class DownloadManager {
             transport: transport,
             directory: incompleteDirectory,
             mux: Self.makeMux(),
-            validate: MediaAssetValidator.makeSeam()
+            validate: validate
         )
         // Reconciliation awaits transport reattachment, so it runs as a task;
         // `reconcileOnLaunch()` is idempotent and may also be awaited directly.

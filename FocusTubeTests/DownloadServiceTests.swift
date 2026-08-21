@@ -153,7 +153,8 @@ final class DownloadServiceTests: XCTestCase {
         let container = try ModelContainer(for: schema, configurations: [config])
         return DownloadManager(
             transport: NoopTransport(),
-            context: ModelContext(container)
+            context: ModelContext(container),
+            validate: nil
         )
     }
 
@@ -229,7 +230,8 @@ final class DownloadServiceTests: XCTestCase {
             extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v4", resolution: 720))),
             downloadManager: DownloadManager(
                 transport: FailingTransport(),
-                context: ModelContext(try makeContainer())
+                context: ModelContext(try makeContainer()),
+                validate: nil
             ),
             library: library
         )
@@ -268,7 +270,8 @@ final class DownloadServiceTests: XCTestCase {
             extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v5", resolution: 720))),
             downloadManager: DownloadManager(
                 transport: CompletingTransport(tempLocation: temp),
-                context: ModelContext(try makeContainer())
+                context: ModelContext(try makeContainer()),
+                validate: nil
             ),
             library: library,
             mediaDirectory: mediaDirectory
@@ -307,7 +310,8 @@ final class DownloadServiceTests: XCTestCase {
             extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v6", resolution: 720))),
             downloadManager: DownloadManager(
                 transport: ExpiredThenCompletingTransport(tempLocation: temp),
-                context: ModelContext(try makeContainer())
+                context: ModelContext(try makeContainer()),
+                validate: nil
             ),
             library: library,
             mediaDirectory: mediaDirectory
@@ -339,7 +343,7 @@ final class DownloadServiceTests: XCTestCase {
         try Data([0x00]).write(to: destination)
 
         let gated = GatedTransport(tempLocation: temp)
-        let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()))
+        let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()), validate: nil))
         let library = try await makeLibrary()
         let service = await DownloadService(
             extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v7", resolution: 720))),
@@ -378,7 +382,7 @@ final class DownloadServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
 
         let gated = GatedTransport(tempLocation: root.appendingPathComponent("component.mp4"))
-        let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()))
+        let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()), validate: nil))
         let library = try await makeLibrary()
         let service = await DownloadService(
             extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v8", resolution: 720))),
@@ -446,7 +450,7 @@ final class DownloadServiceTests: XCTestCase {
         )
 
         let switchable = SwitchableTransport(tempLocation: temp)
-        let manager = DownloadManager(transport: switchable, context: ModelContext(try makeContainer()))
+        let manager = DownloadManager(transport: switchable, context: ModelContext(try makeContainer()), validate: nil))
         let library = try await makeLibrary()
         let service = await DownloadService(
             extractor: FakeExtractor(result: .success(bothQualities)),

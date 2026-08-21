@@ -68,14 +68,15 @@ jobs:
           COUNT=0
           while kill -0 "$XPID" 2>/dev/null; do
             sleep 45
-            CUR="$(grep -E "Test Case .* (started|passed|failed)|Test Suite .* (started|passed|failed)|error:" Artifacts/xcodebuild-unit.log 2>/dev/null | tail -1)"
+            CUR="$(grep -E "Test Case .* (started|passed|failed)|Test Suite .* (started|passed|failed)|error:" Artifacts/xcodebuild-unit.log 2>/dev/null | tail -1 || true)"
             if [ -n "$CUR" ] && [ "$CUR" != "$LAST" ] && [ "$COUNT" -lt 9 ]; then
               echo "::warning::unit-progress: $CUR"
               LAST="$CUR"
               COUNT=$((COUNT+1))
             fi
           done
-          wait "$XPID"; RC=$?
+          RC=0
+          wait "$XPID" || RC=$?
           echo "$RC" > Artifacts/unit.exit
           exit $RC
 
@@ -93,14 +94,15 @@ jobs:
           COUNT=0
           while kill -0 "$XPID" 2>/dev/null; do
             sleep 45
-            CUR="$(grep -E "Test Case .* (started|passed|failed)|Test Suite .* (started|passed|failed)|error:" Artifacts/xcodebuild-ui.log 2>/dev/null | tail -1)"
+            CUR="$(grep -E "Test Case .* (started|passed|failed)|Test Suite .* (started|passed|failed)|error:" Artifacts/xcodebuild-ui.log 2>/dev/null | tail -1 || true)"
             if [ -n "$CUR" ] && [ "$CUR" != "$LAST" ] && [ "$COUNT" -lt 9 ]; then
               echo "::warning::ui-progress: $CUR"
               LAST="$CUR"
               COUNT=$((COUNT+1))
             fi
           done
-          wait "$XPID"; RC=$?
+          RC=0
+          wait "$XPID" || RC=$?
           echo "$RC" > Artifacts/ui.exit
           exit $RC
 
