@@ -66,6 +66,13 @@ jobs:
             echo "::error::$line"
           done || true
 
+      # Release configuration must compile too (personal-release readiness).
+      - name: Release build
+        if: success()
+        run: |
+          set -o pipefail
+          xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -configuration Release             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO | tee Artifacts/xcodebuild-release.log
+
       - name: Simulator screenshot
         if: always()
         run: |
