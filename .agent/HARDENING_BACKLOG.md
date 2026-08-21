@@ -51,4 +51,71 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Suggested hardening action: buffer early events in the transport or re-check task states after attach.
 - Blocks implementation: no
 
-Administrative note: repository visibility was observed as public during bootstrap. This is not an implementation blocker and should be handled outside code when desired.
+### HB-004 — stale-response race in SearchStore/HomeFeedStore loads
+- Severity: Medium
+- Discovered in: HARDENING_V1 audit (dd5d648 era)
+- Area: App/Search/SearchStore.swift, App/Home/HomeFeedStore.swift
+- Evidence/reproduction: concurrent submit/load calls are not serialized; last response wins and can regress visible state.
+- Impact: observable state may briefly show older results.
+- Suggested hardening action: generation token or task cancellation per load.
+- Blocks implementation: no
+
+### HB-005 — Now Playing metadata never published
+- Severity: Medium
+- Discovered in: HARDENING_V1 audit
+- Area: App/Media/BackgroundMediaCoordinator.swift (updateNowPlaying has no call sites)
+- Impact: lock screen shows no title/artwork/duration though remote commands work.
+- Suggested hardening action: publish via NowPlayingInfoBuilder on playback state changes/progress ticks.
+- Blocks implementation: no
+
+### HB-006 — per-event unstructured Tasks allow event reordering
+- Severity: Medium
+- Discovered in: HARDENING_V1 audit
+- Area: Sources/FocusTubeCore/Download/DownloadCoordinator.swift begin(onEvent:), App/Download/DownloadManager.swift reattach handler
+- Impact: a late progress/completed Task can overtake a failed event; benign today because transitions guard, but ordering is not guaranteed.
+- Suggested hardening action: serialize events per task (AsyncStream mailbox).
+- Blocks implementation: no
+
+### HB-007 — RootView.init side effects run on every struct evaluation
+- Severity: Medium
+- Discovered in: HARDENING_V1 audit
+- Area: App/RootView.swift init, App/Download/DownloadManager.swift init-spawned reconcile Task
+- Impact: discarded instances still open containers/spawn reconciliation.
+- Suggested hardening action: hoist dependencies into a single container created in FocusTubeApp.
+- Blocks implementation: no
+
+### HB-008 — waitForCompletion polls up to 10 min and ignores cancellation
+- Severity: Medium
+- Discovered in: HARDENING_V1 audit
+- Area: App/Download/DownloadManager.swift waitForCompletion
+- Impact: dismissed views keep polling; timeout reports failure while transfer continues (late completion then registers media — user saw a false failure).
+- Suggested hardening action: checkCancellation per iteration + event-driven continuation; distinguish timed-out-but-active from settled failure.
+- Blocks implementation: no
+
+### HB-009 — storage admission floor never enforced
+- Severity: Medium
+- Discovered in: HARDENING_V1 audit
+- Area: App/Download/DownloadService.swift (requiredBytes always 0), docs/03 storage rule
+- Impact: full device drives cryptic finalization/mux failures instead of typed storageRefused.
+- Suggested hardening action: enforce free-space floor before begin, or expose stream byte sizes for real estimates.
+- Blocks implementation: no
+
+### HB-010 — final validation is existence+size only
+- Severity: Medium
+- Discovered in: HARDENING_V1 audit
+- Area: Sources/FocusTubeCore/Download/DownloadCoordinator.swift finalize
+- Impact: truncated-but-nonempty files register as completed.
+- Suggested hardening action: injected AVFoundation asset-validator seam at app layer.
+- Blocks implementation: no
+
+### HB-011 — test gaps: malformed payloads per endpoint, store error paths, comments-disabled detection
+- Severity: Medium
+- Discovered in: HARDENING_V1 audit
+- Area: Tests/FocusTubeCoreTests, FocusTubeTests
+- Suggested hardening action: table-driven malformed-JSON cases per endpoint; SearchStore/HomeFeedStore deterministic error tests incl. 401; commentsDisabled 403-envelope fixture.
+- Blocks implementation: no
+
+### HB-012 — Low batch
+- Severity: Low
+- Items: transport-held closures retain coordinator until terminal event; removeTarget(nil) blast radius; PlayerCoordinator deinit teardown assumption; in-memory fallback try!; duplicate extraction per video page + unordered history writes; muxing-* orphan sweep at launch; DownloadRecord components decode-failure silent no-op retry; try? context.save() silent failures; VolumeStorage 0-on-error ambiguity; empty Media/<id>/<quality>/ dirs never pruned; layout divergence Media/<videoID>/<quality>/ vs spec Media/<videoID>/media.<container> (multi-quality justification noted, ADR line pending).
+- Blocks implementation: no
