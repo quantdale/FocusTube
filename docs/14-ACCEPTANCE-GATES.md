@@ -111,7 +111,7 @@ All must hold:
 - [ ] `.agent/STATE.yaml`, `.agent/WAYPOINTS.yaml`, checkpoints, and hardening backlog reflect current reality.
 - [ ] a fresh agent can identify what is complete and why without chat history.
 
-On pass: set `implementation_complete_ready_for_hardening`. Do not automatically enter M9.
+On pass under INTEGRATION_COMPLETION_V1: record evidence, then continue directly into HARDENING_V1 (the owner has explicitly authorized the full completion campaign including hardening and personal release). The terminal state is `personal_release_candidate`, or `implementation_complete_external_validation_required` only if a genuine external blocker remains.
 
 ---
 

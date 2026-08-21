@@ -19,7 +19,7 @@ This repository contains a durable control plane so an AI coding agent can execu
 - [`.agent/checkpoints/`](.agent/checkpoints/) — durable gate/milestone evidence.
 - [`.agent/HARDENING_BACKLOG.md`](.agent/HARDENING_BACKLOG.md) — nonblocking debt intentionally deferred during implementation.
 
-The active campaign is **IMPLEMENTATION_V1 (M0–M8 / WP-000–WP-011)**. An agent is expected to continue from packet to packet until `IC-EXIT` passes. Broad hardening and physical-device release validation are later campaigns.
+The active campaign is **INTEGRATION_COMPLETION_V1**: finish integration of the implemented subsystems into a functioning product, revalidate every gate against observed evidence, then run **HARDENING_V1** and prepare the personal release. The owner has explicitly authorized completion of the whole project, including hardening.
 
 ## Locked product/technical decisions
 
@@ -68,7 +68,7 @@ FocusTube/
 The short version is:
 
 ```text
-Read START_HERE.md and follow the repository's durable state. Execute IMPLEMENTATION_V1 continuously until IC-EXIT, validating and checkpointing every gate. Do not start broad hardening.
+Read START_HERE.md and follow the repository's durable state. Execute INTEGRATION_COMPLETION_V1 continuously — integration, validation, hardening, release readiness — until the definition of done is met or only genuinely device/credential-bound checks remain. Validate and checkpoint every gate with observed evidence.
 ```
 
 For the exact reusable prompt, use [`.agent/BOOT_PROMPT.md`](.agent/BOOT_PROMPT.md).
