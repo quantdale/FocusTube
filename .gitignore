@@ -31,3 +31,6 @@ Thumbs.db
 
 # XcodeGen cache
 .xcodegen/
+
+# Local CI monitoring scratch (anonymous API polling from the authoring host)
+.ci-*

@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-21T10:20:00+08:00
+updated_at: 2026-08-22T00:30:00+08:00
 
 campaign:
   id: INTEGRATION_COMPLETION_V1
@@ -21,13 +21,16 @@ current_packet_status: complete
 current_waypoint:
   id: PERSONAL_RELEASE_CANDIDATE
   objective: >
-    INTEGRATION_COMPLETION_V1 + HARDENING_V1 are complete with observed
-    evidence. On commit 16ad839: Core Tests workflow green (run 32494119089);
-    ios-ci run 32494119169 fully green — Build (Debug), app-hosted unit tests
-    (Gate unit=0) and LaunchTests UI leg (Gate ui=0) — restoring the first
-    honest green Apple build plane in project history. Local Windows Swift
-    6.3.3: 67 XCTest + 11 swift-testing, 0 failures. Hardening backlog fully
-    dispositioned; docs/gates synced to this state.
+    INTEGRATION_COMPLETION_V1 + HARDENING_V1 complete with observed evidence,
+    and the deferred Medium/Low backlog now fully closed on top. On commit
+    03ce6f6: Core Tests run 32501838807 green; ios-ci run 32501839603 fully
+    green — Build (Debug), app-hosted unit tests (Gate unit=0) and LaunchTests
+    UI leg (Gate ui=0). HB-011 test gaps (malformed payloads per endpoint,
+    store error paths incl. stale-response generation guards, commentsDisabled
+    403 envelope) and all remaining HB-012 Low items (event-chain retention/
+    allocation, removeTarget(nil) blast radius, try! in container fallback,
+    silent decode failures) are implemented, tested, and dispositioned in
+    .agent/HARDENING_BACKLOG.md. No open Medium/Low items remain.
   exact_next_action: >
     Owner-only steps remain, all listed in PERSONAL_RELEASE_CHECKLIST.md:
     Apple signing/install on the physical iPhone, real Google OAuth
@@ -37,20 +40,16 @@ current_waypoint:
   validation_required:
     - none for agent scope; device/credential checks deferred to owner
 
-resume_token: PERSONAL_RELEASE_CANDIDATE:16ad839
+resume_token: PERSONAL_RELEASE_CANDIDATE:03ce6f6
 repo_baseline:
   branch: main
-  commit: 16ad839
+  commit: 03ce6f6
   note: >
-    Both workflows green on the same commit for the first time in project
-    history: Core Tests run 32494119089 success; ios-ci run 32494119169
-    success (Gate unit=0 ui=0 recorded at 15:02:36Z). Historical context:
-    the 55-minute test-phase hang was eliminated by bounded split test steps
-    (f3db8e9); later rounds fixed watchdog set -e semantics (b83d0b3),
-    validator visibility (43bab86), scripted-edit parens (e993a37),
-    annotation prioritization (076f39f), and a pre-existing fixture
-    write-before-mkdir bug in four DownloadServiceTests (16ad839) that had
-    been masked by continue-on-error in every earlier run.
+    Hardening backlog closure (HB-011 + HB-012 remainder) validated on the same
+    commit for both planes: Core Tests run 32501838807 success; ios-ci run
+    32501839603 success (job 96833085436 — Test FocusTubeCore, Build Debug,
+    Unit tests, UI tests, Gate all green). Backlog fully dispositioned; no open
+    Medium/Low items remain.
 
 continuation_policy:
   continue_after_packet: true
@@ -108,7 +107,9 @@ progress:
   implementation_exit_passed: true
   note: >
     IC-EXIT passed on 16ad839 with observed evidence (docs/14). HARDENING_V1
-    executed; remaining debt is documented Low items in HARDENING_BACKLOG.
+    executed; its deferred Medium/Low backlog was fully closed on 03ce6f6
+    (HB-011 + HB-012 remainder, both CI workflows green on that commit).
+    No open debt remains.
 
 milestones:
   M0_BOOTSTRAP: complete
@@ -159,12 +160,13 @@ deferred_debt:
 
 last_checkpoint:
   kind: final
-  file: .agent/checkpoints/20260821-1505-PERSONAL-RELEASE-candidate.md
-  commit: 16ad839
+  file: .agent/checkpoints/20260822-HARDENING-backlog-closure.md
+  commit: 03ce6f6
   note: >
-    IC-EXIT passed with observed evidence: Core Tests run 32494119089 green;
-    ios-ci run 32494119169 green (Gate unit=0 ui=0). Terminal durable state
-    personal_release_candidate; owner-only steps in PERSONAL_RELEASE_CHECKLIST.md.
+    Deferred hardening debt closed on 03ce6f6 with observed evidence: Core
+    Tests run 32501838807 green; ios-ci run 32501839603 green (Gate unit=0
+    ui=0). HARDENING_BACKLOG has zero open items; owner-only steps remain in
+    PERSONAL_RELEASE_CHECKLIST.md.
 
 next_transition:
   when: owner completes PERSONAL_RELEASE_CHECKLIST.md on physical device
