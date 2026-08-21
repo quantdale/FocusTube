@@ -51,7 +51,7 @@ public struct DownloadFailure: Identifiable, Equatable, Sendable {
 /// surfaced as a typed `DownloadFailure` on `lastFailure`.
 @MainActor
 @Observable
-public final class DownloadService {
+final class DownloadService {
     /// The most recent download failure, for UI to present and acknowledge.
     public private(set) var lastFailure: DownloadFailure?
 
