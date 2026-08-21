@@ -20,8 +20,8 @@ jobs:
           set -o pipefail
           swift test 2>&1 | tee /tmp/core-test.log
 
-      # The Actions log API needs auth to read; the step summary renders on the
-      # public run page, so surface compiler/test failures there for remote diagnosis.
+      # The Actions log API needs auth to read remotely; the step summary renders
+      # on the public run page and ::error:: lines become readable annotations.
       - name: Publish failure summary
         if: failure()
         run: |
@@ -35,3 +35,6 @@ jobs:
             tail -80 /tmp/core-test.log || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          grep -E "error:" /tmp/core-test.log | head -25 | while IFS= read -r line; do
+            echo "::error::$line"
+          done || true
