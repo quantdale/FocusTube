@@ -70,7 +70,9 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
     public func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {
         for (index, component) in request.components.enumerated() {
             let task = session.downloadTask(with: component.sourceURL)
-            task.taskDescription = request.id
+            // Durable component identity: survives relaunch so reattachment
+            // restores the exact slot instead of guessing from task order.
+            task.taskDescription = DownloadTransferIdentity.encode(requestID: request.id, componentIndex: index)
             lock.withLock { state in
                 state.handlers[task.taskIdentifier] = onEvent
                 state.componentIndex[task.taskIdentifier] = index
@@ -115,13 +117,13 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
 
     /// Reattaches to download tasks that are still alive in the shared
     /// background session from a previous process lifetime. Live tasks are
-    /// grouped by their `taskDescription` (the request id), per-task handlers
-    /// and component indexes are re-registered so delegate callbacks flow to
-    /// `onEvent`, and every recovered request is reported with its live
-    /// component count. Tasks that can no longer deliver events (already
-    /// finished, cancelled, or missing their request id) stay unregistered so
-    /// their records reconcile as interrupted instead of hanging in
-    /// `.downloading`.
+    /// grouped by the request id decoded from their durable
+    /// `"<requestID>#<componentIndex>"` description, per-task handlers and
+    /// component indexes are re-registered under those exact indexes, and every
+    /// recovered request is reported with its surviving indexes. Tasks that can
+    /// no longer deliver events (already finished, cancelled, or missing a
+    /// decodable identity) stay unregistered so their records reconcile as
+    /// interrupted instead of hanging in `.downloading`.
     public func reattach(
         onEvent: @escaping @Sendable (_ requestID: String, _ event: DownloadEvent) -> Void
     ) async -> [ReattachedDownload] {
@@ -131,16 +133,16 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
             }
         }
 
-        var grouped: [String: [URLSessionDownloadTask]] = [:]
+        var grouped: [String: [Int: URLSessionDownloadTask]] = [:]
         for task in liveTasks.sorted(by: { $0.taskIdentifier < $1.taskIdentifier }) {
             guard task.state == .running,
-                  let requestID = task.taskDescription, !requestID.isEmpty else { continue }
-            grouped[requestID, default: []].append(task)
+                  let (requestID, index) = DownloadTransferIdentity.decode(task.taskDescription) else { continue }
+            grouped[requestID, default: [:]][index] = task
         }
 
         lock.withLock { state in
-            for (requestID, tasks) in grouped {
-                for (index, task) in tasks.enumerated() {
+            for (requestID, tasksByIndex) in grouped {
+                for (index, task) in tasksByIndex.sorted(by: { $0.key < $1.key }) {
                     guard state.handlers[task.taskIdentifier] == nil else { continue }
                     state.handlers[task.taskIdentifier] = { event in onEvent(requestID, event) }
                     state.componentIndex[task.taskIdentifier] = index
@@ -150,7 +152,10 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         }
 
         return grouped.keys.sorted().map { requestID in
-            ReattachedDownload(requestID: requestID, componentCount: grouped[requestID]?.count ?? 0)
+            ReattachedDownload(
+                requestID: requestID,
+                recoveredIndexes: grouped[requestID]?.keys.sorted() ?? []
+            )
         }
     }
 
@@ -196,8 +201,10 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
     }
 
     /// Removes only the finished task from its request group so the sibling
-    /// components of an adaptive download stay cancellable.
-    fileprivate func clearRequest(_ requestID: String, taskIdentifier: Int) {
+    /// components of an adaptive download stay cancellable. The request id is
+    /// decoded from the task's durable description.
+    fileprivate func clearRequest(_ description: String?, taskIdentifier: Int) {
+        guard let (requestID, _) = DownloadTransferIdentity.decode(description) else { return }
         lock.withLock { state in
             guard var tasks = state.tasksByRequest[requestID] else { return }
             tasks.removeAll { $0.taskIdentifier == taskIdentifier }
@@ -250,7 +257,7 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
             if !cancelled, error != nil {
                 transport?.deliverFailed(taskIdentifier: task.taskIdentifier)
             }
-            transport?.clearRequest(task.taskDescription ?? "", taskIdentifier: task.taskIdentifier)
+            transport?.clearRequest(task.taskDescription, taskIdentifier: task.taskIdentifier)
         }
 
         func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {

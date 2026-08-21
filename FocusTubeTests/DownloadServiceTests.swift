@@ -58,6 +58,76 @@ private final class ExpiredThenCompletingTransport: DownloadTransport, @unchecke
     func cancel(taskID: String) async {}
 }
 
+/// Holds each transfer's completion behind a released gate so a download can be
+/// observed mid-flight; emits one progress event on begin so the manager's live
+/// projection (and the service's in-flight check) populates immediately.
+private final class GatedTransport: DownloadTransport, @unchecked Sendable {
+    let tempLocation: URL
+    private let lock = NSLock()
+    private var released = false
+    private(set) var beginCount = 0
+
+    init(tempLocation: URL) {
+        self.tempLocation = tempLocation
+    }
+
+    func release() {
+        lock.lock()
+        released = true
+        lock.unlock()
+    }
+
+    func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {
+        lock.lock()
+        beginCount += 1
+        lock.unlock()
+        onEvent(.progress(component: 0, bytes: 0, total: 100))
+        while true {
+            lock.lock()
+            let done = released
+            lock.unlock()
+            if done { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        onEvent(.completed(tempLocation: tempLocation, component: 0))
+    }
+
+    func cancel(taskID: String) async {}
+}
+
+/// Fails every transfer until switched to completing; counts begins so tests can
+/// assert exactly how many transfer attempts the service made.
+private final class SwitchableTransport: DownloadTransport, @unchecked Sendable {
+    let tempLocation: URL
+    private let lock = NSLock()
+    private var failing = true
+    private(set) var beginCount = 0
+
+    init(tempLocation: URL) {
+        self.tempLocation = tempLocation
+    }
+
+    func completeSubsequentTransfers() {
+        lock.lock()
+        failing = false
+        lock.unlock()
+    }
+
+    func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {
+        lock.lock()
+        beginCount += 1
+        let failingNow = failing
+        lock.unlock()
+        if failingNow {
+            onEvent(.failed(.transportFailed))
+        } else {
+            onEvent(.completed(tempLocation: tempLocation, component: 0))
+        }
+    }
+
+    func cancel(taskID: String) async {}
+}
+
 final class DownloadServiceTests: XCTestCase {
     private func combinedMedia(videoID: String, resolution: Int) -> ResolvedMedia {
         let stream = MediaStream(
@@ -98,6 +168,22 @@ final class DownloadServiceTests: XCTestCase {
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [config])
         return LibraryStore(context: ModelContext(container))
+    }
+
+    /// Polls until the condition holds or the timeout elapses, failing the test
+    /// with `message`; used to observe gated mid-flight state deterministically.
+    @MainActor
+    private func waitUntil(
+        _ condition: () async -> Bool,
+        timeout: TimeInterval = 5,
+        _ message: String
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await condition() { return }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail(message)
     }
 
     func testExtractionFailureSurfacesTypedError() async throws {
@@ -237,6 +323,162 @@ final class DownloadServiceTests: XCTestCase {
         XCTAssertNil(failure)
         let downloaded = await library.downloaded
         XCTAssertEqual(downloaded.count, 1)
+    }
+
+    func testConcurrentDuplicateDownloadDoesNotResetInFlightTask() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let mediaDirectory = root.appendingPathComponent("Media")
+        let destination = mediaDirectory
+            .appendingPathComponent("v7")
+            .appendingPathComponent("720")
+            .appendingPathComponent("media.mp4")
+        let temp = root.appendingPathComponent("component-\(UUID().uuidString).mp4")
+        try Data([0x01, 0x02]).write(to: temp)
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([0x00]).write(to: destination)
+
+        let gated = GatedTransport(tempLocation: temp)
+        let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()))
+        let library = try await makeLibrary()
+        let service = await DownloadService(
+            extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v7", resolution: 720))),
+            downloadManager: manager,
+            library: library,
+            mediaDirectory: mediaDirectory
+        )
+
+        let first = Task {
+            await service.download(videoID: "v7", title: "T", channelTitle: "C", quality: .p720)
+        }
+        await waitUntil({ service.isInFlight(videoID: "v7", quality: .p720) },
+                        "first download never appeared in flight")
+
+        // A concurrent duplicate start must be refused without re-enqueueing:
+        // a second enqueue would reset the coordinator task to .queued while
+        // the first transfer's events are still arriving.
+        await service.download(videoID: "v7", title: "T", channelTitle: "C", quality: .p720)
+        XCTAssertEqual(gated.beginCount, 1)
+        let inFlight = await manager.coordinatorTask("v7-720")
+        XCTAssertEqual(inFlight?.state.status, .downloading)
+
+        gated.release()
+        await first.value
+
+        let failure = await service.lastFailure
+        XCTAssertNil(failure)
+        let downloaded = await library.downloaded
+        XCTAssertEqual(downloaded.count, 1)
+        XCTAssertEqual(downloaded.first?.videoID, "v7")
+    }
+
+    func testCancelMarksRecordCancelledAndSurfacesTypedFailure() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let gated = GatedTransport(tempLocation: root.appendingPathComponent("component.mp4"))
+        let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()))
+        let library = try await makeLibrary()
+        let service = await DownloadService(
+            extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v8", resolution: 720))),
+            downloadManager: manager,
+            library: library,
+            mediaDirectory: root.appendingPathComponent("Media")
+        )
+
+        let running = Task {
+            await service.download(videoID: "v8", title: "T", channelTitle: "C", quality: .p720)
+        }
+        await waitUntil({ service.isInFlight(videoID: "v8", quality: .p720) },
+                        "download never appeared in flight")
+
+        await service.cancel(videoID: "v8", quality: .p720)
+        await running.value
+
+        let failure = await service.lastFailure
+        XCTAssertEqual(failure?.error, .cancelled)
+        XCTAssertEqual(failure?.quality, .p720)
+        let records = await manager.records
+        let record = records.first { $0.id == "v8-720" }
+        XCTAssertEqual(record?.state.status, .failed)
+        XCTAssertEqual(record?.state.error, .cancelled)
+    }
+
+    func testAutoRetryIgnoresFailureFromOtherQuality() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let mediaDirectory = root.appendingPathComponent("Media")
+        let destination = mediaDirectory
+            .appendingPathComponent("v9")
+            .appendingPathComponent("720")
+            .appendingPathComponent("media.mp4")
+        let temp = root.appendingPathComponent("component-\(UUID().uuidString).mp4")
+        try Data([0x01, 0x02]).write(to: temp)
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([0x00]).write(to: destination)
+
+        func stream(_ videoID: String, resolution: Int) -> MediaStream {
+            MediaStream(
+                id: "https://example.com/\(videoID)-\(resolution)",
+                videoID: videoID,
+                resolution: resolution,
+                kind: .combined,
+                nativePlayable: true,
+                container: "mp4",
+                videoCodec: "avc1",
+                audioCodec: "mp4a",
+                sourceURL: URL(string: "https://example.com/\(videoID)-\(resolution)")!,
+                expiresAt: nil
+            )
+        }
+        let bothQualities = ResolvedMedia(
+            videoID: "v9",
+            extractedAt: Date(),
+            combined: [stream("v9", resolution: 360), stream("v9", resolution: 720)],
+            videoOnly: [],
+            audioOnly: []
+        )
+
+        let switchable = SwitchableTransport(tempLocation: temp)
+        let manager = DownloadManager(transport: switchable, context: ModelContext(try makeContainer()))
+        let library = try await makeLibrary()
+        let service = await DownloadService(
+            extractor: FakeExtractor(result: .success(bothQualities)),
+            downloadManager: manager,
+            library: library,
+            mediaDirectory: mediaDirectory
+        )
+
+        // Seed a same-video failure at 360p: it fails, legitimately auto-retries
+        // (same video+quality), and fails again, leaving its failure on record.
+        await service.download(videoID: "v9", title: "T", channelTitle: "C", quality: .p360)
+        XCTAssertEqual(switchable.beginCount, 2)
+        var failure = await service.lastFailure
+        XCTAssertEqual(failure?.quality, .p360)
+        XCTAssertEqual(failure?.error, .transportFailed)
+
+        // The 720p transfer succeeds on its first attempt; the stale 360p
+        // failure must not cross-trigger another attempt for this quality.
+        switchable.completeSubsequentTransfers()
+        await service.download(videoID: "v9", title: "T", channelTitle: "C", quality: .p720)
+        XCTAssertEqual(switchable.beginCount, 3)
+
+        failure = await service.lastFailure
+        XCTAssertEqual(failure?.quality, .p360)
+        let downloaded = await library.downloaded
+        XCTAssertEqual(downloaded.count, 1)
+        XCTAssertEqual(downloaded.first?.resolution, 720)
     }
 
     private func makeContainer() throws -> ModelContainer {

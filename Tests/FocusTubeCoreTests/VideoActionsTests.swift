@@ -25,10 +25,12 @@ private final class FullStubAPI: YouTubeAPI, @unchecked Sendable {
     }
 
     func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { [] }
-    func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String] { [] }
+    func fetchPlaylistVideoIDs(playlistID: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) { ([], nil) }
     func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] { [] }
     func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) { ([], nil) }
-    func fetchSubscriptionFeed(accessToken: String) async throws -> [VideoSummary] { [] }
+    func fetchSubscriptionFeed(accessToken: String, pageToken: String?) async throws -> SubscriptionFeedPage {
+        SubscriptionFeedPage(videos: [], nextPageToken: nil)
+    }
 
     func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage {
         if let error = commentsThrows { throw error }

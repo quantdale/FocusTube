@@ -7,7 +7,7 @@ private struct SearchStubAPI: YouTubeAPI {
     var details: [VideoSummary]
 
     func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { [] }
-    func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String] { [] }
+    func fetchPlaylistVideoIDs(playlistID: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) { ([], nil) }
     func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] { details }
     func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
         return (searchIDs, nextPageToken)
@@ -16,7 +16,39 @@ private struct SearchStubAPI: YouTubeAPI {
     func subscribe(channelID: String, accessToken: String) async throws {}
     func unsubscribe(subscriptionID: String, accessToken: String) async throws {}
     func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {}
-    func fetchSubscriptionFeed(accessToken: String) async throws -> [VideoSummary] { [] }
+    func fetchSubscriptionFeed(accessToken: String, pageToken: String?) async throws -> SubscriptionFeedPage {
+        SubscriptionFeedPage(videos: [], nextPageToken: nil)
+    }
+}
+
+// Class (not struct) so hydration calls can be recorded for assertions;
+// @unchecked Sendable is safe here because tests exercise calls sequentially.
+private final class RecordingSearchAPI: YouTubeAPI, @unchecked Sendable {
+    var searchResult: (ids: [String], nextPageToken: String?)
+    var details: [VideoSummary]
+    private(set) var detailCalls: [[String]] = []
+
+    init(searchResult: (ids: [String], nextPageToken: String?), details: [VideoSummary]) {
+        self.searchResult = searchResult
+        self.details = details
+    }
+
+    func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { [] }
+    func fetchPlaylistVideoIDs(playlistID: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) { ([], nil) }
+    func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] {
+        detailCalls.append(ids)
+        return details
+    }
+    func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
+        searchResult
+    }
+    func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage { .disabled }
+    func subscribe(channelID: String, accessToken: String) async throws {}
+    func unsubscribe(subscriptionID: String, accessToken: String) async throws {}
+    func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {}
+    func fetchSubscriptionFeed(accessToken: String, pageToken: String?) async throws -> SubscriptionFeedPage {
+        SubscriptionFeedPage(videos: [], nextPageToken: nil)
+    }
 }
 
 final class SearchServiceTests: XCTestCase {
@@ -29,6 +61,16 @@ final class SearchServiceTests: XCTestCase {
         let service = SearchService(api: api)
         let page = try await service.search(query: "   ", accessToken: "tok")
         XCTAssertTrue(page.videos.isEmpty)
+    }
+
+    func testZeroHitsSkipsHydrationAndPreservesNextPageToken() async throws {
+        let api = RecordingSearchAPI(searchResult: (ids: [], nextPageToken: "tok-next"), details: [])
+        let service = SearchService(api: api)
+        let page = try await service.search(query: "obsidian", accessToken: "tok")
+        XCTAssertTrue(api.detailCalls.isEmpty, "an empty id list must never reach videos.list")
+        XCTAssertTrue(page.videos.isEmpty)
+        XCTAssertEqual(page.nextPageToken, "tok-next")
+        XCTAssertEqual(page.query, "obsidian")
     }
 
     func testSearchHydratesAndFiltersShortForm() async throws {
@@ -47,7 +89,7 @@ final class SearchServiceTests: XCTestCase {
     func testQuotaErrorPropagates() async {
         struct FailingAPI: YouTubeAPI {
             func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { [] }
-            func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String] { [] }
+            func fetchPlaylistVideoIDs(playlistID: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) { ([], nil) }
             func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] { [] }
             func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
                 throw YouTubeAPIError.quotaExceeded
@@ -56,7 +98,9 @@ final class SearchServiceTests: XCTestCase {
             func subscribe(channelID: String, accessToken: String) async throws {}
             func unsubscribe(subscriptionID: String, accessToken: String) async throws {}
             func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {}
-            func fetchSubscriptionFeed(accessToken: String) async throws -> [VideoSummary] { [] }
+            func fetchSubscriptionFeed(accessToken: String, pageToken: String?) async throws -> SubscriptionFeedPage {
+                SubscriptionFeedPage(videos: [], nextPageToken: nil)
+            }
         }
         let service = SearchService(api: FailingAPI())
         do {

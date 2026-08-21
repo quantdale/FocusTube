@@ -14,11 +14,38 @@ public enum DownloadEvent: Sendable {
 /// after a relaunch, grouped by its originating request id.
 public struct ReattachedDownload: Sendable, Equatable {
     public let requestID: String
-    public let componentCount: Int
+    /// Component indexes of the transfers that actually survived, parsed from
+    /// durable per-task metadata so slots survive relaunch exactly.
+    public let recoveredIndexes: [Int]
 
-    public init(requestID: String, componentCount: Int) {
+    public init(requestID: String, recoveredIndexes: [Int]) {
         self.requestID = requestID
-        self.componentCount = componentCount
+        self.recoveredIndexes = recoveredIndexes
+    }
+
+    /// True when fewer components survived than the persisted record claims:
+    /// the job can never finalize and must fail as interrupted instead of
+    /// hanging in `.downloading` forever.
+    public func isPartialRecovery(componentCount: Int) -> Bool {
+        recoveredIndexes.count < componentCount
+    }
+}
+
+/// Durable encoding of one underlying transfer's identity, written into the
+/// transport task's description as `"<requestID>#<componentIndex>"`. Relaunch
+/// reattachment decodes it to restore exact component slots instead of
+/// guessing from enumeration order (which can swap an adaptive pair).
+public enum DownloadTransferIdentity {
+    public static func encode(requestID: String, componentIndex: Int) -> String {
+        "\(requestID)#\(componentIndex)"
+    }
+
+    public static func decode(_ description: String?) -> (requestID: String, componentIndex: Int)? {
+        guard let description, !description.isEmpty else { return nil }
+        let parts = description.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty,
+              let index = Int(parts[1]), index >= 0 else { return nil }
+        return (String(parts[0]), index)
     }
 }
 
@@ -31,8 +58,9 @@ public protocol DownloadTransport: Sendable {
     func cancel(taskID: String) async
 
     /// Re-registers event delivery for transfers that survived a previous
-    /// process lifetime and reports the recovered request ids with their live
-    /// component counts. Default: no transfers survive (in-process transports).
+    /// process lifetime and reports the recovered request ids with the exact
+    /// component indexes that survived. Default: no transfers survive
+    /// (in-process transports).
     func reattach(
         onEvent: @escaping @Sendable (_ requestID: String, _ event: DownloadEvent) -> Void
     ) async -> [ReattachedDownload]

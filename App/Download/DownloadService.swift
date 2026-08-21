@@ -82,6 +82,11 @@ public final class DownloadService {
         channelTitle: String,
         quality: DownloadQuality
     ) async {
+        // A duplicate enqueue would reset the coordinator's in-flight task to
+        // .queued while the original transfer's events still arrive, corrupting
+        // its state machine — refuse a second start for the same video+quality.
+        guard !isInFlight(videoID: videoID, quality: quality) else { return }
+
         let media: ResolvedMedia
         do {
             media = try await extractor.resolve(videoID: videoID)
@@ -126,6 +131,14 @@ public final class DownloadService {
         lastFailure = nil
     }
 
+    /// Cancels the live transfer for this video+quality via its canonical task
+    /// id. Validating/muxing/finalizing phases are intentionally non-cancellable:
+    /// the coordinator rejects cancel transitions out of those phases, so a
+    /// final file can never be corrupted mid-write.
+    public func cancel(videoID: String, quality: DownloadQuality) async {
+        await downloadManager.cancel(taskID: "\(videoID)-\(quality.rawValue)")
+    }
+
     private func fail(videoID: String, title: String, quality: DownloadQuality, error: DownloadError) {
         lastFailure = DownloadFailure(videoID: videoID, title: title, quality: quality, error: error)
     }
@@ -145,7 +158,9 @@ public final class DownloadService {
 
         // Signed media URLs expire; one bounded automatic retry re-resolves
         // fresh stream URLs through the extractor before surfacing failure.
-        if let failure = lastFailure, failure.videoID == videoID,
+        // The predicate keys on quality too: a concurrent different-quality
+        // failure for the same video must not cross-trigger this loop.
+        if let failure = lastFailure, failure.videoID == videoID, failure.quality == quality,
            failure.error == .expiredMediaURL || failure.error == .transportFailed {
             lastFailure = nil
             guard let retried = try? await extractor.resolve(videoID: videoID) else {

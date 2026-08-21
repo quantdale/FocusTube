@@ -2,9 +2,9 @@ import SwiftUI
 import FocusTubeCore
 
 /// Production video page: native player, available-only download quality picker,
-/// comments (with disabled handling), account actions, and a download action
-/// that registers the finalized file in the offline library. All data is fetched
-/// live; failures degrade gracefully without leaking short-form content.
+/// comments (with disabled and error handling), account actions, and a download
+/// action that registers the finalized file in the offline library. All data is
+/// fetched live; failures degrade gracefully without leaking short-form content.
 struct VideoPageView: View {
     let video: VideoSummary
     @Bindable var coordinator: PlayerCoordinator
@@ -17,6 +17,7 @@ struct VideoPageView: View {
     @State private var selectedQuality: DownloadQuality?
     @State private var comments: [Comment] = []
     @State private var commentsDisabled = false
+    @State private var commentsError: YouTubeAPIError?
     @State private var isLoadingComments = false
     @State private var isDownloading = false
 
@@ -68,6 +69,14 @@ struct VideoPageView: View {
                         .foregroundStyle(.secondary)
                 } else if isLoadingComments {
                     ProgressView()
+                } else if let commentsError {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(commentsErrorLabel(commentsError), systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                        Button("Retry") {
+                            Task { await loadComments() }
+                        }
+                    }
                 } else {
                     ForEach(comments) { comment in
                         VStack(alignment: .leading, spacing: 4) {
@@ -130,6 +139,7 @@ struct VideoPageView: View {
     private func loadComments() async {
         guard let token = await auth.accessToken() else { return }
         isLoadingComments = true
+        commentsError = nil
         defer { isLoadingComments = false }
         do {
             let page = try await commentsService.comments(videoID: video.id, accessToken: token)
@@ -138,7 +148,22 @@ struct VideoPageView: View {
         } catch let error as YouTubeAPIError where error == .commentsDisabled {
             commentsDisabled = true
         } catch {
+            // Non-disabled failures stay distinguishable from "no comments";
+            // non-API errors (e.g. low-level transport) surface as .network.
+            commentsError = error as? YouTubeAPIError ?? .network
             commentsDisabled = false
+        }
+    }
+
+    private func commentsErrorLabel(_ error: YouTubeAPIError) -> String {
+        switch error {
+        case .unauthorized: return "Sign in to see comments."
+        case .quotaExceeded: return "Comments quota exceeded. Try again later."
+        case .commentsDisabled: return "Comments are disabled for this video."
+        case .notFound: return "Comments are unavailable for this video."
+        case .network: return "Network error loading comments."
+        case .decode: return "Couldn't load comments."
+        case .unknown: return "Couldn't load comments."
         }
     }
 }

@@ -95,7 +95,7 @@ public final class DownloadManager {
                 await self.persistTaskSnapshot(requestID)
             }
         }
-        let recoveredIDs = Set(recovered.map(\.requestID))
+        let recoveredByID = Dictionary(recovered.map { ($0.requestID, $0) }, uniquingKeysWith: { first, _ in first })
 
         let records = fetchRecords()
         let tasks = records.map { $0.downloadTask }
@@ -103,29 +103,41 @@ public final class DownloadManager {
             self?.fileExists(url) ?? false
         }
         for (record, task) in zip(records, reconciled) {
-            // Recovered transfers keep running; everything else settles to
-            // filesystem-backed reality.
-            if recoveredIDs.contains(record.id) { continue }
+            // Fully recovered transfers keep running; everything else settles
+            // to filesystem-backed reality — including partially recovered
+            // jobs, whose surviving siblings can never produce a final file.
+            if let info = recoveredByID[record.id],
+               !info.isPartialRecovery(componentCount: record.components.count) {
+                continue
+            }
             if record.statusRaw != task.state.status.rawValue || record.errorRaw != task.state.error?.rawValue {
                 record.apply(task)
             }
         }
         try? context.save()
 
-        for record in records where recoveredIDs.contains(record.id) {
-            let request = DownloadRequest(
-                id: record.id,
-                videoID: record.videoID,
-                resolution: record.resolution,
-                destinationURL: record.destinationURL,
-                components: record.components
-            )
-            await coordinator.attach(taskID: request.id, request: request)
+        for record in records {
+            guard let info = recoveredByID[record.id] else { continue }
+            if info.isPartialRecovery(componentCount: record.components.count) {
+                // Some components died with the previous process, so the job
+                // can never finalize. Cancel the surviving transfers so the
+                // background session drains instead of feeding a doomed job.
+                await transport.cancel(taskID: record.id)
+            } else {
+                let request = DownloadRequest(
+                    id: record.id,
+                    videoID: record.videoID,
+                    resolution: record.resolution,
+                    destinationURL: record.destinationURL,
+                    components: record.components
+                )
+                await coordinator.attach(taskID: request.id, request: request)
+            }
         }
         // A recovered transfer without a persisted record would stream orphaned
         // bytes forever; cancel it so the background session drains.
         let recordedIDs = Set(records.map(\.id))
-        for requestID in recoveredIDs where !recordedIDs.contains(requestID) {
+        for requestID in recoveredByID.keys where !recordedIDs.contains(requestID) {
             await transport.cancel(taskID: requestID)
         }
     }

@@ -87,6 +87,7 @@ struct RootView: View {
                 DownloadsView(
                     store: libraryStore,
                     downloadManager: downloadManager,
+                    downloadService: downloadService,
                     playerCoordinator: playerCoordinator
                 )
             }
@@ -102,6 +103,7 @@ struct RootView: View {
             // re-configures the session and re-registers (idempotent) commands.
             try? backgroundMedia.configureAudioSession()
             backgroundMedia.registerRemoteCommands()
+            backgroundMedia.registerInterruptionObservation()
         }
     }
 }
@@ -109,7 +111,16 @@ struct RootView: View {
 struct DownloadsView: View {
     let store: LibraryStore
     @Bindable var downloadManager: DownloadManager
+    let downloadService: DownloadService
     let playerCoordinator: PlayerCoordinator
+
+    /// Phases the coordinator's state machine allows cancelling. Validating/
+    /// muxing/finalizing are intentionally non-cancellable — the coordinator
+    /// rejects cancel transitions out of those phases so a final file is never
+    /// corrupted mid-write — so the row button hides for them.
+    private static let cancellableStatuses: Set<DownloadStatus> = [
+        .queued, .downloading, .paused, .waitingForRetry, .reResolving
+    ]
 
     var body: some View {
         List {
@@ -119,15 +130,31 @@ struct DownloadsView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(downloadManager.liveTasks) { task in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(task.videoID).font(.subheadline).lineLimit(1)
-                        Text("\(task.resolution)p · \(task.state.status.rawValue)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if task.state.totalBytes > 0 {
-                            ProgressView(value: Double(task.state.bytesDownloaded), total: Double(task.state.totalBytes))
-                        } else {
-                            ProgressView()
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(task.videoID).font(.subheadline).lineLimit(1)
+                            Text("\(task.resolution)p · \(task.state.status.rawValue)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if task.state.totalBytes > 0 {
+                                ProgressView(value: Double(task.state.bytesDownloaded), total: Double(task.state.totalBytes))
+                            } else {
+                                ProgressView()
+                            }
+                        }
+                        Spacer()
+                        if Self.cancellableStatuses.contains(task.state.status),
+                           let quality = DownloadQuality(rawValue: task.resolution) {
+                            Button(role: .destructive) {
+                                Task {
+                                    await downloadService.cancel(
+                                        videoID: task.videoID,
+                                        quality: quality
+                                    )
+                                }
+                            } label: {
+                                Image(systemName: "stop.fill")
+                            }
                         }
                     }
                 }

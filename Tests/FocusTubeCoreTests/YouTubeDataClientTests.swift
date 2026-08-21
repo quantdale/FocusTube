@@ -98,7 +98,66 @@ final class YouTubeDataClientTests: XCTestCase {
         ])
         let client = YouTubeDataClient(performer: performer)
         let feed = try await client.fetchSubscriptionFeed(accessToken: "tok")
-        XCTAssertEqual(feed.map { $0.id }, ["vA", "vB"])
+        XCTAssertEqual(feed.videos.map { $0.id }, ["vA", "vB"])
+        XCTAssertNil(feed.nextPageToken)
+    }
+
+    func testPlaylistItemsPaginationTokenPlumbing() async throws {
+        let playlistJSON = """
+        {"nextPageToken":"pt-next","items":[{"contentDetails":{"videoId":"v1"}}]}
+        """.data(using: .utf8)!
+        let performer = ScriptedPerformer(responses: [(playlistJSON, 200)])
+        let client = YouTubeDataClient(performer: performer)
+
+        let page = try await client.fetchPlaylistVideoIDs(playlistID: "PL1", accessToken: "tok", pageToken: "pt-2")
+        XCTAssertEqual(page.ids, ["v1"])
+        XCTAssertEqual(page.nextPageToken, "pt-next")
+        var query = Self.query(of: performer.requests[0])
+        XCTAssertEqual(query["playlistId"], "PL1")
+        XCTAssertEqual(query["pageToken"], "pt-2")
+
+        // First page: no pageToken parameter is sent at all.
+        _ = try await client.fetchPlaylistVideoIDs(playlistID: "PL1", accessToken: "tok", pageToken: nil)
+        query = Self.query(of: performer.requests[1])
+        XCTAssertNil(query["pageToken"])
+    }
+
+    func testSubscriptionFeedChunksVideosListBeyondIDCap() async throws {
+        let ids = (0..<61).map { "v\($0)" }
+        let subsJSON = Data("{\"items\":[{\"contentDetails\":{\"relatedPlaylists\":{\"uploads\":\"PL1\"}}}]}".utf8)
+        let playlistItems = ids.map { "{\"contentDetails\":{\"videoId\":\"\($0)\"}}" }.joined(separator: ",")
+        let playlistJSON = Data("{\"items\":[\(playlistItems)]}".utf8)
+        let videoItems = ids.map { id in
+            "{\"id\":\"\(id)\",\"snippet\":{\"title\":\"\(id)\",\"channelTitle\":\"C\",\"publishedAt\":\"2024-01-01T00:00:00Z\",\"description\":\"d\",\"thumbnails\":{}},\"contentDetails\":{\"duration\":\"PT1M\"}}"
+        }.joined(separator: ",")
+        let videosJSON = Data("{\"items\":[\(videoItems)]}".utf8)
+
+        // subscriptions -> playlistItems -> two chunked videos.list calls.
+        let performer = ScriptedPerformer(responses: [
+            (subsJSON, 200),
+            (playlistJSON, 200),
+            (videosJSON, 200),
+            (videosJSON, 200)
+        ])
+        let client = YouTubeDataClient(performer: performer)
+        let feed = try await client.fetchSubscriptionFeed(accessToken: "tok")
+
+        XCTAssertEqual(performer.requests.count, 4)
+        let idLists = performer.requests.compactMap { request -> [String]? in
+            guard let id = Self.query(of: request)["id"] else { return nil }
+            return id.components(separatedBy: ",")
+        }
+        XCTAssertEqual(idLists.count, 2, "61 ids must split into multiple videos.list calls")
+        XCTAssertEqual(idLists[0].count, 50)
+        XCTAssertEqual(idLists[1].count, 11)
+        XCTAssertEqual(idLists.flatMap { $0 }, ids)
+        XCTAssertEqual(feed.videos.count, 122) // each scripted response decodes all 61 items
+    }
+
+    private static func query(of request: URLRequest) -> [String: String] {
+        guard let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false),
+              let items = components.queryItems else { return [:] }
+        return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
     }
 }
 
@@ -106,6 +165,7 @@ final class YouTubeDataClientTests: XCTestCase {
 // @unchecked Sendable is safe here because requests are awaited sequentially.
 private final class ScriptedPerformer: HTTPPerforming, @unchecked Sendable {
     var responses: [(Data, Int)]
+    private(set) var requests: [URLRequest] = []
     private var index = 0
 
     init(responses: [(Data, Int)]) {
@@ -113,6 +173,7 @@ private final class ScriptedPerformer: HTTPPerforming, @unchecked Sendable {
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        requests.append(request)
         let (data, status) = responses[min(index, responses.count - 1)]
         index += 1
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!

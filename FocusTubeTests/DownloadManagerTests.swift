@@ -9,15 +9,31 @@ private struct NoopTransport: DownloadTransport {
 }
 
 /// Fake transport whose background session "survived" a relaunch and still
-/// holds live transfers for the given request ids.
-private struct RecoveringTransport: DownloadTransport {
-    let recoveredIDs: [String]
+/// holds live transfers for the given requests.
+private actor RecoveringTransport: DownloadTransport {
+    let recovered: [ReattachedDownload]
+    private(set) var cancelledIDs: [String] = []
+
+    /// Convenience for single-component requests: index 0 survived.
+    init(recoveredIDs: [String]) {
+        self.recovered = recoveredIDs.map { ReattachedDownload(requestID: $0, recoveredIndexes: [0]) }
+    }
+
+    init(recovered: [ReattachedDownload]) {
+        self.recovered = recovered
+    }
 
     func reattach(onEvent: @escaping @Sendable (String, DownloadEvent) -> Void) async -> [ReattachedDownload] {
-        recoveredIDs.map { ReattachedDownload(requestID: $0, componentCount: 1) }
+        recovered
     }
+
     func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {}
-    func cancel(taskID: String) async {}
+
+    func cancel(taskID: String) async {
+        if !cancelledIDs.contains(taskID) {
+            cancelledIDs.append(taskID)
+        }
+    }
 }
 
 private struct FakeStorage: StorageProviding {
@@ -131,6 +147,74 @@ final class DownloadManagerTests: XCTestCase {
         let coordinatorTask = await manager.coordinatorTask("keep")
         XCTAssertEqual(coordinatorTask?.id, "keep")
         XCTAssertEqual(coordinatorTask?.state.status, .downloading)
+    }
+
+    func testFullyRecoveredAdaptiveTaskAttachesWithExplicitIndexes() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        var task = DownloadTask(
+            id: "pair",
+            videoID: "v",
+            resolution: 1080,
+            destinationURL: URL(fileURLWithPath: "/tmp/pair.mp4"),
+            components: [
+                DownloadComponent(streamID: "v", sourceURL: URL(string: "https://example.com/v")!),
+                DownloadComponent(streamID: "a", sourceURL: URL(string: "https://example.com/a")!)
+            ]
+        )
+        task.apply(DownloadState(status: .downloading))
+        context.insert(DownloadRecord(task: task))
+        try context.save()
+
+        // Both components survived; report them out of order to prove
+        // reattachment keys on explicit indexes, not enumeration position.
+        let transport = RecoveringTransport(recovered: [
+            ReattachedDownload(requestID: "pair", recoveredIndexes: [1, 0])
+        ])
+        let manager = await DownloadManager(transport: transport, context: ModelContext(container))
+        await manager.reconcileOnLaunch()
+
+        let records = await manager.records
+        XCTAssertEqual(records.first(where: { $0.id == "pair" })?.state.status, .downloading)
+        let coordinatorTask = await manager.coordinatorTask("pair")
+        XCTAssertEqual(coordinatorTask?.id, "pair")
+        XCTAssertEqual(coordinatorTask?.state.status, .downloading)
+    }
+
+    func testPartiallyRecoveredAdaptiveTaskFailsInterrupted() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        var task = DownloadTask(
+            id: "pair",
+            videoID: "v",
+            resolution: 1080,
+            destinationURL: URL(fileURLWithPath: "/tmp/pair.mp4"),
+            components: [
+                DownloadComponent(streamID: "v", sourceURL: URL(string: "https://example.com/v")!),
+                DownloadComponent(streamID: "a", sourceURL: URL(string: "https://example.com/a")!)
+            ]
+        )
+        task.apply(DownloadState(status: .downloading))
+        context.insert(DownloadRecord(task: task))
+        try context.save()
+
+        // Only the audio component survived the relaunch; the pair can never
+        // finalize, so it must fail as interrupted instead of hanging.
+        let transport = RecoveringTransport(recovered: [
+            ReattachedDownload(requestID: "pair", recoveredIndexes: [1])
+        ])
+        let manager = await DownloadManager(transport: transport, context: ModelContext(container))
+        await manager.reconcileOnLaunch()
+
+        let records = await manager.records
+        XCTAssertEqual(records.first(where: { $0.id == "pair" })?.state.status, .failed)
+        XCTAssertEqual(records.first(where: { $0.id == "pair" })?.state.error, .interrupted)
+        // The doomed job is never attached to the coordinator.
+        let coordinatorTask = await manager.coordinatorTask("pair")
+        XCTAssertNil(coordinatorTask)
+        // Surviving transfers are cancelled so the background session drains.
+        let cancelled = await transport.cancelledIDs
+        XCTAssertEqual(cancelled, ["pair"])
     }
 
     func testReconcileInterruptsUnrecoveredTask() async throws {

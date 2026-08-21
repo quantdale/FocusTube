@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 import MediaPlayer
 @testable import FocusTube
 import FocusTubeCore
@@ -92,5 +93,75 @@ final class BackgroundMediaTests: XCTestCase {
         XCTAssertEqual(spy.playCount, 1)
         XCTAssertEqual(spy.pauseCount, 1)
         XCTAssertEqual(spy.toggleCount, 1)
+    }
+
+    /// Polls until `condition` holds or the deadline lapses, yielding the main
+    /// actor so queued notification deliveries and actor hops can run.
+    private func waitFor(
+        _ condition: @autoclosure () -> Bool,
+        timeout seconds: TimeInterval = 2
+    ) async {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline, !condition() {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    private func postInterruption(
+        type: AVAudioSession.InterruptionType,
+        options: AVAudioSession.InterruptionOptions? = nil
+    ) {
+        var userInfo: [AnyHashable: Any] = [
+            AVAudioSessionInterruptionTypeKey: type.rawValue
+        ]
+        if let options {
+            userInfo[AVAudioSessionInterruptionOptionKey] = options.rawValue
+        }
+        NotificationCenter.default.post(
+            name: AVAudioSession.interruptionNotification,
+            object: nil,
+            userInfo: userInfo
+        )
+    }
+
+    /// Real delivery path: a posted `AVAudioSession` interruption notification
+    /// must map onto pause/resume exactly like the deterministic API — began
+    /// pauses, ended without `shouldResume` stays paused, ended with
+    /// `shouldResume` resumes.
+    func testInterruptionNotificationsDrivePauseAndResume() async {
+        let spy = SpyTarget()
+        let coordinator = BackgroundMediaCoordinator(target: spy)
+        coordinator.registerInterruptionObservation()
+
+        postInterruption(type: .began)
+        await waitFor(spy.pauseCount == 1)
+        XCTAssertEqual(spy.pauseCount, 1)
+        XCTAssertEqual(spy.playCount, 0)
+
+        // Ended without the shouldResume option must not restart playback.
+        postInterruption(type: .ended)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(spy.pauseCount, 1)
+        XCTAssertEqual(spy.playCount, 0)
+
+        postInterruption(type: .ended, options: .shouldResume)
+        await waitFor(spy.playCount == 1)
+        XCTAssertEqual(spy.pauseCount, 1)
+        XCTAssertEqual(spy.playCount, 1)
+    }
+
+    /// Remove-before-add re-registration must not stack observers: one posted
+    /// interruption yields exactly one delivery.
+    func testRegisterInterruptionObservationIsIdempotent() async {
+        let spy = SpyTarget()
+        let coordinator = BackgroundMediaCoordinator(target: spy)
+        coordinator.registerInterruptionObservation()
+        coordinator.registerInterruptionObservation()
+
+        postInterruption(type: .began)
+        await waitFor(spy.pauseCount == 1)
+        // Settle window so a duplicate delivery (if any) lands before asserting.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(spy.pauseCount, 1)
     }
 }

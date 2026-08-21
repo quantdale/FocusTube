@@ -28,6 +28,9 @@ public struct SearchService {
         guard !trimmed.isEmpty else { return SearchResultPage(videos: [], nextPageToken: nil, query: trimmed) }
 
         let (ids, next) = try await api.searchVideoIDs(query: trimmed, accessToken: accessToken, pageToken: pageToken)
+        // Zero hits: videos?id= with an empty id list is an HTTP 400 from the
+        // Data API, so skip hydration and keep the pagination token.
+        guard !ids.isEmpty else { return SearchResultPage(videos: [], nextPageToken: next, query: trimmed) }
         let details = try await api.fetchVideoDetails(ids: ids, accessToken: accessToken)
 
         let policy = ShortFormPolicy()

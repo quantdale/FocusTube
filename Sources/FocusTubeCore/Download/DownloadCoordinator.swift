@@ -8,8 +8,10 @@ import Foundation
 /// A job may carry one component (a combined stream) or two (an adaptive
 /// video-only + audio-only pair). Multi-component jobs download every component
 /// in parallel, validate them, then for the adaptive case combine them via the
-/// injected `mux` closure (native AVFoundation in the app) into the final file.
-/// Finalization is atomic via `FileManaging.replaceItem`.
+/// injected `mux` closure (native AVFoundation in the app) into a transient
+/// file and move it into place, so an interrupted export never leaves a
+/// playable-looking partial final. Single-component finalization is atomic via
+/// `FileManaging.replaceItem`.
 public actor DownloadCoordinator {
     private var tasks: [String: DownloadTask]
     private let transport: DownloadTransport
@@ -225,12 +227,23 @@ public actor DownloadCoordinator {
             fail(task: &task, with: .muxFailed)
             return
         }
+        // Mux into a transient sibling of the work directory, never directly
+        // into the destination: an interrupted export must not leave a
+        // playable-looking partial final, and exporting over an existing file
+        // makes AVAssetExportSession unreliable on re-download.
+        let muxOutput = directory.appendingPathComponent(
+            destination.lastPathComponent + ".muxing-" + UUID().uuidString
+        )
         do {
             if !fileManager.fileExists(at: parent) {
                 try fileManager.createDirectory(at: parent)
             }
-            let output = try await mux(tempLocations, destination)
+            if !fileManager.fileExists(at: directory) {
+                try fileManager.createDirectory(at: directory)
+            }
+            let output = try await mux(tempLocations, muxOutput)
             guard fileManager.fileExists(at: output), fileManager.size(of: output) > 0 else {
+                try? fileManager.removeItem(at: output)
                 fail(task: &task, with: .validationFailed)
                 return
             }
@@ -240,11 +253,19 @@ public actor DownloadCoordinator {
                 return
             }
             tasks[task.id] = task
-            guard fileManager.fileExists(at: destination), fileManager.size(of: destination) > 0 else {
-                fail(task: &task, with: .validationFailed)
+            // Publish atomically: clear any stale destination, then move the
+            // validated mux product into place.
+            do {
+                if fileManager.fileExists(at: destination) {
+                    try fileManager.removeItem(at: destination)
+                }
+                try fileManager.moveItem(at: output, to: destination)
+            } catch {
+                try? fileManager.removeItem(at: output)
+                fail(task: &task, with: .finalizationFailed)
                 return
             }
-            // The mux wrote the final file from the component temps; remove the
+            // The final file is published from the component temps; remove the
             // transient files so nothing is orphaned in the work directory.
             // (The single-component path moves its temp via replaceItem.)
             for location in tempLocations {
@@ -252,6 +273,7 @@ public actor DownloadCoordinator {
             }
             complete(task: &task)
         } catch {
+            try? fileManager.removeItem(at: muxOutput)
             fail(task: &task, with: .muxFailed)
         }
     }

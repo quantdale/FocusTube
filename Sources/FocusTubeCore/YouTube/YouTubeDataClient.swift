@@ -28,15 +28,19 @@ public struct YouTubeDataClient: YouTubeAPI {
         return decoded.items.map { $0.contentDetails.relatedPlaylists.uploads }
     }
 
-    public func fetchPlaylistVideoIDs(playlistID: String, accessToken: String) async throws -> [String] {
-        let request = try Self.buildRequest(baseURL: baseURL, path: "playlistItems", accessToken: accessToken, query: [
+    public func fetchPlaylistVideoIDs(playlistID: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
+        var query: [String: String] = [
             "part": "contentDetails",
             "playlistId": playlistID,
             "maxResults": "50"
-        ])
+        ]
+        if let pageToken, !pageToken.isEmpty {
+            query["pageToken"] = pageToken
+        }
+        let request = try Self.buildRequest(baseURL: baseURL, path: "playlistItems", accessToken: accessToken, query: query)
         let data = try await perform(request)
         let decoded = try Self.decode(PlaylistItemsResponse.self, from: data)
-        return decoded.items.map { $0.contentDetails.videoId }
+        return (decoded.items.map { $0.contentDetails.videoId }, decoded.nextPageToken)
     }
 
     public func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] {
@@ -220,6 +224,7 @@ private struct SubscriptionsResponse: Decodable {
 }
 
 private struct PlaylistItemsResponse: Decodable {
+    let nextPageToken: String?
     let items: [PlaylistItem]
     struct PlaylistItem: Decodable {
         let contentDetails: ContentDetails
