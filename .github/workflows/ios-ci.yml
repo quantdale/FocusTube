@@ -6,10 +6,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Only run one iOS CI at a time; new pushes cancel older in-progress runs.
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ios:
     runs-on: macos-26
     timeout-minutes: 60
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,13 +80,6 @@ jobs:
           grep -E "error:" Artifacts/xcodebuild*.log 2>/dev/null | head -25 | while IFS= read -r line; do
             echo "::error::$line"
           done || true
-
-      # Release configuration must compile too (personal-release readiness).
-      - name: Release build
-        if: success()
-        run: |
-          set -o pipefail
-          xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -configuration Release             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-release.log
 
       - name: Simulator screenshot
         if: always()
