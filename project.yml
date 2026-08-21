@@ -60,6 +60,9 @@ targets:
     platform: iOS
     sources:
       - App
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
     dependencies:
       - package: FocusTubeCore
       - package: YouTubeKit

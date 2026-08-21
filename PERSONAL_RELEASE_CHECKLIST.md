@@ -16,13 +16,20 @@ genuinely require the owner.
 
 ## 2. Google OAuth configuration (requires owner Google Cloud project)
 
-- [ ] In Google Cloud Console, create/select an OAuth 2.0 Client ID of type iOS with bundle id matching the app.
-- [ ] Add to `Config/Info.plist`: `GIDClientID` (the client id string) and a `CFBundleURLTypes` entry whose scheme is the **reversed client id**.
-- [ ] If using a `GoogleService-Info.plist`, place it in `Config/` (gitignored) and reference it from the project.
-- [ ] First launch → sign in with the real Google account and confirm subscriptions load.
+The plumbing is already wired: `Config/Secrets.local.xcconfig` (gitignored,
+copy from `Config/Secrets.local.xcconfig.example`) injects `GOOGLE_CLIENT_ID`
+into `GIDClientID` and `GOOGLE_REVERSED_CLIENT_ID` into `CFBundleURLTypes`;
+the app delegate forwards the OAuth redirect to GoogleSignIn, and Home shows a
+"Sign in with Google" button when unauthenticated.
+
+- [ ] In Google Cloud Console, create/select an OAuth 2.0 Client ID of type **iOS** with bundle id `com.quantdale.FocusTube` (or your overridden `PRODUCT_BUNDLE_IDENTIFIER`).
+- [ ] Copy `Config/Secrets.local.xcconfig.example` → `Config/Secrets.local.xcconfig`; fill in `GOOGLE_CLIENT_ID` (the client id string) and `GOOGLE_REVERSED_CLIENT_ID` (the reversed client id). Set `DEVELOPMENT_TEAM` to your Apple Team ID for automatic signing.
+- [ ] Ensure the **YouTube Data API v3** is enabled for that Google Cloud project.
+- [ ] Regenerate the project (`xcodegen generate`) if it already existed, then build/install.
+- [ ] First launch → Home → "Sign in with Google" → confirm subscriptions load.
 
 No client ids, secrets, or tokens are committed; `Config/Secrets.local.xcconfig`
-is the intended local override point and is gitignored.
+is the local override point and is gitignored.
 
 ## 3. Device-only verification (cannot be simulated faithfully)
 

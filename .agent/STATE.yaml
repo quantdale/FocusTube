@@ -1,23 +1,28 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-22T00:30:00+08:00
+updated_at: 2026-08-22T00:50:00+08:00
 
 campaign:
-  id: INTEGRATION_COMPLETION_V1
+  id: DEVICE_VALIDATION_V1
   status: active
   autonomy_mode: continuous
   supervision: minimal
-  scope: M0-M8 + HARDENING_V1 + PERSONAL_RELEASE
-  exit_gate: IC-EXIT then HARDENING_V1 then PERSONAL_RELEASE
-  on_exit: personal_release_candidate
-  auto_enter_hardening: true
+  scope: DV-0..DV-9 release validation and remediation (no new features)
+  entry_state: personal_release_candidate
+  exit_gate: DV-9 final release validation report
+  on_exit: personal_release_validated | personal_release_validated_with_deferred_device_evidence
+  previous_campaigns:
+    - id: INTEGRATION_COMPLETION_V1
+      terminal_state: personal_release_candidate
+      evidence_commit: 03ce6f6
+      docs_commit: 47e1126
 
-status: personal_release_candidate
-current_milestone: M10_PERSONAL_RELEASE
-current_gate: IC_EXIT_PASSED
-current_work_packet: COMPLETE
-current_packet_status: complete
+status: physical_device_validation_in_progress
+current_milestone: DEVICE_VALIDATION
+current_gate: DV-0
+current_work_packet: DV-0-RELEASE-BASELINE
+current_packet_status: in_progress
 current_waypoint:
   id: PERSONAL_RELEASE_CANDIDATE
   objective: >

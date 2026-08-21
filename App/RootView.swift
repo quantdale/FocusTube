@@ -194,6 +194,21 @@ private struct HomeFeedView: View {
 
     var body: some View {
         List {
+            if !store.isAuthenticated, store.videos.isEmpty, !store.isLoading {
+                // Fresh install: GoogleSignIn is restore-only until the user
+                // explicitly signs in. Hidden for fake sessions (tests) and
+                // once authenticated.
+                Button {
+                    Task {
+                        if await (auth as? GoogleSignInAuthSession)?.signIn() == true {
+                            await store.restore()
+                            await store.load()
+                        }
+                    }
+                } label: {
+                    Label("Sign in with Google", systemImage: "person.crop.circle.badge.checkmark")
+                }
+            }
             if store.isLoading {
                 ProgressView("Loading feed…")
             }
