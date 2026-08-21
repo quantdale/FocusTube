@@ -22,6 +22,17 @@ struct VideoPageView: View {
 
     private var commentsService: CommentsService { CommentsService(api: api) }
 
+    /// The quality the button acts on (picker selection or the 720p default).
+    private var effectiveQuality: DownloadQuality { selectedQuality ?? .p720 }
+
+    /// In-flight while this view awaits the service, or while the manager's
+    /// observable live-task projection still holds a transfer for this
+    /// video+quality (covers view recreation mid-download).
+    @MainActor
+    private var downloadInFlight: Bool {
+        isDownloading || downloadService.isInFlight(videoID: video.id, quality: effectiveQuality)
+    }
+
     var body: some View {
         List {
             PlayerView(coordinator: coordinator)
@@ -33,23 +44,22 @@ struct VideoPageView: View {
                 Button {
                     Task {
                         isDownloading = true
-                        let quality = selectedQuality ?? .p720
                         await downloadService.download(
                             videoID: video.id,
                             title: video.title,
                             channelTitle: video.channelTitle,
-                            quality: quality
+                            quality: effectiveQuality
                         )
                         isDownloading = false
                     }
                 } label: {
-                    if isDownloading {
+                    if downloadInFlight {
                         Label("Downloading…", systemImage: "arrow.down.circle")
                     } else {
                         Label("Download", systemImage: "arrow.down.circle")
                     }
                 }
-                .disabled(isDownloading || qualities.isEmpty)
+                .disabled(downloadInFlight || qualities.isEmpty)
             }
 
             Section("Comments") {
@@ -75,6 +85,18 @@ struct VideoPageView: View {
             }
         }
         .navigationTitle("Video")
+        .alert(
+            "Download failed",
+            isPresented: Binding(
+                get: { downloadService.lastFailure != nil },
+                set: { if !$0 { downloadService.acknowledgeFailure() } }
+            ),
+            presenting: downloadService.lastFailure
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { failure in
+            Text(failure.userMessage)
+        }
         .task {
             await coordinator.loadAndPlay(videoID: video.id)
             coordinator.onProgress = { seconds in

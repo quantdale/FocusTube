@@ -14,6 +14,7 @@ public enum DownloadStatus: String, Codable, Sendable, Hashable {
 }
 
 public enum DownloadError: String, Error, Equatable, Sendable {
+    case extractionFailed
     case noAllowedStream
     case requestedQualityUnavailable
     case transportFailed
