@@ -79,9 +79,10 @@ final class BackgroundMediaTests: XCTestCase {
         coordinator.registerRemoteCommands()
         coordinator.registerRemoteCommands()
 
-        _ = center.playCommand.send(to: nil, with: nil)
-        _ = center.pauseCommand.send(to: nil, with: nil)
-        _ = center.togglePlayPauseCommand.send(to: nil, with: nil)
+        // MPRemoteCommand's handler fires when invoked with no target.
+        _ = center.playCommand.send(target: nil, error: nil)
+        _ = center.pauseCommand.send(target: nil, error: nil)
+        _ = center.togglePlayPauseCommand.send(target: nil, error: nil)
 
         // Handlers forward asynchronously onto the MainActor.
         let deadline = Date().addingTimeInterval(2)
