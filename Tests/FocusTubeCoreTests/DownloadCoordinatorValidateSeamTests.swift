@@ -1,6 +1,71 @@
 import XCTest
 @testable import FocusTubeCore
 
+private struct SeamNoopTransport: DownloadTransport {
+    func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {}
+    func cancel(taskID: String) async {}
+}
+
+/// Existence/mutation recorder mirroring the attach-tests pattern, scoped to
+/// this file so finalization assertions stay deterministic without real I/O.
+private final class SeamFileRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var removed: [URL] = []
+    private var moved: [(item: URL, destination: URL)] = []
+    private var existence: [URL: Bool] = [:]
+
+    func recordRemoval(_ url: URL) {
+        lock.lock()
+        removed.append(url)
+        existence[url] = false
+        lock.unlock()
+    }
+
+    func recordMove(item: URL, destination: URL) {
+        lock.lock()
+        moved.append((item, destination))
+        existence[destination] = true
+        lock.unlock()
+    }
+
+    func existence(of url: URL, fallback: Bool) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return existence[url] ?? fallback
+    }
+
+    var removedURLs: [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return removed
+    }
+
+    var movedItems: [(item: URL, destination: URL)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return moved
+    }
+}
+
+private struct SeamRecordingFileManager: FileManaging {
+    var exists = true
+    var fileSize: Int64 = 1024
+    let recorder: SeamFileRecorder
+
+    func fileExists(at url: URL) -> Bool {
+        recorder.existence(of: url, fallback: exists)
+    }
+    func size(of url: URL) -> Int64 { fileSize }
+    func createDirectory(at url: URL) throws {}
+    func replaceItem(at destination: URL, withItemAt item: URL) throws {}
+    func moveItem(at item: URL, to destination: URL) throws {
+        recorder.recordMove(item: item, destination: destination)
+    }
+    func removeItem(at url: URL) throws {
+        recorder.recordRemoval(url)
+    }
+}
+
 /// Coverage for the injected deep-validation seam (HB-010): a finalized file
 /// that fails validation must settle as `.failed`/`.validationFailed` and be
 /// discarded, never registered as a playable download; a passing validator
@@ -22,10 +87,10 @@ final class DownloadCoordinatorValidateSeamTests: XCTestCase {
     // MARK: - combined path
 
     func testFailingValidatorDiscardsCombinedFinal() async {
-        let recorder = TempFileRecorder()
+        let recorder = SeamFileRecorder()
         let coordinator = DownloadCoordinator(
-            transport: NoopTransport(),
-            fileManager: RecordingFileManager(recorder: recorder),
+            transport: SeamNoopTransport(),
+            fileManager: SeamRecordingFileManager(recorder: recorder),
             validate: { _ in throw ValidatorBoom() }
         )
         await coordinator.attach(taskID: "task-1", request: makeRequest(id: "task-1"))
@@ -41,10 +106,10 @@ final class DownloadCoordinatorValidateSeamTests: XCTestCase {
     }
 
     func testPassingValidatorCompletesCombinedFinal() async {
-        let recorder = TempFileRecorder()
+        let recorder = SeamFileRecorder()
         let coordinator = DownloadCoordinator(
-            transport: NoopTransport(),
-            fileManager: RecordingFileManager(recorder: recorder),
+            transport: SeamNoopTransport(),
+            fileManager: SeamRecordingFileManager(recorder: recorder),
             validate: { _ in }
         )
         await coordinator.attach(taskID: "task-1", request: makeRequest(id: "task-1"))
@@ -61,11 +126,11 @@ final class DownloadCoordinatorValidateSeamTests: XCTestCase {
     // MARK: - adaptive path
 
     func testFailingValidatorDiscardsAdaptiveMuxProductAndTemps() async {
-        let recorder = TempFileRecorder()
+        let recorder = SeamFileRecorder()
         let mux: @Sendable ([URL], URL) async throws -> URL = { _, output in output }
         let coordinator = DownloadCoordinator(
-            transport: NoopTransport(),
-            fileManager: RecordingFileManager(recorder: recorder),
+            transport: SeamNoopTransport(),
+            fileManager: SeamRecordingFileManager(recorder: recorder),
             directory: URL(fileURLWithPath: "/tmp/work"),
             mux: mux,
             validate: { _ in throw ValidatorBoom() }
@@ -96,11 +161,11 @@ final class DownloadCoordinatorValidateSeamTests: XCTestCase {
     }
 
     func testPassingValidatorCompletesAdaptivePath() async {
-        let recorder = TempFileRecorder()
+        let recorder = SeamFileRecorder()
         let mux: @Sendable ([URL], URL) async throws -> URL = { _, output in output }
         let coordinator = DownloadCoordinator(
-            transport: NoopTransport(),
-            fileManager: RecordingFileManager(recorder: recorder),
+            transport: SeamNoopTransport(),
+            fileManager: SeamRecordingFileManager(recorder: recorder),
             directory: URL(fileURLWithPath: "/tmp/work"),
             mux: mux,
             validate: { _ in }
