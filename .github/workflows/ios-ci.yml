@@ -45,6 +45,22 @@ jobs:
           set -o pipefail
           xcodebuild test             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -resultBundlePath Artifacts/FocusTube.xcresult             CODE_SIGNING_ALLOWED=NO | tee Artifacts/xcodebuild.log
 
+      # The Actions log API needs auth to read remotely; surface compiler/test
+      # failures on the public run page via the step summary.
+      - name: Publish failure summary
+        if: failure()
+        run: |
+          {
+            echo "### FocusTube xcodebuild/test failures"
+            echo '```'
+            grep -E "error:" Artifacts/xcodebuild.log | head -100 || true
+            echo '```'
+            echo "### Tail"
+            echo '```'
+            tail -60 Artifacts/xcodebuild.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Simulator screenshot
         if: always()
         run: |
