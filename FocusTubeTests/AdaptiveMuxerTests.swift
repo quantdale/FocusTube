@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+@testable import FocusTube
 
 /// Deterministic: native mux must fail with a typed error when given files that
 /// contain no compliant video/audio tracks (no FFmpeg/remote fallback).

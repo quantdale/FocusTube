@@ -19,8 +19,10 @@ final class LibraryStoreTests: XCTestCase {
 
         // Reload from a fresh store over the same container (simulating relaunch).
         let reloaded = await LibraryStore(context: ModelContext(container))
-        XCTAssertEqual(await reloaded.resumePosition(for: "v1"), 123.5)
-        XCTAssertEqual(await reloaded.history.count, 1)
+        let reloadedPosition = await reloaded.resumePosition(for: "v1")
+        XCTAssertEqual(reloadedPosition, 123.5)
+        let reloadedHistoryCount = await reloaded.history.count
+        XCTAssertEqual(reloadedHistoryCount, 1)
     }
 
     func testReconcileRemovesMissingFiles() async throws {
@@ -28,10 +30,12 @@ final class LibraryStoreTests: XCTestCase {
         let missingURL = URL(fileURLWithPath: "/tmp/focustube-missing-\(UUID().uuidString).mp4")
         let media = DownloadedMedia(id: "d1", videoID: "v", title: "T", resolution: 720, fileURL: missingURL, sizeBytes: 0, createdAt: Date())
         await store.addDownloadedMedia(media)
-        XCTAssertEqual(await store.downloaded.count, 1)
+        let countAfterAdd = await store.downloaded.count
+        XCTAssertEqual(countAfterAdd, 1)
 
         await store.reconcileDownloads()
-        XCTAssertEqual(await store.downloaded.count, 0)
+        let countAfterReconcile = await store.downloaded.count
+        XCTAssertEqual(countAfterReconcile, 0)
     }
 
     func testDeleteIsAtomicAndSafe() async throws {
@@ -46,13 +50,15 @@ final class LibraryStoreTests: XCTestCase {
 
         await store.deleteDownloadedMedia(id: "d2")
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
-        XCTAssertEqual(await store.downloaded.count, 0)
+        let countAfterDelete = await store.downloaded.count
+        XCTAssertEqual(countAfterDelete, 0)
     }
 
     func testSaveDeduplicates() async throws {
         let store = await LibraryStore(context: ModelContext(try makeContainer()))
         await store.save(videoID: "v2", title: "T", channelTitle: "C")
         await store.save(videoID: "v2", title: "T", channelTitle: "C")
-        XCTAssertEqual(await store.saved.count, 1)
+        let savedCount = await store.saved.count
+        XCTAssertEqual(savedCount, 1)
     }
 }
