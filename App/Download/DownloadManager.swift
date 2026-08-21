@@ -41,7 +41,8 @@ public final class DownloadManager {
         self.coordinator = DownloadCoordinator(
             transport: transport,
             directory: incompleteDirectory,
-            mux: Self.makeMux()
+            mux: Self.makeMux(),
+            validate: MediaAssetValidator.makeSeam()
         )
         // Reconciliation awaits transport reattachment, so it runs as a task;
         // `reconcileOnLaunch()` is idempotent and may also be awaited directly.
@@ -228,9 +229,14 @@ public final class DownloadManager {
         await coordinator.task(id)
     }
 
-    /// Blocks until the coordinator reports the task completed or failed, or the
-    /// timeout elapses. Used by `DownloadService` to register finalized media.
-    public func waitForCompletion(_ id: String, timeout: TimeInterval = 600) async -> DownloadTask? {
+    /// Waits until the coordinator reports the task settled (`.completed` or
+    /// `.failed`). Throws `CancellationError` when the enclosing task is
+    /// cancelled, so dismissed callers stop polling without mutating download
+    /// state. When the timeout elapses while the transfer is still active, the
+    /// current task is returned as-is: the transfer keeps running and may still
+    /// complete (its record settles through the normal event path), which must
+    /// not surface as a false failure. Returns nil only when no such task exists.
+    public func waitForCompletion(_ id: String, timeout: TimeInterval = 600) async throws -> DownloadTask? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if let task = await coordinator.task(id),
@@ -238,6 +244,7 @@ public final class DownloadManager {
                 await syncRecord(id)
                 return task
             }
+            try Task.checkCancellation()
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
         return await coordinator.task(id)

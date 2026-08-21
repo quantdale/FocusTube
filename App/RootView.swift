@@ -50,11 +50,19 @@ struct RootView: View {
             ))
         }
         let player = PlayerCoordinator()
+        let media = BackgroundMediaCoordinator(target: player)
+        // Republish lock-screen metadata whenever playback state or progress
+        // changes; the coordinator owns the snapshot, the media coordinator
+        // owns MPNowPlayingInfoCenter.
+        player.onNowPlayingChanged = { [weak player, weak media] in
+            guard let player, let media else { return }
+            media.publishNowPlaying(snapshot: player.nowPlayingSnapshot)
+        }
         _libraryStore = State(initialValue: library)
         _downloadManager = State(initialValue: manager)
         _downloadService = State(initialValue: DownloadService(downloadManager: manager, library: library))
         _playerCoordinator = State(initialValue: player)
-        _backgroundMedia = State(initialValue: BackgroundMediaCoordinator(target: player))
+        _backgroundMedia = State(initialValue: media)
     }
 
     var body: some View {

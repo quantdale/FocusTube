@@ -49,7 +49,8 @@ struct VideoPageView: View {
                             videoID: video.id,
                             title: video.title,
                             channelTitle: video.channelTitle,
-                            quality: effectiveQuality
+                            quality: effectiveQuality,
+                            durationSeconds: Double(video.durationSeconds ?? 0)
                         )
                         isDownloading = false
                     }
@@ -107,7 +108,9 @@ struct VideoPageView: View {
             Text(failure.userMessage)
         }
         .task {
-            await coordinator.loadAndPlay(videoID: video.id)
+            // Register callbacks and Now Playing metadata before playback
+            // starts so early progress ticks and state transitions are not
+            // missed by late registration.
             coordinator.onProgress = { seconds in
                 Task {
                     await library.recordProgress(
@@ -120,6 +123,9 @@ struct VideoPageView: View {
                     )
                 }
             }
+            coordinator.nowPlayingTitle = video.title
+            coordinator.nowPlayingArtist = video.channelTitle
+            await coordinator.loadAndPlay(videoID: video.id)
             await loadQualities()
             await loadComments()
         }

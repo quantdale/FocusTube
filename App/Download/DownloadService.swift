@@ -80,7 +80,8 @@ final class DownloadService {
         videoID: String,
         title: String,
         channelTitle: String,
-        quality: DownloadQuality
+        quality: DownloadQuality,
+        durationSeconds: TimeInterval = 0
     ) async {
         // A duplicate enqueue would reset the coordinator's in-flight task to
         // .queued while the original transfer's events still arrive, corrupting
@@ -100,12 +101,14 @@ final class DownloadService {
         case let .combined(component, resolution):
             await run(
                 videoID: videoID, title: title, channelTitle: channelTitle,
-                quality: quality, resolution: resolution, components: [component]
+                quality: quality, resolution: resolution, components: [component],
+                durationSeconds: durationSeconds
             )
         case let .adaptive(video, audio, resolution):
             await run(
                 videoID: videoID, title: title, channelTitle: channelTitle,
-                quality: quality, resolution: resolution, components: [video, audio]
+                quality: quality, resolution: resolution, components: [video, audio],
+                durationSeconds: durationSeconds
             )
         case let .unavailable(reason):
             // The quality picker only offers qualities the planner can satisfy,
@@ -149,11 +152,13 @@ final class DownloadService {
         channelTitle: String,
         quality: DownloadQuality,
         resolution: Int,
-        components: [DownloadComponent]
+        components: [DownloadComponent],
+        durationSeconds: TimeInterval
     ) async {
         await runOnce(
             videoID: videoID, title: title, channelTitle: channelTitle,
-            quality: quality, resolution: resolution, components: components
+            quality: quality, resolution: resolution, components: components,
+            durationSeconds: durationSeconds
         )
 
         // Signed media URLs expire; one bounded automatic retry re-resolves
@@ -172,12 +177,14 @@ final class DownloadService {
             case let .combined(component, resolution):
                 await runOnce(
                     videoID: videoID, title: title, channelTitle: channelTitle,
-                    quality: quality, resolution: resolution, components: [component]
+                    quality: quality, resolution: resolution, components: [component],
+                    durationSeconds: durationSeconds
                 )
             case let .adaptive(video, audio, resolution):
                 await runOnce(
                     videoID: videoID, title: title, channelTitle: channelTitle,
-                    quality: quality, resolution: resolution, components: [video, audio]
+                    quality: quality, resolution: resolution, components: [video, audio],
+                    durationSeconds: durationSeconds
                 )
             case .unavailable:
                 fail(videoID: videoID, title: title, quality: quality, error: .requestedQualityUnavailable)
@@ -191,7 +198,8 @@ final class DownloadService {
         channelTitle: String,
         quality: DownloadQuality,
         resolution: Int,
-        components: [DownloadComponent]
+        components: [DownloadComponent],
+        durationSeconds: TimeInterval
     ) async {
         let id = "\(videoID)-\(quality.rawValue)"
         let destination = destination(videoID: videoID, quality: quality)
@@ -203,10 +211,15 @@ final class DownloadService {
             components: components
         )
 
-        // MediaStream exposes no byte sizes today, so requiredBytes stays 0 and
-        // the manager's storage admission check cannot pre-refuse; storage
-        // failures surface through the task state instead.
-        let enqueued = await downloadManager.enqueue(request)
+        // Conservative up-front admission (docs/03): refuse before any partial
+        // work when free space cannot plausibly hold the transfer. Unknown
+        // durations estimate to 0 and skip the pre-check.
+        let requiredBytes = StorageEstimator.requiredBytes(
+            resolution: resolution,
+            durationSeconds: durationSeconds,
+            componentCount: components.count
+        )
+        let enqueued = await downloadManager.enqueue(request, requiredBytes: requiredBytes)
         if enqueued.state.status == .failed {
             fail(videoID: videoID, title: title, quality: quality, error: enqueued.state.error ?? .storageRefused)
             return
@@ -214,11 +227,24 @@ final class DownloadService {
 
         await downloadManager.begin(request.id)
 
-        guard let final = await downloadManager.waitForCompletion(request.id) else {
+        // Cancellation of the enclosing task (caller went away) stops polling
+        // without touching download state; an explicit user cancel settles the
+        // task through `cancel(videoID:quality:)` instead.
+        let final: DownloadTask?
+        do {
+            final = try await downloadManager.waitForCompletion(request.id)
+        } catch is CancellationError {
+            return
+        } catch {
+            fail(videoID: videoID, title: title, quality: quality, error: .unknown)
+            return
+        }
+        guard let final else {
             fail(videoID: videoID, title: title, quality: quality, error: .interrupted)
             return
         }
-        if final.state.status == .completed {
+        switch final.state.status {
+        case .completed:
             let size = fileManager.size(of: destination)
             library.addDownloadedMedia(DownloadedMedia(
                 id: id,
@@ -229,8 +255,12 @@ final class DownloadService {
                 sizeBytes: size,
                 createdAt: Date()
             ))
-        } else {
+        case .failed:
             fail(videoID: videoID, title: title, quality: quality, error: final.state.error ?? .unknown)
+        default:
+            // Timed out while still transferring: not a failure. The transfer
+            // continues; its record and UI projection settle via events.
+            break
         }
     }
 

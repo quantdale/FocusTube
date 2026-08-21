@@ -126,4 +126,21 @@ public final class BackgroundMediaCoordinator {
     public func updateNowPlaying(_ info: [String: Any]) {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
+
+    /// Publishes lock-screen metadata from the player's snapshot. An inactive
+    /// snapshot (nothing loaded, nothing playing) clears the entry so a stale
+    /// title never lingers after playback stops.
+    public func publishNowPlaying(snapshot: NowPlayingSnapshot) {
+        guard snapshot.isActive else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            return
+        }
+        updateNowPlaying(NowPlayingInfoBuilder.info(
+            title: snapshot.title,
+            artist: snapshot.artist,
+            duration: snapshot.duration,
+            currentTime: snapshot.currentTime,
+            rate: snapshot.rate
+        ))
+    }
 }

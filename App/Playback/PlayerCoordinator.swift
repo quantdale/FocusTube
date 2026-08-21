@@ -27,6 +27,16 @@ public final class PlayerCoordinator {
     /// can persist resume position without polling.
     public var onProgress: (@MainActor (TimeInterval) -> Void)?
 
+    /// Called whenever Now Playing data may have changed (item change, state
+    /// transition, or progress tick); the app layer republishes lock-screen
+    /// metadata from `nowPlayingSnapshot` in response.
+    public var onNowPlayingChanged: (@MainActor () -> Void)?
+
+    /// Human-readable Now Playing metadata; set by the presenting view before
+    /// playback starts.
+    public var nowPlayingTitle: String?
+    public var nowPlayingArtist: String?
+
     private var playerItem: AVPlayerItem?
     private var timeObserver: Any?
     private var itemObservation: NSKeyValueObservation?
@@ -75,6 +85,29 @@ public final class PlayerCoordinator {
         }
     }
 
+    // MARK: - Now Playing snapshot
+
+    /// Current lock-screen metadata derived from the live player. Finite-value
+    /// guards keep indefinite/NaN stream durations from poisoning the dictionary.
+    public var nowPlayingSnapshot: NowPlayingSnapshot {
+        let durationSeconds = player.currentItem.flatMap { item -> Double in
+            let seconds = item.duration.seconds
+            return seconds.isFinite ? seconds : 0
+        } ?? 0
+        let currentSeconds = player.currentTime().seconds
+        return NowPlayingSnapshot(
+            title: nowPlayingTitle,
+            artist: nowPlayingArtist,
+            duration: durationSeconds,
+            currentTime: currentSeconds.isFinite ? currentSeconds : 0,
+            rate: Double(player.rate)
+        )
+    }
+
+    private func notifyNowPlayingChanged() {
+        onNowPlayingChanged?()
+    }
+
     // MARK: - Loading / playback
 
     /// Resolves a video ID through the extractor, selects the online stream, and
@@ -104,6 +137,7 @@ public final class PlayerCoordinator {
         state = PlaybackState(status: .loading)
         startProgressObserver()
         player.play()
+        notifyNowPlayingChanged()
     }
 
     public func pause() {
@@ -123,6 +157,7 @@ public final class PlayerCoordinator {
         state = PlaybackState(status: .loading)
         startProgressObserver()
         player.play()
+        notifyNowPlayingChanged()
     }
 
     public func stop() {
@@ -134,6 +169,7 @@ public final class PlayerCoordinator {
         currentStream = nil
         currentVideoID = nil
         state = PlaybackState(status: .idle)
+        notifyNowPlayingChanged()
     }
 
     private func startProgressObserver() {
@@ -142,7 +178,9 @@ public final class PlayerCoordinator {
             let seconds = time.seconds
             guard seconds.isFinite else { return }
             Task { @MainActor in
-                self?.onProgress?(seconds)
+                guard let self else { return }
+                self.onProgress?(seconds)
+                self.notifyNowPlayingChanged()
             }
         }
     }
@@ -193,6 +231,7 @@ public final class PlayerCoordinator {
         @unknown default:
             break
         }
+        notifyNowPlayingChanged()
     }
 
     private func handle(timeControlStatus: AVPlayer.TimeControlStatus) {
@@ -219,6 +258,7 @@ public final class PlayerCoordinator {
         @unknown default:
             break
         }
+        notifyNowPlayingChanged()
     }
 
     private func mapExtractionFailure(_ error: Error) -> PlaybackError {

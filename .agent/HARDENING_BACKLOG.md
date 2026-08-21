@@ -32,6 +32,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: first moments of playback progress may not render.
 - Suggested hardening action: register the callback before calling loadAndPlay.
 - Blocks implementation: no
+- Resolved 2026-08-21: VideoPageView registers onProgress and Now Playing metadata before loadAndPlay.
 
 ### HB-002 — reattached downloads restart progress aggregation at zero
 - Severity: Low
@@ -67,6 +68,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: lock screen shows no title/artwork/duration though remote commands work.
 - Suggested hardening action: publish via NowPlayingInfoBuilder on playback state changes/progress ticks.
 - Blocks implementation: no
+- Resolved 2026-08-21: PlayerCoordinator exposes nowPlayingSnapshot + onNowPlayingChanged (item change, state transitions, 5s progress ticks); BackgroundMediaCoordinator.publishNowPlaying writes/clears MPNowPlayingInfoCenter; wired in RootView.
 
 ### HB-006 — per-event unstructured Tasks allow event reordering
 - Severity: Medium
@@ -91,6 +93,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: dismissed views keep polling; timeout reports failure while transfer continues (late completion then registers media — user saw a false failure).
 - Suggested hardening action: checkCancellation per iteration + event-driven continuation; distinguish timed-out-but-active from settled failure.
 - Blocks implementation: no
+- Resolved 2026-08-21: waitForCompletion throws CancellationError on task cancellation and returns the still-active task on timeout; DownloadService treats active-on-timeout as non-failure (transfer continues, record settles via events).
 
 ### HB-009 — storage admission floor never enforced
 - Severity: Medium
@@ -99,6 +102,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: full device drives cryptic finalization/mux failures instead of typed storageRefused.
 - Suggested hardening action: enforce free-space floor before begin, or expose stream byte sizes for real estimates.
 - Blocks implementation: no
+- Resolved 2026-08-21: StorageEstimator (Core) computes conservative requiredBytes from duration+tier with adaptive headroom; DownloadService passes it to enqueue so storageRefused precedes any partial work.
 
 ### HB-010 — final validation is existence+size only
 - Severity: Medium
@@ -107,6 +111,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: truncated-but-nonempty files register as completed.
 - Suggested hardening action: injected AVFoundation asset-validator seam at app layer.
 - Blocks implementation: no
+- Resolved 2026-08-21: DownloadCoordinator accepts an injected validate seam run on the finalized file; the app supplies AVFoundation track validation (MediaAssetValidator) and failing files are discarded as .validationFailed.
 
 ### HB-011 — test gaps: malformed payloads per endpoint, store error paths, comments-disabled detection
 - Severity: Medium

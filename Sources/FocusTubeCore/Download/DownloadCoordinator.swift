@@ -18,6 +18,11 @@ public actor DownloadCoordinator {
     private let fileManager: FileManaging
     private let directory: URL
     private let mux: (@Sendable ([URL], URL) async throws -> URL)?
+    /// Optional deep-validation seam (e.g. native AVFoundation asset checks in
+    /// the app layer) run against the finalized file before a job completes.
+    /// Throwing marks the job `.validationFailed`; Core itself keeps no
+    /// AVFoundation dependency.
+    private let validate: (@Sendable (URL) async throws -> Void)?
 
     /// Transient per-component state for in-flight jobs.
     private var componentTempLocations: [String: [Int: URL]] = [:]
@@ -27,12 +32,14 @@ public actor DownloadCoordinator {
         transport: DownloadTransport,
         fileManager: FileManaging = FileManager.default,
         directory: URL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("FocusTubeDownloads"),
-        mux: (@Sendable ([URL], URL) async throws -> URL)? = nil
+        mux: (@Sendable ([URL], URL) async throws -> URL)? = nil,
+        validate: (@Sendable (URL) async throws -> Void)? = nil
     ) {
         self.transport = transport
         self.fileManager = fileManager
         self.directory = directory
         self.mux = mux
+        self.validate = validate
         self.tasks = [:]
     }
 
@@ -211,6 +218,17 @@ public actor DownloadCoordinator {
                 fail(task: &task, with: .validationFailed)
                 return
             }
+            if let validate {
+                do {
+                    try await validate(destination)
+                } catch {
+                    // A file that fails deep validation is discarded, never
+                    // registered as a playable download.
+                    try? fileManager.removeItem(at: destination)
+                    fail(task: &task, with: .validationFailed)
+                    return
+                }
+            }
             complete(task: &task)
             return
         }
@@ -268,6 +286,20 @@ public actor DownloadCoordinator {
             // The final file is published from the component temps; remove the
             // transient files so nothing is orphaned in the work directory.
             // (The single-component path moves its temp via replaceItem.)
+            if let validate {
+                do {
+                    try await validate(destination)
+                } catch {
+                    // Discard a mux product that fails deep validation along
+                    // with its component temps; nothing may register.
+                    try? fileManager.removeItem(at: destination)
+                    for location in tempLocations {
+                        try? fileManager.removeItem(at: location)
+                    }
+                    fail(task: &task, with: .validationFailed)
+                    return
+                }
+            }
             for location in tempLocations {
                 try? fileManager.removeItem(at: location)
             }
