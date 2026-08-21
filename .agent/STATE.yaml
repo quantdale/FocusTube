@@ -13,45 +13,44 @@ campaign:
   on_exit: personal_release_candidate
   auto_enter_hardening: true
 
-status: implementation_in_progress
-current_milestone: M1_MEDIA_VIABILITY
-current_gate: G0_BOOTSTRAP_REVALIDATION
-current_work_packet: INTEGRATION_COMPLETION_V1
-current_packet_status: in_progress
+status: personal_release_candidate
+current_milestone: M10_PERSONAL_RELEASE
+current_gate: IC_EXIT_PASSED
+current_work_packet: COMPLETE
+current_packet_status: complete
 current_waypoint:
-  id: INTEGRATION-VALIDATE-HARDENING-BATCH
+  id: PERSONAL_RELEASE_CANDIDATE
   objective: >
-    Owner paused testing/CI ("implementation only"). In that window the whole
-    remaining Medium hardening backlog plus most of the Low batch was
-    implemented and committed locally as a9c8c70..f609cd3 (8 commits, not
-    pushed): Now Playing publishing, store generation tokens, reattach event
-    buffering + progress seeding, AppDependencies hoist, per-task event
-    serialization, muxing-orphan sweep + ADR-0006, persistence failure logging,
-    duplicate-extraction fix. Backlog fully dispositioned.
+    INTEGRATION_COMPLETION_V1 + HARDENING_V1 are complete with observed
+    evidence. On commit 16ad839: Core Tests workflow green (run 32494119089);
+    ios-ci run 32494119169 fully green — Build (Debug), app-hosted unit tests
+    (Gate unit=0) and LaunchTests UI leg (Gate ui=0) — restoring the first
+    honest green Apple build plane in project history. Local Windows Swift
+    6.3.3: 67 XCTest + 11 swift-testing, 0 failures. Hardening backlog fully
+    dispositioned; docs/gates synced to this state.
   exact_next_action: >
-    On owner re-enabling validation: run local swift test, add deterministic
-    coverage for new Core surface (StorageEstimator, seedProgress, validate
-    seam), push a9c8c70..f609cd3, observe ios-ci + Core Tests to green (UI-test
-    leg is the open question — read watchdog annotations if it hangs), then
-    flip G0 boxes 3/5/6 + IC-EXIT in docs/14, sync WAYPOINTS/README, write
-    final report, set personal_release_candidate.
+    Owner-only steps remain, all listed in PERSONAL_RELEASE_CHECKLIST.md:
+    Apple signing/install on the physical iPhone, real Google OAuth
+    configuration, and device-only verifications (PiP, background audio,
+    lock-screen/Bluetooth controls, genuine suspension download). No further
+    agent implementation work is pending.
   validation_required:
-    - local swift test green with new Core surface covered
-    - ios-ci workflow green on pushed HEAD (xcodegen + unit/UI test legs)
-    - docs/14 G0 + IC-EXIT flipped with run id evidence
-    - STATE.yaml terminal status set
-    - final report delivered
+    - none for agent scope; device/credential checks deferred to owner
 
-resume_token: INTEGRATION_COMPLETION_V1:A:VALIDATE:f609cd3
+resume_token: PERSONAL_RELEASE_CANDIDATE:16ad839
 repo_baseline:
   branch: main
-  commit: f609cd3
+  commit: 16ad839
   note: >
-    Local-only batch a9c8c70..f609cd3 awaits validation; last observed-green
-    point is f3db8e9 (Core Tests run 32479222209 green; ios-ci run 32479222149
-    steps 1-10 green incl. app-hosted unit tests in 52s — the historical
-    55-minute hang is narrowed to the UI-test leg). Nothing pushed since f3db8e9
-    by owner instruction.
+    Both workflows green on the same commit for the first time in project
+    history: Core Tests run 32494119089 success; ios-ci run 32494119169
+    success (Gate unit=0 ui=0 recorded at 15:02:36Z). Historical context:
+    the 55-minute test-phase hang was eliminated by bounded split test steps
+    (f3db8e9); later rounds fixed watchdog set -e semantics (b83d0b3),
+    validator visibility (43bab86), scripted-edit parens (e993a37),
+    annotation prioritization (076f39f), and a pre-existing fixture
+    write-before-mkdir bug in four DownloadServiceTests (16ad839) that had
+    been masked by continue-on-error in every earlier run.
 
 continuation_policy:
   continue_after_packet: true
@@ -103,41 +102,41 @@ research_baseline:
 
 progress:
   packets_total_implementation: 12
-  packets_complete: 0
-  packets_active: 1
-  packets_pending: 11
-  implementation_exit_passed: false
+  packets_complete: 12
+  packets_active: 0
+  packets_pending: 0
+  implementation_exit_passed: true
   note: >
-    Prior "complete" claims are rejected. Re-implementing/validating the full
-    end-to-end product.
+    IC-EXIT passed on 16ad839 with observed evidence (docs/14). HARDENING_V1
+    executed; remaining debt is documented Low items in HARDENING_BACKLOG.
 
 milestones:
   M0_BOOTSTRAP: complete
-  M1_MEDIA_VIABILITY: in_progress
-  M2_DURABLE_DOWNLOADS: pending
+  M1_MEDIA_VIABILITY: complete
+  M2_DURABLE_DOWNLOADS: complete
   M3_AUTH_DATA_API: complete
   M4_HOME_FOCUS: complete
   M5_SEARCH: complete
   M6_VIDEO_COMMENTS_ACTIONS: complete
   M7_LIBRARY: complete
-  M8_BACKGROUND_MEDIA: pending
-  M9_HARDENING: pending
-  M10_PERSONAL_RELEASE: pending
+  M8_BACKGROUND_MEDIA: complete
+  M9_HARDENING: complete
+  M10_PERSONAL_RELEASE: complete
 
 packets:
   WP-000-BOOTSTRAP: complete
   WP-001-EXTRACTION: complete
   WP-002-PLAYBACK: complete
-  WP-003-COMBINED-DOWNLOAD: in_progress
-  WP-004-ADAPTIVE-1080: pending
-  WP-005-DURABLE-DOWNLOAD-MANAGER: pending
+  WP-003-COMBINED-DOWNLOAD: complete
+  WP-004-ADAPTIVE-1080: complete
+  WP-005-DURABLE-DOWNLOAD-MANAGER: complete
   WP-006-AUTH-DATA-API: complete
   WP-007-HOME-SHORTS-FIREWALL: complete
   WP-008-SEARCH: complete
   WP-009-VIDEO-COMMENTS-ACTIONS: complete
   WP-010-LIBRARY: complete
-  WP-011-BACKGROUND-MEDIA: pending
-  WP-012-HARDEN-RELEASE: pending
+  WP-011-BACKGROUND-MEDIA: complete
+  WP-012-HARDEN-RELEASE: complete
 
 blockers: []
 
@@ -150,8 +149,8 @@ physical_device_checks_deferred:
   - final install/signing on target iPhone
 
 known_unproven:
-  - Windows Swift toolchain is being installed to validate FocusTubeCore locally; Apple CI remains the authoritative build plane for the app.
-  - Prior G0..G8 CI "pass" claims are rejected as unobserved; they will be re-established by this campaign.
+  - Live YouTube extraction against current YouTube behavior (YouTubeKit 0.4.8) is opt-in smoke only; recorded for owner device validation.
+  - Real Google OAuth flows are deterministic-fake covered; live credential exercise deferred to owner (PERSONAL_RELEASE_CHECKLIST.md section 2).
 
 deferred_debt:
   - id: repository_visibility
@@ -159,18 +158,16 @@ deferred_debt:
     detail: Repository observed public during bootstrap. No credentials committed. Visibility does not block implementation.
 
 last_checkpoint:
-  kind: partial
-  file: .agent/checkpoints/20260821-1305-INTEGRATION-hardening-batch-pending-validation.md
-  commit: f609cd3
+  kind: final
+  file: .agent/checkpoints/20260821-1505-PERSONAL-RELEASE-candidate.md
+  commit: 16ad839
   note: >
-    Hardening implementation batch a9c8c70..f609cd3 committed locally during
-    the owner's no-testing window; backlog fully dispositioned. Validation
-    (local swift test + push + CI observation) is the single next phase and is
-    documented step-by-step in the checkpoint for a fresh agent.
+    IC-EXIT passed with observed evidence: Core Tests run 32494119089 green;
+    ios-ci run 32494119169 green (Gate unit=0 ui=0). Terminal durable state
+    personal_release_candidate; owner-only steps in PERSONAL_RELEASE_CHECKLIST.md.
 
 next_transition:
-  when: PHASE A compile regressions resolved and CI green
+  when: owner completes PERSONAL_RELEASE_CHECKLIST.md on physical device
   set:
-    status: implementation_in_progress
-    milestone: M1_MEDIA_VIABILITY
-    note: Begin PHASE C real background download + adaptive integration.
+    status: personal_release_validated
+    note: Device-only verifications recorded by the owner close the campaign.

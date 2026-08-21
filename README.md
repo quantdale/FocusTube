@@ -4,7 +4,7 @@ FocusTube is a personal-use, native iOS YouTube client designed around intention
 
 The V1 product focuses on subscriptions/Home, deliberate search, native video playback, comments/account actions, downloads, and a local offline library. Shorts, the vertical swipe player, creator tools, shopping, and recommendation-driven rabbit holes are intentionally absent.
 
-> **Status:** INTEGRATION_COMPLETION_V1 executed — Core suite green on Apple CI, hardening Critical/High findings fixed, personal release checklist present. Live progress pointer: [`.agent/STATE.yaml`](.agent/STATE.yaml). Fresh coding agents start with [`START_HERE.md`](START_HERE.md).
+> **Status:** `personal_release_candidate` — INTEGRATION_COMPLETION_V1 and HARDENING_V1 complete with observed evidence: Core Tests green (run 32494119089) and ios-ci fully green (run 32494119169, Gate unit=0 ui=0) on commit `16ad839`; local suite 67 XCTest + 11 swift-testing green. Owner-only steps: [PERSONAL_RELEASE_CHECKLIST.md](PERSONAL_RELEASE_CHECKLIST.md). Live progress pointer: [`.agent/STATE.yaml`](.agent/STATE.yaml). Fresh coding agents start with [`START_HERE.md`](START_HERE.md).
 
 ## Autonomous development mode
 

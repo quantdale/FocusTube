@@ -12,15 +12,20 @@ During `IMPLEMENTATION_V1`, physical-device-only evidence is explicitly deferred
 - [x] XcodeGen generates project on macOS CI.
       Evidence: `Generate Xcode project` step success in ios-ci runs (e.g. run
       32439019194).
-- [ ] iOS app target builds on accepted Xcode 26.x.
-      Status: pending ios-ci verdict at 44a4c1e; prior failures were compile
-      errors, each fixed from ::error:: annotations.
+- [x] iOS app target builds on accepted Xcode 26.x.
+      Evidence: `Build (Debug)` step success in ios-ci run 32494119169
+      (job 96808390721, commit 16ad839); also green on runs 32488633888 /
+      32490488608.
 - [x] an available compatible iPhone Simulator boots.
       Evidence: `Select and boot simulator` step success in ios-ci runs.
-- [ ] app installs/launches without crash.
-      Status: pending ios-ci verdict (LaunchTests exercises launch).
-- [ ] XCUITest verifies Home/Search/Downloads/Library root tabs.
-      Status: pending ios-ci verdict (FocusTubeUITests/LaunchTests).
+- [x] app installs/launches without crash.
+      Evidence: app-hosted unit tests execute against the launched host app
+      (`Unit tests (FocusTubeTests)` step success, run 32494119169) and
+      LaunchTests launches the app (`UI tests` step success, same run).
+- [x] XCUITest verifies Home/Search/Downloads/Library root tabs.
+      Evidence: `UI tests (FocusTubeUITests)` step success with
+      `ui.exit = 0` ("Test Suite 'All tests' passed") in ios-ci run
+      32494119169; also green on runs 32488633888 / 32490488608.
 - [x] CI records Xcode/Swift/XcodeGen/runtime versions and retains useful result/log artifacts.
       Evidence: core.yml prints Swift version; ios-ci selects Xcode via
       scripts/ci/select-xcode.sh, installs XcodeGen, uploads Artifacts.
@@ -182,7 +187,8 @@ During `IMPLEMENTATION_V1`, physical-device-only evidence is explicitly deferred
       policy with synthetic-notification tests; route-change tracked in
       backlog.
 - [x] simulator-supported smoke tests pass where meaningful.
-      Evidence: FocusTubeTests run on simulator in ios-ci.
+      Evidence: FocusTubeTests run on simulator in ios-ci — all green with
+      honest exit codes (Gate unit=0) in run 32494119169.
 - [x] physical-device-only checks are explicitly listed as deferred rather than claimed.
       Evidence: PERSONAL_RELEASE_CHECKLIST.md section 3.
 
@@ -192,16 +198,36 @@ Physical device checks for PiP/background suspension/lock screen/Bluetooth do **
 
 All must hold:
 
-- [ ] G0–G8 implementation criteria are satisfied, with explicitly allowed external/device evidence deferred and recorded.
-- [ ] full deterministic test suite passes.
-- [ ] current iOS app builds and launches on automated Apple build plane.
-- [ ] main user flows have simulator smoke/UI coverage at least for navigation and deterministic fixture-backed behavior.
-- [ ] no known Critical/High defect remains.
-- [ ] no known secret leakage or destructive persistence issue remains.
-- [ ] no Shorts surface/route/vertical swipe path exists.
-- [ ] download ceiling remains 1080p and picker policy remains exact.
-- [ ] `.agent/STATE.yaml`, `.agent/WAYPOINTS.yaml`, checkpoints, and hardening backlog reflect current reality.
-- [ ] a fresh agent can identify what is complete and why without chat history.
+- [x] G0–G8 implementation criteria are satisfied, with explicitly allowed external/device evidence deferred and recorded.
+- [x] full deterministic suite passes.
+      Evidence: Core Tests workflow green on 16ad839 (run 32494119089);
+      local Windows Swift 6.3.3: 67 XCTest + 11 swift-testing, 0 failures;
+      app-hosted FocusTubeTests green on simulator (Gate unit=0,
+      run 32494119169).
+- [x] current iOS app builds and launches on automated Apple build plane.
+      Evidence: ios-ci run 32494119169 — Build (Debug), Unit tests, UI tests
+      and final Gate all success on commit 16ad839.
+- [x] main user flows have simulator smoke/UI coverage at least for navigation and deterministic fixture-backed behavior.
+      Evidence: LaunchTests root-tab navigation (UI leg) + DownloadService/
+      DownloadManager/LibraryStore/PlayerCoordinator/BackgroundMedia fixture
+      coverage in FocusTubeTests; Core policy suites in swift test.
+- [x] no known Critical/High defect remains.
+      Evidence: HARDENING_BACKLOG fully dispositioned (all Medium items
+      implemented in a9c8c70..f609cd3; Low batch implemented or documented).
+- [x] no known secret leakage or destructive persistence issue remains.
+      Evidence: secret-pattern audit earlier in campaign; no credentials in
+      tree; persistence paths covered by deterministic tests.
+- [x] no Shorts surface/route/vertical swipe path exists.
+      Evidence: shortsRouteIsBlocked + ShortFormPolicyTests green in Core
+      suite; TabView exposes only Home/Search/Downloads/Library.
+- [x] download ceiling remains 1080p and picker policy remains exact.
+      Evidence: allowedQualityLadderIsLocked / higherThan1080IsNeverSelected /
+      missingQualitiesAreNotManufactured / planner-intersection tests green.
+- [x] `.agent/STATE.yaml`, `.agent/WAYPOINTS.yaml`, checkpoints, and hardening backlog reflect current reality.
+      Evidence: synced at 16ad839 with observed run ids (this checkpoint).
+- [x] a fresh agent can identify what is complete and why without chat history.
+      Evidence: START_HERE.md recovery algorithm + STATE.yaml waypoint +
+      checkpoints directory.
 
 On pass under INTEGRATION_COMPLETION_V1: record evidence, then continue directly into HARDENING_V1 (the owner has explicitly authorized the full completion campaign including hardening and personal release). The terminal state is `personal_release_candidate`, or `implementation_complete_external_validation_required` only if a genuine external blocker remains.
 

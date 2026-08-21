@@ -1,5 +1,5 @@
 schema_version: 1
-campaign: IMPLEMENTATION_V1
+campaign: INTEGRATION_COMPLETION_V1 (complete; terminal state personal_release_candidate)
 selection_rule: Select the first ready packet whose dependencies are complete, unless STATE.yaml names an active packet. Critical/High regressions preempt feature work.
 coordinator_owns_status: true
 
@@ -53,7 +53,7 @@ waypoints:
     order: 3
     milestone: M1_MEDIA_VIABILITY
     gate: G1
-    status: pending
+    status: complete
     depends_on: [WP-002-PLAYBACK]
     objective: Prove background download, final-file validation, and offline playback for a combined stream.
     primary_risk: Background transfer/file-finalization correctness.
