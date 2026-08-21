@@ -19,43 +19,39 @@ current_gate: G0_BOOTSTRAP_REVALIDATION
 current_work_packet: INTEGRATION_COMPLETION_V1
 current_packet_status: in_progress
 current_waypoint:
-  id: INTEGRATION-FINAL
+  id: INTEGRATION-VALIDATE-HARDENING-BATCH
   objective: >
-    All implementation and hardening work is complete on main through 478b38c
-    (Core suite green on Apple CI across be45a41..478b38c; local Windows Swift
-    6.3.3 suite 63 XCTest + 5 swift-testing green). The single remaining gate is
-    the ios-ci xcodebuild leg: successive runs failed on exactly one compile
-    error per round, each fixed from public ::error:: annotations (access
-    levels, Self default args, Bridge Sendable/final, captured-var mutations,
-    moveItem shadow, argument label, GIDToken optionality, service-struct
-    Sendable). 478b38c is the first commit expected to pass compilation.
+    Owner paused testing/CI ("implementation only"). In that window the whole
+    remaining Medium hardening backlog plus most of the Low batch was
+    implemented and committed locally as a9c8c70..f609cd3 (8 commits, not
+    pushed): Now Playing publishing, store generation tokens, reattach event
+    buffering + progress seeding, AppDependencies hoist, per-task event
+    serialization, muxing-orphan sweep + ADR-0006, persistence failure logging,
+    duplicate-extraction fix. Backlog fully dispositioned.
   exact_next_action: >
-    Observe ios-ci run for 478b38c or later. On success: flip G0 build/launch
-    boxes in docs/14-ACCEPTANCE-GATES.md, set packets/milestones truthful
-    (WP-003/004/005/011 complete, M1/M2/M8 complete), set status
-    personal_release_candidate, write final report with commit SHA + CI run
-    IDs + test counts + HB debt list. On failure: read ::error:: annotations
-    via GET /repos/quantdale/FocusTube/check-runs/{job_id}/annotations, fix,
-    push, repeat.
+    On owner re-enabling validation: run local swift test, add deterministic
+    coverage for new Core surface (StorageEstimator, seedProgress, validate
+    seam), push a9c8c70..f609cd3, observe ios-ci + Core Tests to green (UI-test
+    leg is the open question — read watchdog annotations if it hangs), then
+    flip G0 boxes 3/5/6 + IC-EXIT in docs/14, sync WAYPOINTS/README, write
+    final report, set personal_release_candidate.
   validation_required:
-    - ios-ci workflow green on latest main (xcodegen + xcodebuild test)
-    - docs/14 G0 boxes flipped with run id evidence
+    - local swift test green with new Core surface covered
+    - ios-ci workflow green on pushed HEAD (xcodegen + unit/UI test legs)
+    - docs/14 G0 + IC-EXIT flipped with run id evidence
     - STATE.yaml terminal status set
     - final report delivered
 
-resume_token: INTEGRATION_COMPLETION_V1:A:WP-000:REAUDIT
+resume_token: INTEGRATION_COMPLETION_V1:A:VALIDATE:f609cd3
 repo_baseline:
   branch: main
-  commit: 1188870
+  commit: f609cd3
   note: >
-    Core Tests green on Apple CI across be45a41..ed7228d (observed runs).
-    HARDENING_V1 executed: Critical temp-file race fixed (staged component
-    moves), component-index fidelity across relaunch, atomic adaptive mux,
-    data-layer correctness (search zero-hits, <=50-id chunking, feed
-    pagination), download UX safety (duplicate guard, cancel UI), interruption
-    notification wiring. Remaining Medium/Low debt in HARDENING_BACKLOG
-    HB-004..012. Awaiting ios-ci verdict at 1188870 (prior failure was a
-    single access-level error, fixed).
+    Local-only batch a9c8c70..f609cd3 awaits validation; last observed-green
+    point is f3db8e9 (Core Tests run 32479222209 green; ios-ci run 32479222149
+    steps 1-10 green incl. app-hosted unit tests in 52s — the historical
+    55-minute hang is narrowed to the UI-test leg). Nothing pushed since f3db8e9
+    by owner instruction.
 
 continuation_policy:
   continue_after_packet: true
@@ -164,15 +160,13 @@ deferred_debt:
 
 last_checkpoint:
   kind: partial
-  file: .agent/checkpoints/20260821-0805-INTEGRATION-A-phaseA-compile-repairs.md
-  commit: 63d637d
+  file: .agent/checkpoints/20260821-1305-INTEGRATION-hardening-batch-pending-validation.md
+  commit: f609cd3
   note: >
-    PHASE A compile repairs pushed (d21c272). Static audit found the real
-    historical breakers (DownloadState Hashable/finalizationFailed, test stub
-    mutations, non-exhaustive catches, app-layer Swift 6 fixes). Core Tests run
-    32430555251 and iOS CI run 32430555223 observed failing at 63d637d; exact
-    compiler output still unread. Local Windows Swift 6.3.3 toolchain being
-    extracted under .swift-toolchain/ to close the diagnosis loop.
+    Hardening implementation batch a9c8c70..f609cd3 committed locally during
+    the owner's no-testing window; backlog fully dispositioned. Validation
+    (local swift test + push + CI observation) is the single next phase and is
+    documented step-by-step in the checkpoint for a fresh agent.
 
 next_transition:
   when: PHASE A compile regressions resolved and CI green
