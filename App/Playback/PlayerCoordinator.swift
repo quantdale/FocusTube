@@ -154,15 +154,20 @@ public final class PlayerCoordinator {
     private func observe(item: AVPlayerItem) {
         itemObservation?.invalidate()
         itemObservation = item.observe(\.status, options: [.new]) { [weak self] observed, _ in
+            // Extract the Sendable status before hopping actors; capturing the
+            // non-Sendable AVPlayerItem across a Task boundary is illegal on
+            // Swift 6.0 toolchains.
+            let status = observed.status
             Task { @MainActor in
-                self?.handle(itemStatus: observed.status)
+                self?.handle(itemStatus: status)
             }
         }
 
         timeControlObservation?.invalidate()
         timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
+            let status = observed.timeControlStatus
             Task { @MainActor in
-                self?.handle(timeControlStatus: observed.timeControlStatus)
+                self?.handle(timeControlStatus: status)
             }
         }
     }

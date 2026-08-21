@@ -11,7 +11,7 @@ final class OfflinePlaybackTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let item = AVPlayerItem(url: url)
-        XCTAssertEqual(item.url, url)
+        XCTAssertEqual((item.asset as? AVURLAsset)?.url, url)
         XCTAssertTrue(url.isFileURL)
     }
 }

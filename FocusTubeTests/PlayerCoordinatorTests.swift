@@ -57,7 +57,7 @@ final class PlayerCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.currentStream?.id, "c720")
         XCTAssertEqual(coordinator.state.status, .loading)
-        XCTAssertEqual(coordinator.player.currentItem?.url, url)
+        XCTAssertEqual((coordinator.player.currentItem?.asset as? AVURLAsset)?.url, url)
     }
 
     func testPlaybackErrorMapping() {

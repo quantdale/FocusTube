@@ -1,4 +1,4 @@
-public enum DownloadQuality: Int, CaseIterable, Codable, Sendable, Comparable {
+public enum DownloadQuality: Int, CaseIterable, Codable, Sendable, Comparable, Hashable {
     case p360 = 360
     case p480 = 480
     case p720 = 720

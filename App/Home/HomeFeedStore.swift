@@ -41,7 +41,7 @@ public final class HomeFeedStore {
         } catch let err as YouTubeAPIError {
             error = err
         } catch {
-            error = .unknown(status: -1)
+            self.error = .unknown(status: -1)
         }
     }
 

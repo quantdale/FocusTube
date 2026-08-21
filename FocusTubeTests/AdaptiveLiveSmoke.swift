@@ -20,8 +20,8 @@ final class AdaptiveLiveSmoke: XCTestCase {
             return
         }
 
-        async let videoDownload = download(components.video.sourceURL)
-        async let audioDownload = download(components.audio.sourceURL)
+        async let videoDownload = Self.download(components.video.sourceURL)
+        async let audioDownload = Self.download(components.audio.sourceURL)
         let (videoURL, audioURL) = try await (videoDownload, audioDownload)
 
         let outURL = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -41,7 +41,8 @@ final class AdaptiveLiveSmoke: XCTestCase {
         }
     }
 
-    private func download(_ url: URL) async throws -> URL {
+    // Static so `async let` child tasks capture no non-Sendable self.
+    private static func download(_ url: URL) async throws -> URL {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
             let task = URLSession.shared.downloadTask(with: url) { location, _, error in
                 if let error { continuation.resume(throwing: error); return }

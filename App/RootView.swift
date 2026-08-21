@@ -91,7 +91,7 @@ struct RootView: View {
 }
 
 struct DownloadsView: View {
-    @Bindable var store: LibraryStore
+    let store: LibraryStore
     @Bindable var downloadManager: DownloadManager
     let playerCoordinator: PlayerCoordinator
 
@@ -148,7 +148,7 @@ struct DownloadsView: View {
 }
 
 struct LibraryView: View {
-    @Bindable var store: LibraryStore
+    let store: LibraryStore
 
     var body: some View {
         List {

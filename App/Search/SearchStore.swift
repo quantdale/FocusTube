@@ -40,7 +40,7 @@ public final class SearchStore {
         } catch let err as YouTubeAPIError {
             error = err
         } catch {
-            error = .unknown(status: -1)
+            self.error = .unknown(status: -1)
         }
     }
 
@@ -55,7 +55,7 @@ public final class SearchStore {
         } catch let err as YouTubeAPIError {
             error = err
         } catch {
-            error = .unknown(status: -1)
+            self.error = .unknown(status: -1)
         }
     }
 }
