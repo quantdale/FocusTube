@@ -1,69 +1,24 @@
 import SwiftUI
-import SwiftData
 import os
 import FocusTubeCore
 
 struct RootView: View {
     private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "app-shell")
 
-    @State private var playerCoordinator: PlayerCoordinator
+    let dependencies: AppDependencies
+
     @State private var homeStore = HomeFeedStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
     @State private var searchStore = SearchStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
     @State private var auth: AuthSession = GoogleSignInAuthSession()
     @State private var api: YouTubeAPI = YouTubeDataClient()
-    @State private var libraryStore: LibraryStore
-    @State private var downloadManager: DownloadManager
-    @State private var downloadService: DownloadService
-    @State private var backgroundMedia: BackgroundMediaCoordinator
 
-    init() {
-        let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self, DownloadRecord.self])
-        // Resilience over durability: a corrupted/unopenable store must not crash
-        // the app at launch, so fall back to an in-memory container (personal-use
-        // tradeoff: library metadata then lasts only this session). The fallback
-        // force-try cannot fail for disk reasons — in-memory storage does no I/O.
-        let container: ModelContainer
-        do {
-            let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-            container = try ModelContainer(for: schema, configurations: [config])
-        } catch {
-            Self.logger.fault("Persistent ModelContainer failed to open (\(error.localizedDescription, privacy: .public)); using in-memory store")
-            let memoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            container = try! ModelContainer(for: schema, configurations: [memoryConfig])
-        }
-        let library = LibraryStore(context: ModelContext(container))
-        let manager = DownloadManager(transport: BackgroundDownloadTransport.shared, context: ModelContext(container))
-        // Transfers that finish via the relaunched background session bypass
-        // DownloadService; register them so offline media is never orphaned.
-        // The library upserts by id, so this stays idempotent with in-app
-        // registration.
-        manager.onMediaFinalized = { [library] task in
-            let size = (try? task.destinationURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-            library.addDownloadedMedia(DownloadedMedia(
-                id: task.id,
-                videoID: task.videoID,
-                title: task.videoID,
-                resolution: task.resolution,
-                fileURL: task.destinationURL,
-                sizeBytes: Int64(size),
-                createdAt: Date()
-            ))
-        }
-        let player = PlayerCoordinator()
-        let media = BackgroundMediaCoordinator(target: player)
-        // Republish lock-screen metadata whenever playback state or progress
-        // changes; the coordinator owns the snapshot, the media coordinator
-        // owns MPNowPlayingInfoCenter.
-        player.onNowPlayingChanged = { [weak player, weak media] in
-            guard let player, let media else { return }
-            media.publishNowPlaying(snapshot: player.nowPlayingSnapshot)
-        }
-        _libraryStore = State(initialValue: library)
-        _downloadManager = State(initialValue: manager)
-        _downloadService = State(initialValue: DownloadService(downloadManager: manager, library: library))
-        _playerCoordinator = State(initialValue: player)
-        _backgroundMedia = State(initialValue: media)
-    }
+    // Long-lived dependencies are owned by AppDependencies (created once per
+    // process); these accessors keep the body below readable.
+    private var playerCoordinator: PlayerCoordinator { dependencies.playerCoordinator }
+    private var libraryStore: LibraryStore { dependencies.libraryStore }
+    private var downloadManager: DownloadManager { dependencies.downloadManager }
+    private var downloadService: DownloadService { dependencies.downloadService }
+    private var backgroundMedia: BackgroundMediaCoordinator { dependencies.backgroundMedia }
 
     var body: some View {
         TabView {

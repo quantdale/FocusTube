@@ -88,6 +88,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: discarded instances still open containers/spawn reconciliation.
 - Suggested hardening action: hoist dependencies into a single container created in FocusTubeApp.
 - Blocks implementation: no
+- Resolved 2026-08-21: AppDependencies (@MainActor) owns container/stores/coordinator creation and wiring; FocusTubeApp holds it in @State and RootView consumes it, so struct re-evaluation no longer opens containers or spawns reconciliation.
 
 ### HB-008 — waitForCompletion polls up to 10 min and ignores cancellation
 - Severity: Medium
