@@ -51,6 +51,19 @@ public actor DownloadCoordinator {
         tasks[id]
     }
 
+    /// Seeds cumulative progress for a freshly reattached task from its
+    /// persisted record, so the UI projection doesn't restart at zero after a
+    /// relaunch. The next cumulative `didWriteData` event supersedes these
+    /// values.
+    public func seedProgress(taskID: String, bytesDownloaded: Int64, totalBytes: Int64) {
+        guard var task = tasks[taskID] else { return }
+        var state = task.state
+        state.bytesDownloaded = bytesDownloaded
+        state.totalBytes = totalBytes
+        task.apply(state)
+        tasks[taskID] = task
+    }
+
     // MARK: - Enqueue / control
 
     @discardableResult

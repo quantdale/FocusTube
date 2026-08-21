@@ -42,6 +42,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: cosmetic progress regression after relaunch; correctness unaffected (URLSession totals are cumulative).
 - Suggested hardening action: seed componentProgress from the persisted record on attach.
 - Blocks implementation: no
+- Resolved 2026-08-21: reconcileOnLaunch seeds the reattached task's cumulative progress from the persisted record (coordinator.seedProgress) and republishes the live snapshot.
 
 ### HB-003 — tiny event window between reattach registration and coordinator attach
 - Severity: Low
@@ -51,6 +52,7 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: rare stuck record after a precisely-timed relaunch.
 - Suggested hardening action: buffer early events in the transport or re-check task states after attach.
 - Blocks implementation: no
+- Resolved 2026-08-21: reattached events are routed through a main-actor buffer during reconciliation and replayed in arrival order once their request attaches; post-reconcile events pass straight through as before.
 
 ### HB-004 — stale-response race in SearchStore/HomeFeedStore loads
 - Severity: Medium

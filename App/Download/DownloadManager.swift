@@ -25,6 +25,13 @@ public final class DownloadManager {
     private let mediaDirectory: URL
     private let incompleteDirectory: URL
     private let transport: DownloadTransport
+    /// Reattached-transfer events that arrive after handler registration but
+    /// before their request is re-registered with the coordinator, where
+    /// `handle` would silently drop them (unknown task). Buffered on the main
+    /// actor during reconciliation and replayed once the request attaches.
+    private var reattachEventBuffer: [String: [DownloadEvent]] = [:]
+    private var attachedRequestIDs: Set<String> = []
+    private var isReconciling = false
 
     public init(
         transport: DownloadTransport,
@@ -89,11 +96,17 @@ public final class DownloadManager {
     /// retryable. Idempotent: reattachment and reconciliation are no-ops for
     /// already-attached tasks and settled records.
     public func reconcileOnLaunch() async {
+        isReconciling = true
+        reattachEventBuffer.removeAll()
+        attachedRequestIDs.removeAll()
+        defer {
+            isReconciling = false
+            attachedRequestIDs.removeAll()
+            reattachEventBuffer.removeAll()
+        }
         let recovered = await transport.reattach { [weak self] requestID, event in
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.coordinator.handle(event, taskID: requestID)
-                await self.persistTaskSnapshot(requestID)
+                await self?.routeReattachedEvent(event, requestID: requestID)
             }
         }
         let recoveredByID = Dictionary(recovered.map { ($0.requestID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -124,6 +137,7 @@ public final class DownloadManager {
                 // can never finalize. Cancel the surviving transfers so the
                 // background session drains instead of feeding a doomed job.
                 await transport.cancel(taskID: record.id)
+                reattachEventBuffer[record.id] = nil
             } else {
                 let request = DownloadRequest(
                     id: record.id,
@@ -133,6 +147,27 @@ public final class DownloadManager {
                     components: record.components
                 )
                 await coordinator.attach(taskID: request.id, request: request)
+                attachedRequestIDs.insert(request.id)
+                // Seed cumulative progress from the persisted record so the UI
+                // doesn't restart at zero after relaunch; the next cumulative
+                // didWriteData event supersedes these values.
+                let persisted = record.downloadTask.state
+                if persisted.bytesDownloaded > 0 || persisted.totalBytes > 0 {
+                    await coordinator.seedProgress(
+                        taskID: request.id,
+                        bytesDownloaded: persisted.bytesDownloaded,
+                        totalBytes: persisted.totalBytes
+                    )
+                    await persistTaskSnapshot(request.id)
+                }
+                // Replay any events that landed between handler registration
+                // and this attach, in arrival order.
+                if let buffered = reattachEventBuffer[request.id] {
+                    reattachEventBuffer[request.id] = nil
+                    for event in buffered {
+                        await applyReattachedEvent(event, requestID: request.id)
+                    }
+                }
             }
         }
         // A recovered transfer without a persisted record would stream orphaned
@@ -140,7 +175,24 @@ public final class DownloadManager {
         let recordedIDs = Set(records.map(\.id))
         for requestID in recoveredByID.keys where !recordedIDs.contains(requestID) {
             await transport.cancel(taskID: requestID)
+            reattachEventBuffer[requestID] = nil
         }
+    }
+
+    /// Routes a reattached transfer event: straight through once its request is
+    /// registered with the coordinator, buffered while reconciliation is still
+    /// attaching it.
+    private func routeReattachedEvent(_ event: DownloadEvent, requestID: String) async {
+        if isReconciling && !attachedRequestIDs.contains(requestID) {
+            reattachEventBuffer[requestID, default: []].append(event)
+        } else {
+            await applyReattachedEvent(event, requestID: requestID)
+        }
+    }
+
+    private func applyReattachedEvent(_ event: DownloadEvent, requestID: String) async {
+        await coordinator.handle(event, taskID: requestID)
+        await persistTaskSnapshot(requestID)
     }
 
     // MARK: - Control
