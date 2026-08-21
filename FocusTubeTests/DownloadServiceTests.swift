@@ -72,20 +72,14 @@ private final class GatedTransport: DownloadTransport, @unchecked Sendable {
     }
 
     func release() {
-        lock.lock()
-        released = true
-        lock.unlock()
+        lock.withLock { released = true }
     }
 
     func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {
-        lock.lock()
-        beginCount += 1
-        lock.unlock()
+        lock.withLock { beginCount += 1 }
         onEvent(.progress(component: 0, bytes: 0, total: 100))
         while true {
-            lock.lock()
-            let done = released
-            lock.unlock()
+            let done = lock.withLock { released }
             if done { break }
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
@@ -108,16 +102,12 @@ private final class SwitchableTransport: DownloadTransport, @unchecked Sendable 
     }
 
     func completeSubsequentTransfers() {
-        lock.lock()
-        failing = false
-        lock.unlock()
+        lock.withLock { failing = false }
     }
 
     func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {
-        lock.lock()
-        beginCount += 1
-        let failingNow = failing
-        lock.unlock()
+        let (beginCountNow, failingNow) = lock.withLock { (beginCount + 1, failing) }
+        beginCount = beginCountNow
         if failingNow {
             onEvent(.failed(.transportFailed))
         } else {

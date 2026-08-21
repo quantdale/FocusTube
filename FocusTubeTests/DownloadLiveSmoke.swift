@@ -42,7 +42,10 @@ final class DownloadLiveSmoke: XCTestCase {
 
         let player = await PlayerCoordinator()
         await player.playLocalFile(destination)
-        let reachable = await player.state.status == .loading || await player.state.status == .ready || await player.state.status == .playing
+        // Bind the async-isolated state before asserting; XCTest autoclosures
+        // are nonisolated and cannot contain await.
+        let status = await player.state.status
+        let reachable = status == .loading || status == .ready || status == .playing
         XCTAssertTrue(reachable, "Offline player item should be loaded from the local file")
     }
 
