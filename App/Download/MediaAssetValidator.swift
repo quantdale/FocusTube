@@ -10,11 +10,13 @@ enum MediaAssetValidationError: Error {
 /// Native AVFoundation deep validation for finalized media files. Deeper than
 /// the coordinator's existence+size floor: a truncated-but-nonempty file that
 /// AVFoundation cannot load as a playable asset is discarded instead of being
-/// registered as an offline download.
-enum MediaAssetValidator {
+/// registered as an offline download. Public because it appears in a default
+/// argument of DownloadManager's public initializer (default values are
+/// evaluated at the call site).
+public enum MediaAssetValidator {
     /// Builds the `@Sendable` seam handed to `DownloadCoordinator`; every
     /// download tier carries both a video and an audio track.
-    static func makeSeam() -> (@Sendable (URL) async throws -> Void) {
+    public static func makeSeam() -> (@Sendable (URL) async throws -> Void) {
         { url in
             let asset = AVURLAsset(url: url)
             let videoTracks = try await asset.loadTracks(withMediaType: .video)
