@@ -39,30 +39,39 @@ jobs:
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
 
-      - name: Build and test
+      # Compile-only pass: catches Swift errors fast without simulator overhead.
+      - name: Build (Debug)
         run: |
           mkdir -p Artifacts
           set -o pipefail
-          xcodebuild test             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -resultBundlePath Artifacts/FocusTube.xcresult             CODE_SIGNING_ALLOWED=NO | tee Artifacts/xcodebuild.log
+          xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-build.log
 
-      # The Actions log API needs auth to read remotely; surface compiler/test
-      # failures as check-run annotations (::error::) and on the public step
-      # summary so a remote agent can read them unauthenticated.
-      - name: Publish failure summary
-        if: failure()
+      # Full test pass: builds test bundles and runs them on the simulator.
+      - name: Build and test
+        run: |
+          set -o pipefail
+          xcodebuild test             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -resultBundlePath Artifacts/FocusTube.xcresult             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild.log
+
+      # Always surface the log tail (even on timeout/cancel) so a remote agent
+      # can diagnose hangs without authenticated API access.
+      - name: Publish diagnostics
+        if: always()
         run: |
           {
-            echo "### FocusTube xcodebuild/test failures"
+            echo "### xcodebuild errors"
             echo '```'
-            grep -E "error:" Artifacts/xcodebuild.log | head -100 || true
+            grep -E "error:" Artifacts/xcodebuild*.log 2>/dev/null | head -50 || true
             echo '```'
-            echo "### Tail"
+            echo "### Build log tail"
             echo '```'
-            tail -60 Artifacts/xcodebuild.log || true
+            tail -40 Artifacts/xcodebuild-build.log 2>/dev/null || true
+            echo '```'
+            echo "### Test log tail"
+            echo '```'
+            tail -60 Artifacts/xcodebuild.log 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          # Emit up to 25 errors as readable check-run annotations.
-          grep -E "error:" Artifacts/xcodebuild.log | head -25 | while IFS= read -r line; do
+          grep -E "error:" Artifacts/xcodebuild*.log 2>/dev/null | head -25 | while IFS= read -r line; do
             echo "::error::$line"
           done || true
 
@@ -71,7 +80,7 @@ jobs:
         if: success()
         run: |
           set -o pipefail
-          xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -configuration Release             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO | tee Artifacts/xcodebuild-release.log
+          xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -configuration Release             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-release.log
 
       - name: Simulator screenshot
         if: always()
