@@ -1,15 +1,17 @@
 import Foundation
 import GoogleSignIn
+import os
 
 /// Concrete GoogleSignIn adapter. Keeps the GoogleSignIn surface behind the
 /// `AuthSession` boundary. No token is ever printed, logged, or persisted
 /// outside the secure GoogleSignIn store. Uses the stable closure-based
 /// `GIDSignIn` API wrapped in continuations.
 public final class GoogleSignInAuthSession: AuthSession {
-    /// Guards one-time global configuration of the shared GIDSignIn instance
-    /// (RootView constructs several session instances).
-    private static let configurationLock = NSLock()
-    private static var hasConfiguredGIDSignIn = false
+    /// Lock-protected one-time configuration state for the shared GIDSignIn
+    /// instance (RootView constructs several session instances). A plain
+    /// static var would be non-concurrency-safe global mutable state.
+    private static let configurationState =
+        OSAllocatedUnfairLock<(clientID: String?, configured: Bool)>(initialState: (nil, false))
 
     /// True only when a `GIDClientID` was found in Info.plist. Without it the
     /// GoogleSignIn surface stays inert (typed nil/false results) instead of
@@ -18,13 +20,17 @@ public final class GoogleSignInAuthSession: AuthSession {
     private let isConfigured: Bool
 
     public init(clientID: String? = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String) {
-        Self.configurationLock.lock()
-        defer { Self.configurationLock.unlock() }
-        if let clientID, !Self.hasConfiguredGIDSignIn {
-            GIDSignIn.sharedInstance.configure(clientID: clientID)
-            Self.hasConfiguredGIDSignIn = true
+        let configured = Self.configurationState.withLock { state -> Bool in
+            let effectiveClientID = clientID ?? state.clientID
+            guard let effectiveClientID else { return state.configured }
+            if !state.configured {
+                GIDSignIn.sharedInstance.configure(clientID: effectiveClientID)
+            }
+            state.clientID = effectiveClientID
+            state.configured = true
+            return true
         }
-        self.isConfigured = Self.hasConfiguredGIDSignIn
+        self.isConfigured = configured
     }
 
     public var isAuthenticated: Bool {
