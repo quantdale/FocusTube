@@ -118,6 +118,7 @@ private final class SwitchableTransport: DownloadTransport, @unchecked Sendable 
     func cancel(taskID: String) async {}
 }
 
+@MainActor
 final class DownloadServiceTests: XCTestCase {
     private func combinedMedia(videoID: String, resolution: Int) -> ResolvedMedia {
         let stream = MediaStream(
