@@ -19,6 +19,9 @@ public final class PlayerCoordinator {
     public private(set) var state: PlaybackState
     public private(set) var currentStream: MediaStream?
     public private(set) var currentVideoID: String?
+    /// The most recent successful extraction, so consumers (e.g. the video
+    /// page's quality picker) can reuse it instead of extracting again.
+    public private(set) var lastResolvedMedia: ResolvedMedia?
 
     public let player: AVPlayer
     public let playerViewController: AVPlayerViewController
@@ -117,12 +120,14 @@ public final class PlayerCoordinator {
         currentVideoID = videoID
         do {
             let media = try await extractor.resolve(videoID: videoID)
+            lastResolvedMedia = media
             guard let stream = selectOnlineStream(from: media) else {
                 state = PlaybackState(status: .failed, error: .noPlayableStream)
                 return
             }
             prepare(stream: stream)
         } catch {
+            lastResolvedMedia = nil
             state = PlaybackState(status: .failed, error: mapExtractionFailure(error))
         }
     }

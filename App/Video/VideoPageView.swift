@@ -132,14 +132,21 @@ struct VideoPageView: View {
     }
 
     private func loadQualities() async {
-        do {
-            let resolved = try await YouTubeKitMediaExtractor().resolve(videoID: video.id)
-            let picker = DownloadQualityPicker()
-            qualities = picker.availableQualities(from: resolved)
-            selectedQuality = qualities.first
-        } catch {
-            qualities = []
+        // Reuse the coordinator's extraction when it belongs to this video;
+        // only fall back to a second extraction if playback never resolved.
+        let resolved: ResolvedMedia?
+        if let cached = coordinator.lastResolvedMedia, cached.videoID == video.id {
+            resolved = cached
+        } else {
+            resolved = try? await YouTubeKitMediaExtractor().resolve(videoID: video.id)
         }
+        guard let resolved else {
+            qualities = []
+            return
+        }
+        let picker = DownloadQualityPicker()
+        qualities = picker.availableQualities(from: resolved)
+        selectedQuality = qualities.first
     }
 
     private func loadComments() async {
