@@ -60,7 +60,7 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         return config
     }
 
-    public override init(files: FileManaging = FileManager.default) {
+    public init(files: FileManaging = FileManager.default) {
         let config = Self.makeConfiguration()
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let staging = base.appendingPathComponent("FocusTube").appendingPathComponent("Incomplete")
