@@ -44,6 +44,13 @@ public final class DownloadManager {
     private var reattachEventBuffer: [String: [DownloadEvent]] = [:]
     private var attachedRequestIDs: Set<String> = []
     private var isReconciling = false
+    /// Ordered delivery channel for reattached-transfer events (H2-005).
+    /// The URLSession delegate queue yields synchronously, so stream order
+    /// equals delegate delivery order; the single init-spawned consumer is
+    /// the only caller of `routeReattachedEvent`, so no unstructured Task can
+    /// scramble progress/terminal sequencing before coordinator serialization.
+    private let reattachMailbox: AsyncStream<(requestID: String, event: DownloadEvent)>
+    private let reattachMailboxContinuation: AsyncStream<(requestID: String, event: DownloadEvent)>.Continuation
 
     public init(
         transport: DownloadTransport,
@@ -66,6 +73,16 @@ public final class DownloadManager {
         )
         // Reconciliation awaits transport reattachment, so it runs as a task;
         // `reconcileOnLaunch()` is idempotent and may also be awaited directly.
+        // The mailbox consumer must exist before reconciliation can deliver,
+        // and drains strictly sequentially so event order survives the hop.
+        let (stream, continuation) = AsyncStream.makeStream(of: (requestID: String, event: DownloadEvent).self)
+        self.reattachMailbox = stream
+        self.reattachMailboxContinuation = continuation
+        Task { [weak self] in
+            for await (requestID, event) in stream {
+                await self?.routeReattachedEvent(event, requestID: requestID)
+            }
+        }
         Task { await reconcileOnLaunch() }
     }
 
@@ -118,9 +135,10 @@ public final class DownloadManager {
             reattachEventBuffer.removeAll()
         }
         let recovered = await transport.reattach { [weak self] requestID, event in
-            Task { @MainActor [weak self] in
-                await self?.routeReattachedEvent(event, requestID: requestID)
-            }
+            // Synchronous yield on the serial delegate queue preserves
+            // URLSession delivery order (H2-005); the mailbox consumer applies
+            // events one at a time in exactly that order.
+            self?.reattachMailboxContinuation.yield((requestID, event))
         }
         sweepMuxingOrphans()
         let recoveredByID = Dictionary(recovered.map { ($0.requestID, $0) }, uniquingKeysWith: { first, _ in first })

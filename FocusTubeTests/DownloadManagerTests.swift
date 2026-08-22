@@ -301,4 +301,68 @@ final class DownloadManagerTests: XCTestCase {
         let afterCancel = await manager.reserveAdmission("r1")
         XCTAssertTrue(afterCancel)
     }
+
+    // MARK: - H2-005 reattached-event ordering
+
+    /// Emits a scripted burst of reattached events back-to-back synchronously
+    /// inside `reattach`, mimicking URLSession delegate delivery order.
+    private actor BurstTransport: DownloadTransport {
+        let requestID: String
+        let events: [DownloadEvent]
+
+        init(requestID: String, events: [DownloadEvent]) {
+            self.requestID = requestID
+            self.events = events
+        }
+
+        func reattach(onEvent: @escaping @Sendable (String, DownloadEvent) -> Void) async -> [ReattachedDownload] {
+            for event in events {
+                onEvent(requestID, event)
+            }
+            return [ReattachedDownload(requestID: requestID, recoveredIndexes: [0])]
+        }
+
+        func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {}
+
+        func cancel(taskID: String) async {}
+    }
+
+    /// Reattached progress/terminal events must apply in delivery order: the
+    /// last persisted byte count must be the newest progress (100), and the
+    /// terminal event must settle after it — never be overtaken by an older
+    /// progress hopping through its own unstructured task.
+    func testReattachedEventsApplyInDeliveryOrder() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        try insertRecord("burst", into: context, status: .downloading)
+
+        let transport = BurstTransport(requestID: "burst", events: [
+            .progress(component: 0, bytes: 50, total: 100),
+            .progress(component: 0, bytes: 100, total: 100),
+            .completed(tempLocation: URL(fileURLWithPath: "/tmp/staged-burst"), component: 0)
+        ])
+        let manager = await DownloadManager(
+            transport: transport,
+            context: ModelContext(container)
+        )
+        await manager.reconcileOnLaunch()
+
+        // The completed event finalizes against a nonexistent staged temp and
+        // settles validationFailed; both progress events must already have
+        // applied in order before that settle.
+        var settledTask: DownloadTask?
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            settledTask = await manager.coordinatorTask("burst")
+            if let status = settledTask?.state.status, status == .failed || status == .completed {
+                break
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let task = try XCTUnwrap(settledTask)
+        XCTAssertEqual(task.state.bytesDownloaded, 100, "newest progress must win; stale 50 must not persist after settle")
+        XCTAssertEqual(task.state.totalBytes, 100)
+        XCTAssertEqual(task.state.status, .failed)
+        XCTAssertEqual(task.state.error, .validationFailed)
+    }
 }

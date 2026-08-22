@@ -32,7 +32,7 @@ final class DownloadReconcilerTests: XCTestCase {
 
     func testFinalizingBecomesInterrupted() {
         let tasks = [makeTask(id: "a", status: .finalizing)]
-        let reconciled = DownloadReconciler.reconcile(tasks, fileExists: { _ in true })
+        let reconciled = reconcile(tasks, fileExists: { _ in true })
         XCTAssertEqual(reconciled.first?.state.error, .interrupted)
     }
 
