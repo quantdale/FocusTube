@@ -58,17 +58,20 @@ current_waypoint:
 resume_token: DEVICE_VALIDATION_V1:2c7646d
 repo_baseline:
   branch: main
-  commit: 2c7646d
+  commit: c318ae7
   note: >
     HARDENING_V2 recovery complete on 2c7646d with both workflows green:
     Core Tests run 32584881846; iOS CI run 32584881870 (job 97059652867 —
     Build success, Unit tests Executed 75 / 0 failures / 4 skipped, UI tests
-    Executed 1 / 0 failures, Gate success). Windows local baseline also green:
-    swift build clean; swift test "Executed 74 tests, with 0 failures" three
-    consecutive runs (Swift 6.3.3). Interrupted-commit diagnostics (ann.json/
-    jobid.txt/jobs.json/runs.json from a2134f1) removed in forward commit
-    e513234 after their evidence was preserved in
-    .agent/checkpoints/20260822-H2-recovery.md.
+    Executed 1 / 0 failures, Gate success). The H2 state-transition commit
+    itself is independently green on GitHub: Core Tests run 32585836440 and
+    iOS CI run 32585836433 (job 97061945271, unit Executed 75 / 0 failures /
+    4 skipped) both success on c318ae7 — current HEAD carries green CI.
+    Windows local baseline also green: swift build clean; swift test
+    "Executed 74 tests, with 0 failures" three consecutive runs (Swift
+    6.3.3). Interrupted-commit diagnostics (ann.json/jobid.txt/jobs.json/
+    runs.json from a2134f1) removed in forward commit e513234 after their
+    evidence was preserved in .agent/checkpoints/20260822-H2-recovery.md.
 
 continuation_policy:
   continue_after_packet: true
