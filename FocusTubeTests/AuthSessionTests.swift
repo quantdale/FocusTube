@@ -80,6 +80,7 @@ final class AuthSessionTests: XCTestCase {
 
     func testFailedConfigureReportsFalseToAllThenRetriesOnce() async {
         let operation = GatedConfigOperation()
+        operation.setShouldSucceed(false)
         await GoogleSignInAuthSession._resetConfigForTesting(operation: {
             try await operation.run()
         })

@@ -42,6 +42,12 @@ public final class DownloadManager {
     /// `handle` would silently drop them (unknown task). Buffered on the main
     /// actor during reconciliation and replayed once the request attaches.
     private var reattachEventBuffer: [String: [DownloadEvent]] = [:]
+    /// Requests whose pre-attach buffer the active pass is currently draining.
+    /// While set, live deliveries keep buffering so the drain stays the SINGLE
+    /// ordered applier for the request; without this, the mailbox consumer
+    /// could direct-route a stale delivery mid-replay and interleave it past
+    /// newer buffered events (regressing cumulative bytes).
+    private var replayingRequestIDs: Set<String> = []
     /// Requests whose transfers are registered with the coordinator.
     /// Persistent across reconciliation passes: once a request is attached,
     /// its live events route straight through, and later passes never re-run
@@ -233,6 +239,11 @@ public final class DownloadManager {
                 )
                 await coordinator.attach(taskID: request.id, request: request)
                 attachedRequestIDs.insert(request.id)
+                // From here until the drain below finishes, this request's
+                // deliveries keep buffering (routeReattachedEvent honors the
+                // replaying marker), so the drain is the single ordered
+                // applier and arrival order survives every hop.
+                replayingRequestIDs.insert(request.id)
                 // Seed cumulative progress from the persisted record so the UI
                 // doesn't restart at zero after relaunch; the next cumulative
                 // didWriteData event supersedes these values.
@@ -245,14 +256,19 @@ public final class DownloadManager {
                     )
                     await persistTaskSnapshot(request.id)
                 }
-                // Replay any events that landed between handler registration
-                // and this attach, in arrival order.
-                if let buffered = reattachEventBuffer[request.id] {
+                // Drain buffered deliveries until quiet, in arrival order. A
+                // delivery that lands mid-drain buffers (replaying marker) and
+                // is picked up by the next sweep; break+unmark happen without
+                // an intervening await, so nothing can strand in the buffer.
+                while true {
+                    let buffered = reattachEventBuffer[request.id] ?? []
                     reattachEventBuffer[request.id] = nil
+                    guard !buffered.isEmpty else { break }
                     for event in buffered {
                         await applyReattachedEvent(event, requestID: request.id)
                     }
                 }
+                replayingRequestIDs.remove(request.id)
             }
         }
         // A recovered transfer without a persisted record would stream orphaned
@@ -268,11 +284,12 @@ public final class DownloadManager {
     /// registered with the coordinator, buffered while reconciliation is still
     /// attaching it.
     private func routeReattachedEvent(_ event: DownloadEvent, requestID: String) async {
-        if attachedRequestIDs.contains(requestID) {
+        if attachedRequestIDs.contains(requestID) && !replayingRequestIDs.contains(requestID) {
             await applyReattachedEvent(event, requestID: requestID)
         } else {
-            // Unknown to the coordinator yet: buffer until this request's pass
-            // attaches it and replays the buffer in arrival order.
+            // Unknown to the coordinator yet, or its replay drain is still in
+            // flight: buffer until the drain (or this request's pass) applies
+            // it in arrival order.
             reattachEventBuffer[requestID, default: []].append(event)
         }
     }
