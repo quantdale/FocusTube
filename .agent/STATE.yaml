@@ -1,72 +1,74 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-22T09:20:00+08:00
+updated_at: 2026-08-22T17:10:00+08:00
 
 active_campaign:
-  id: HARDENING_V2
-  status: active
-  kind: adversarial second hardening campaign (no new features)
-  baseline: 4a7903f
-  exit_gate: H2-EXIT
-  on_exit: hardening_v2_complete_device_validation_pending
-suspended_campaign:
   id: DEVICE_VALIDATION_V1
-  reason: awaiting_owner_device_evidence
-  pending_items:
-    - owner Part 0 setup (Apple team, Google OAuth client, Secrets.local.xcconfig)
-    - DEVICE_VALIDATION_BATCH_A.md items A1-A14
-    - one live_smoke workflow_dispatch run
-  restore_on_hardening_v2_exit: true
+  status: active
+  kind: physical-device/account release validation (owner-evidence driven)
+  baseline: 2c7646d
+  exit_gate: DV-EXIT (Batch A A1-A14 pass + one live-smoke dispatch recorded)
+  note: >
+    Restored on HARDENING_V2 exit. All agent-actionable engineering is done;
+    remaining items require the owner's physical iPhone and Google/Apple
+    account setup, plus an authenticated gh CLI (or manual UI click) to fire
+    the opt-in live_smoke workflow_dispatch.
+
 previous_campaigns:
+  - id: HARDENING_V2
+    terminal_state: hardening_v2_complete_device_validation_pending
+    evidence_commit: 2c7646d
+    checkpoint: .agent/checkpoints/20260822-H2-recovery.md
+    summary: >
+      Waves 1-3e landed adversarial fixes; the session then died at a2134f1
+      ("unfinished progress", raw CI diagnostics). Recovery session synced all
+      remotes, preserved evidence, removed diagnostics in a forward commit,
+      and closed the two remaining red-gate defects: nondeterministic
+      configure single-flight test (deterministic waiter-threshold barrier +
+      release gate) and overlapping reconciliation races (single-flight
+      run-once passes, persistent attachment tracking, single ordered applier
+      via replay-drain marker, Core settle-guard for progress-after-terminal).
+      H2 audit list verified with no new Critical/High findings.
   - id: INTEGRATION_COMPLETION_V1
     terminal_state: personal_release_candidate
     evidence_commit: 03ce6f6
     docs_commit: 47e1126
 
-status: hardening_v2_in_progress
-current_milestone: HARDENING_V2
-current_gate: DV-0_PASSED (device validation) / H2-AUDIT (hardening v2)
-current_work_packet: H2-W1-VERIFY-SEED-FINDINGS
-current_packet_status: in_progress
+status: device_validation_in_progress
+current_milestone: DEVICE_VALIDATION_V1
+current_gate: DV-BATCH-A (owner device evidence)
+current_work_packet: DV-A1-A14 (owner) / DV-8 diagnose-repair loop (agent)
+current_packet_status: waiting_on_owner
 current_waypoint:
   id: DEVICE_VALIDATION_BATCH_A_PENDING
   objective: >
-    DV-0 baseline verified and all agent-actionable release blockers fixed
-    with green CI on 5a90b74. OAuth/signing plumbing is fully automated:
-    Secrets.local.xcconfig now flows GOOGLE_CLIENT_ID/GOOGLE_REVERSED_CLIENT_ID/
-    DEVELOPMENT_TEAM into the app (GIDClientID, CFBundleURLTypes, signing);
-    the app delegate routes the OAuth redirect; Home offers interactive
-    sign-in requesting youtube.readonly + youtube.force-ssl; an opt-in
-    live_smoke workflow_dispatch runs real-YouTube extraction/download/mux
-    smokes on CI.
-  exact_next_action: >
     Owner completes Part 0 setup (Apple team + Google Cloud iOS OAuth client +
-    YouTube Data API enablement + fill Config/Secrets.local.xcconfig), then
-    executes DEVICE_VALIDATION_BATCH_A.md items A1-A14 on the physical iPhone
-    and returns per-item evidence; agent diagnoses any failures (DV-8),
-    fixes, re-runs CI, and re-tests affected items until gates pass; then
-    triggers one live-smoke dispatch for real extraction evidence and writes
-    the final validation report (DV-9).
+    YouTube Data API enablement + fill Config/Secrets.local.xcconfig), executes
+    DEVICE_VALIDATION_BATCH_A.md items A1-A14 on the physical iPhone, and
+    returns per-item evidence. Agent diagnoses any failures (DV-8), fixes,
+    re-runs CI, and re-tests affected items until gates pass; then triggers one
+    live_smoke workflow_dispatch for real extraction evidence and writes the
+    final validation report (DV-9).
   validation_required:
     - device evidence A1-A14 (owner)
     - live smoke run result (one manual dispatch)
     - no Critical/High defect open at close
 
-resume_token: DEVICE_VALIDATION_V1:5a90b74
+resume_token: DEVICE_VALIDATION_V1:2c7646d
 repo_baseline:
   branch: main
-  commit: 5a90b74
+  commit: 2c7646d
   note: >
-    DEVICE_VALIDATION_V1 DV-0/DV-1/DV-2 complete on 5a90b74. DV-0 audit found
-    four High release blockers (dead xcconfig chain, missing GIDClientID/
-    CFBundleURLTypes, no OAuth URL routing, no interactive sign-in/YouTube
-    scopes); all fixed in 6a0d48e with a Swift 6 MainActor isolation follow-up
-    in 5a90b74 after the first run went red. Observed green on 5a90b74:
-    Core Tests run 32531796101; iOS CI run 32531796047 (job 96925106175 —
-    Build, Unit tests, UI tests, Gate all success). Live-smoke leg wired as
-    opt-in workflow_dispatch input (7a651ee). Secrets scan clean. Owner
-    handoff prepared in DEVICE_VALIDATION_BATCH_A.md.
+    HARDENING_V2 recovery complete on 2c7646d with both workflows green:
+    Core Tests run 32584881846; iOS CI run 32584881870 (job 97059652867 —
+    Build success, Unit tests Executed 75 / 0 failures / 4 skipped, UI tests
+    Executed 1 / 0 failures, Gate success). Windows local baseline also green:
+    swift build clean; swift test "Executed 74 tests, with 0 failures" three
+    consecutive runs (Swift 6.3.3). Interrupted-commit diagnostics (ann.json/
+    jobid.txt/jobs.json/runs.json from a2134f1) removed in forward commit
+    e513234 after their evidence was preserved in
+    .agent/checkpoints/20260822-H2-recovery.md.
 
 continuation_policy:
   continue_after_packet: true
@@ -122,11 +124,11 @@ progress:
   packets_active: 0
   packets_pending: 0
   implementation_exit_passed: true
+  hardening_v2_exit_passed: true
   note: >
-    IC-EXIT passed on 16ad839 with observed evidence (docs/14). HARDENING_V1
-    executed; its deferred Medium/Low backlog was fully closed on 03ce6f6
-    (HB-011 + HB-012 remainder, both CI workflows green on that commit).
-    No open debt remains.
+    IC-EXIT passed on 16ad839; HARDENING_V1 backlog fully closed on 03ce6f6;
+    HARDENING_V2 exited on 2c7646d per .agent/checkpoints/20260822-H2-recovery.md.
+    No open debt remains in .agent/HARDENING_BACKLOG.md.
 
 milestones:
   M0_BOOTSTRAP: complete
@@ -140,6 +142,7 @@ milestones:
   M8_BACKGROUND_MEDIA: complete
   M9_HARDENING: complete
   M10_PERSONAL_RELEASE: complete
+  M11_DEVICE_VALIDATION: in_progress
 
 packets:
   WP-000-BOOTSTRAP: complete
@@ -155,8 +158,15 @@ packets:
   WP-010-LIBRARY: complete
   WP-011-BACKGROUND-MEDIA: complete
   WP-012-HARDEN-RELEASE: complete
+  H2-HARDENING-V2: complete
+  DV-BATCH-A: waiting_on_owner
 
-blockers: []
+blockers:
+  - id: owner-device-evidence
+    detail: >
+      Batch A items A1-A14 need the owner's physical iPhone and Part 0
+      account/signing setup. Not agent-automatable by policy (no credential
+      automation, no fake PASS).
 
 human_inputs_pending:
   - id: device-batch-a
@@ -164,7 +174,14 @@ human_inputs_pending:
       Owner Part 0 setup (Apple team, Google Cloud iOS OAuth client, YouTube
       Data API enablement, Config/Secrets.local.xcconfig values) plus
       DEVICE_VALIDATION_BATCH_A.md items A1-A14 on the physical iPhone with
-      per-item pass/fail evidence. See current_waypoint.exact_next_action.
+      per-item pass/fail evidence. See current_waypoint.
+  - id: live-smoke-dispatch
+    detail: >
+      One opt-in live_smoke run of ios-ci (workflow_dispatch input) for real
+      YouTube extraction/download/mux evidence. Requires authenticated GitHub
+      access (gh auth login) or a manual Actions-page dispatch by the owner;
+      anonymous API cannot trigger workflow_dispatch. Repository secrets are
+      already configured from Part 0 plumbing (6a0d48e).
 
 physical_device_checks_deferred:
   - PiP real-device behavior
@@ -182,17 +199,17 @@ deferred_debt:
     detail: Repository observed public during bootstrap. No credentials committed. Visibility does not block implementation.
 
 last_checkpoint:
-  kind: final
-  file: .agent/checkpoints/20260822-HARDENING-backlog-closure.md
-  commit: 03ce6f6
+  kind: campaign-transition
+  file: .agent/checkpoints/20260822-H2-recovery.md
+  commit: 2c7646d
   note: >
-    Deferred hardening debt closed on 03ce6f6 with observed evidence: Core
-    Tests run 32501838807 green; ios-ci run 32501839603 green (Gate unit=0
-    ui=0). HARDENING_BACKLOG has zero open items; owner-only steps remain in
-    PERSONAL_RELEASE_CHECKLIST.md.
+    HARDENING_V2 recovery closed with observed evidence: Core Tests run
+    32584881846 green; iOS CI run 32584881870 green (Build/unit 75-0/UI 1-0/
+    Gate all success); Windows swift test 74-0 x3. Both red-gate root causes
+    documented with fixes and regression coverage.
 
 next_transition:
-  when: owner completes PERSONAL_RELEASE_CHECKLIST.md on physical device
+  when: owner returns Batch A evidence and one live-smoke result
   set:
     status: personal_release_validated
-    note: Device-only verifications recorded by the owner close the campaign.
+    note: Device-only verifications recorded by the owner close the campaign (DV-EXIT).

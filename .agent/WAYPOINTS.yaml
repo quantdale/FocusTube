@@ -1,7 +1,14 @@
 schema_version: 1
-campaign: INTEGRATION_COMPLETION_V1 (complete; terminal state personal_release_candidate)
 selection_rule: Select the first ready packet whose dependencies are complete, unless STATE.yaml names an active packet. Critical/High regressions preempt feature work.
 coordinator_owns_status: true
+
+# Campaign note (2026-08-22): INTEGRATION_COMPLETION_V1 and HARDENING_V2 are
+# complete (IC-EXIT on 16ad839; H2-EXIT evidence on 2c7646d, see
+# .agent/checkpoints/20260822-H2-recovery.md). The waypoints below remain the
+# historical implementation map. The active campaign is DEVICE_VALIDATION_V1
+# (owner physical-device Batch A); it is tracked in .agent/STATE.yaml, which is
+# authoritative for current reality.
+campaign: DEVICE_VALIDATION_V1 (active; implementation campaigns complete)
 
 waypoints:
   - id: WP-000-BOOTSTRAP

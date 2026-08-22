@@ -10,11 +10,10 @@ The implementation campaign is continuous. **Do not stop after one task or one w
 
 ## Current campaign
 
-- Campaign: `INTEGRATION_COMPLETION_V1`
-- Scope: finish integrating the implemented subsystems into a functioning product, revalidate every gate against observed evidence, then run `HARDENING_V1` and prepare the personal release. The owner has explicitly authorized the full completion campaign including hardening.
-- Current waypoint: read `.agent/STATE.yaml`.
-- Nonblocking Medium/Low cleanup still goes to `.agent/HARDENING_BACKLOG.md`; Critical/High is fixed immediately.
-- Physical-iPhone-only validation is deferred and recorded until a device/credentials are available.
+- Campaign: `DEVICE_VALIDATION_V1` (active; restored after HARDENING_V2 exit)
+- Scope: owner-executed physical-device/account validation (Batch A items A1–A14, Part 0 setup) plus one opt-in live-smoke dispatch. All agent-actionable engineering — implementation M0–M8, HARDENING_V1 backlog closure, and the HARDENING_V2 adversarial pass — is complete with green CI on `2c7646d` (Core Tests run 32584881846; iOS CI run 32584881870).
+- Agent role while waiting: keep CI green, diagnose/repair any owner-reported device failures (DV-8), record evidence.
+- Nonblocking Medium/Low cleanup still goes to `.agent/HARDENING_BACKLOG.md` (currently zero open items); Critical/High is fixed immediately.
 
 ## Mandatory reading order
 
@@ -148,4 +147,4 @@ SwiftUI/AVKit/AVFoundation/SwiftData/GoogleSignIn behavior must be validated thr
 
 ## End condition for this campaign
 
-The campaign ends only when the `IC-EXIT` criteria in `docs/14-ACCEPTANCE-GATES.md` pass with observed evidence, followed by the `HARDENING_V1` pass (Critical/High count zero) and release readiness. The terminal durable state is `personal_release_candidate`, or `implementation_complete_external_validation_required` only if a genuine external blocker remains.
+The campaign ends when DEVICE_VALIDATION_BATCH_A items A1–A14 pass with owner evidence and one live-smoke dispatch result is recorded (DV-EXIT). The terminal durable state is `personal_release_validated`. If a genuine external blocker appears instead, state becomes `implementation_complete_external_validation_required` with the blocker recorded in `.agent/STATE.yaml`.
