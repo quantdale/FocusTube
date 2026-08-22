@@ -48,11 +48,11 @@ final class AuthSessionTests: XCTestCase {
         /// according to `shouldSucceed`.
         lazy var operation: @Sendable () async throws -> Void = { [self] in
             lock.withLock { $0.startCount += 1 }
-            let succeed = lock.withLock(\.shouldSucceed)
+            let succeed = lock.withLock { $0.shouldSucceed }
             guard succeed else { throw ConfigError.failed }
         }
 
-        var startCount: Int { lock.withLock(\.startCount) }
+        var startCount: Int { lock.withLock { $0.startCount } }
 
         func setShouldSucceed(_ value: Bool) {
             lock.withLock { $0.shouldSucceed = value }

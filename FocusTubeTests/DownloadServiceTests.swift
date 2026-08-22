@@ -582,16 +582,21 @@ final class DownloadServiceTests: XCTestCase {
         let first = Task { await service.download(videoID: "v20", title: "1", channelTitle: "C", quality: .p720) }
         let second = Task { await service.download(videoID: "v21", title: "2", channelTitle: "C", quality: .p720) }
         await waitUntil({ [manager] in
-            await manager.coordinatorTask("v20-720") != nil && await manager.coordinatorTask("v21-720") != nil
+            let firstStarted = await manager.coordinatorTask("v20-720")
+            let secondStarted = await manager.coordinatorTask("v21-720")
+            return firstStarted != nil && secondStarted != nil
         }, "first two transfers never started")
         XCTAssertEqual(gated.beginCount, 2)
 
         // docs/03: at most two concurrent logical downloads — the third
         // persists as .queued without starting a transfer.
         let third = Task { await service.download(videoID: "v22", title: "3", channelTitle: "C", quality: .p720) }
-        await waitUntil({ [service] in
-            await service.isInFlight(videoID: "v22", quality: .p720) == false
-                && await manager.records.contains { $0.id == "v22-720" && $0.state.status == .queued }
+        await waitUntil({ [service, manager] in
+            // `await` cannot sit on the right of a comparison operator; hoist
+            // each async read into a local before combining.
+            let stillInFlight = await service.isInFlight(videoID: "v22", quality: .p720)
+            let parked = await manager.records.contains { $0.id == "v22-720" && $0.state.status == .queued }
+            return !stillInFlight && parked
         }, "third download never parked as queued")
         let thirdTask = await manager.coordinatorTask("v22-720")
         XCTAssertNil(thirdTask)
@@ -601,8 +606,10 @@ final class DownloadServiceTests: XCTestCase {
         gated.release()
         await first.value
         await second.value
-        await waitUntil({ [manager] in await manager.coordinatorTask("v22-720") != nil },
-                        "queued download was never promoted after a slot freed")
+        await waitUntil({ [manager] in
+            let promoted = await manager.coordinatorTask("v22-720")
+            return promoted != nil
+        }, "queued download was never promoted after a slot freed")
         XCTAssertEqual(gated.beginCount, 3)
 
         gated.release()
@@ -641,8 +648,10 @@ final class DownloadServiceTests: XCTestCase {
         // Cancelling frees a logical slot; the parked request promotes.
         await service.cancel(videoID: "v23", quality: .p720)
         await running.value
-        await waitUntil({ [manager] in await manager.coordinatorTask("v24-720") != nil },
-                        "queued download was never promoted after cancel")
+        await waitUntil({ [manager] in
+            let promoted = await manager.coordinatorTask("v24-720")
+            return promoted != nil
+        }, "queued download was never promoted after cancel")
         XCTAssertEqual(gated.beginCount, 2)
 
         gated.release()
