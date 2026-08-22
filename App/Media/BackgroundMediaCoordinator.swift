@@ -119,7 +119,9 @@ public final class BackgroundMediaCoordinator {
         if let token = togglePlayPauseCommandToken {
             center.togglePlayPauseCommand.removeTarget(token)
         }
-        if let token = seekCommandToken { center.seekCommand.removeTarget(token) }
+        // MPRemoteCommandCenter has no seek command; lock-screen/Bluetooth
+        // seeking arrives through changePlaybackPositionCommand.
+        if let token = seekCommandToken { center.changePlaybackPositionCommand.removeTarget(token) }
         playCommandToken = center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.handleRemoteCommand(.play) }
             return .success
@@ -132,8 +134,11 @@ public final class BackgroundMediaCoordinator {
             Task { @MainActor in self?.handleRemoteCommand(.togglePlayPause) }
             return .success
         }
-        seekCommandToken = center.seekCommand.addTarget { [weak self] event in
-            let seconds = event.positionTime
+        seekCommandToken = center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            let seconds = positionEvent.positionTime
             Task { @MainActor in self?.handleRemoteCommand(.seek(seconds)) }
             return .success
         }

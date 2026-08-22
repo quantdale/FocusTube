@@ -90,10 +90,10 @@ final class AppDependencies {
             .appendingPathComponent("FocusTube")
         do {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            var url = root
-            var values = try url.resourceValues(forKeys: [.isExcludedFromBackupKey])
+            // `resourceValues` is read-only; writing goes through setResourceValues.
+            var values = URLResourceValues()
             values.isExcludedFromBackup = true
-            url.resourceValues = values
+            try root.setResourceValues(values)
         } catch {
             Self.logger.error("Backup exclusion not applied (\(error.localizedDescription))")
         }
