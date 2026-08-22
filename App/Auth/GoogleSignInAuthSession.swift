@@ -21,6 +21,11 @@ public final class GoogleSignInAuthSession: AuthSession {
         private var phase = Phase.unconfigured
         private var waiters: [CheckedContinuation<Bool, Never>] = []
         private let operation: @Sendable () async throws -> Void
+#if DEBUG
+        /// Deterministic-barrier registrations for the single-flight overlap
+        /// test: each watcher resumes once `waiters.count >= threshold`.
+        private var waiterThresholdWatchers: [(threshold: Int, continuation: CheckedContinuation<Void, Never>)] = []
+#endif
 
         init(operation: @escaping @Sendable () async throws -> Void) {
             self.operation = operation
@@ -36,7 +41,12 @@ public final class GoogleSignInAuthSession: AuthSession {
             case .configuring:
                 // Suspend until the in-flight attempt resolves; every waiter
                 // receives the same outcome.
-                return await withCheckedContinuation { waiters.append($0) }
+                return await withCheckedContinuation { continuation in
+                    waiters.append(continuation)
+#if DEBUG
+                    fireWaiterThresholdWatchers()
+#endif
+                }
             case .unconfigured, .failed:
                 phase = .configuring
                 do {
@@ -54,6 +64,34 @@ public final class GoogleSignInAuthSession: AuthSession {
                 return ok
             }
         }
+
+#if DEBUG
+        /// DEBUG-only deterministic barrier for the overlap test: resumes once
+        /// at least `threshold` concurrent callers are parked awaiting the
+        /// in-flight configuration attempt. Event-driven via continuations —
+        /// no polling and no sleeps anywhere.
+        func notifyWhenWaitersReach(_ threshold: Int) async {
+            guard waiters.count < threshold else { return }
+            await withCheckedContinuation { continuation in
+                waiterThresholdWatchers.append((threshold, continuation))
+            }
+        }
+
+        private func fireWaiterThresholdWatchers() {
+            guard !waiterThresholdWatchers.isEmpty else { return }
+            var fired: [CheckedContinuation<Void, Never>] = []
+            waiterThresholdWatchers.removeAll { watcher in
+                if waiters.count >= watcher.threshold {
+                    fired.append(watcher.continuation)
+                    return true
+                }
+                return false
+            }
+            for continuation in fired {
+                continuation.resume()
+            }
+        }
+#endif
     }
 
 #if DEBUG
@@ -82,6 +120,14 @@ public final class GoogleSignInAuthSession: AuthSession {
     /// coordinator itself can be exercised deterministically.
     static func _ensureConfiguredForTesting() async -> Bool {
         await configCoordinator.configured()
+    }
+
+    /// DEBUG-only deterministic barrier: resumes exactly when `threshold`
+    /// concurrent callers are parked awaiting the same in-flight configuration
+    /// attempt. Lets tests prove genuine overlap instead of guessing at
+    /// executor timing.
+    static func _waitUntilConfigWaitersReachForTesting(_ threshold: Int) async {
+        await configCoordinator.notifyWhenWaitersReach(threshold)
     }
 #else
     private static let configCoordinator = ConfigCoordinator(operation: {

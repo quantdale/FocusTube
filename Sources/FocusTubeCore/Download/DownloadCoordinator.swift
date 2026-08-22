@@ -228,6 +228,14 @@ public actor DownloadCoordinator {
         onUpdate: (@Sendable (DownloadTask) -> Void)?
     ) async {
         guard var task = tasks[taskID] else { return }
+        // Settled jobs never accept further progress updates: late or
+        // duplicate transport deliveries must not regress a terminal state's
+        // final byte count. Terminal events (.failed) keep applying so the
+        // last terminal in delivery order stays authoritative.
+        if case .progress = event,
+           task.state.status == .completed || task.state.status == .failed {
+            return
+        }
         switch event {
         case let .progress(component, bytes, total):
             var dict = componentProgress[taskID] ?? [:]

@@ -42,8 +42,21 @@ public final class DownloadManager {
     /// `handle` would silently drop them (unknown task). Buffered on the main
     /// actor during reconciliation and replayed once the request attaches.
     private var reattachEventBuffer: [String: [DownloadEvent]] = [:]
+    /// Requests whose transfers are registered with the coordinator.
+    /// Persistent across reconciliation passes: once a request is attached,
+    /// its live events route straight through, and later passes never re-run
+    /// its attach/seed/replay sequence — no duplicate reattachment side
+    /// effects, no stale persisted bytes regressing applied progress.
     private var attachedRequestIDs: Set<String> = []
-    private var isReconciling = false
+    /// Single-flight reconciliation: overlapping callers coalesce into the
+    /// active pass instead of racing their own reattachment, and once a pass
+    /// has completed every later caller returns immediately — launch
+    /// reconciliation runs exactly once per manager lifetime. A second pass
+    /// could only double-fire transport reattachment (duplicate event
+    /// delivery) and duplicate attach/seed side effects, never add coverage.
+    private var reconciliationActive = false
+    private var hasReconciled = false
+    private var reconcileWaiters: [CheckedContinuation<Void, Never>] = []
     /// Ordered delivery channel for reattached-transfer events (H2-005).
     /// The URLSession delegate queue yields synchronously, so stream order
     /// equals delegate delivery order; the single init-spawned consumer is
@@ -72,7 +85,8 @@ public final class DownloadManager {
             validate: validate
         )
         // Reconciliation awaits transport reattachment, so it runs as a task;
-        // `reconcileOnLaunch()` is idempotent and may also be awaited directly.
+        // `reconcileOnLaunch()` is single-flight and may also be awaited
+        // directly — overlapping callers coalesce into the active pass.
         // The mailbox consumer must exist before reconciliation can deliver,
         // and drains strictly sequentially so event order survives the hop.
         let (stream, continuation) = AsyncStream.makeStream(of: (requestID: String, event: DownloadEvent).self)
@@ -123,17 +137,37 @@ public final class DownloadManager {
     /// lifetime and resumes driving them through the coordinator state machine;
     /// every other persisted record is reconciled with filesystem reality, so
     /// in-flight work whose tasks did not come back becomes interrupted and
-    /// retryable. Idempotent: reattachment and reconciliation are no-ops for
-    /// already-attached tasks and settled records.
+    /// retryable. Idempotent for already-attached tasks and settled records.
+    ///
+    /// Single flight, exactly one pass per manager lifetime: the init-spawned
+    /// launch task plus any explicit await coalesce into that pass; later
+    /// callers return immediately because the completed pass fully covered
+    /// them. Overlapping passes would race on shared buffer/attachment
+    /// bookkeeping and fire transport reattachment twice.
     public func reconcileOnLaunch() async {
-        isReconciling = true
-        reattachEventBuffer.removeAll()
-        attachedRequestIDs.removeAll()
-        defer {
-            isReconciling = false
-            attachedRequestIDs.removeAll()
-            reattachEventBuffer.removeAll()
+        if reconciliationActive {
+            // Join the active pass; it covers this caller too.
+            await withCheckedContinuation { reconcileWaiters.append($0) }
+            return
         }
+        guard !hasReconciled else { return }
+        reconciliationActive = true
+        defer {
+            reconciliationActive = false
+            hasReconciled = true
+            let parked = reconcileWaiters
+            reconcileWaiters.removeAll()
+            for waiter in parked {
+                waiter.resume()
+            }
+        }
+        await performReconciliation()
+    }
+
+    /// One serialized reconciliation pass. Runs only under the single-flight
+    /// gate held by `reconcileOnLaunch()`.
+    private func performReconciliation() async {
+        reattachEventBuffer.removeAll()
         let recovered = await transport.reattach { [weak self] requestID, event in
             // Synchronous yield on the serial delegate queue preserves
             // URLSession delivery order (H2-005); the mailbox consumer applies
@@ -186,6 +220,10 @@ public final class DownloadManager {
                 await transport.cancel(taskID: record.id)
                 reattachEventBuffer[record.id] = nil
             } else {
+                // Already registered by an earlier pass: live events flow
+                // straight through now. Re-attaching/re-seeding would double
+                // side effects and regress newer applied progress.
+                guard !attachedRequestIDs.contains(record.id) else { continue }
                 let request = DownloadRequest(
                     id: record.id,
                     videoID: record.videoID,
@@ -230,10 +268,12 @@ public final class DownloadManager {
     /// registered with the coordinator, buffered while reconciliation is still
     /// attaching it.
     private func routeReattachedEvent(_ event: DownloadEvent, requestID: String) async {
-        if isReconciling && !attachedRequestIDs.contains(requestID) {
-            reattachEventBuffer[requestID, default: []].append(event)
-        } else {
+        if attachedRequestIDs.contains(requestID) {
             await applyReattachedEvent(event, requestID: requestID)
+        } else {
+            // Unknown to the coordinator yet: buffer until this request's pass
+            // attaches it and replays the buffer in arrival order.
+            reattachEventBuffer[requestID, default: []].append(event)
         }
     }
 

@@ -365,4 +365,80 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(task.state.status, .failed)
         XCTAssertEqual(task.state.error, .validationFailed)
     }
+
+    /// Recovery transport that counts every reattach invocation and fires the
+    /// scripted burst synchronously per call — proving that overlapping
+    /// reconciliation callers coalesce into a single pass instead of
+    /// duplicating delivery.
+    private actor CountingBurstTransport: DownloadTransport {
+        let requestID: String
+        let events: [DownloadEvent]
+        private(set) var reattachCount = 0
+
+        init(requestID: String, events: [DownloadEvent]) {
+            self.requestID = requestID
+            self.events = events
+        }
+
+        func reattach(onEvent: @escaping @Sendable (String, DownloadEvent) -> Void) async -> [ReattachedDownload] {
+            reattachCount += 1
+            for event in events {
+                onEvent(requestID, event)
+            }
+            return [ReattachedDownload(requestID: requestID, recoveredIndexes: [0])]
+        }
+
+        func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {}
+
+        func cancel(taskID: String) async {}
+    }
+
+    /// Overlapping/reentrant reconcile requests (the init-spawned launch task
+    /// plus explicit concurrent calls) must coalesce into exactly one pass:
+    /// one underlying transport reattachment, no duplicate event delivery,
+    /// burst applied 50 → 100 → terminal in order, and newest cumulative
+    /// progress surviving settlement.
+    func testOverlappingReconcileRequestsCoalesceIntoSinglePass() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        try insertRecord("burst", into: context, status: .downloading)
+
+        let transport = CountingBurstTransport(requestID: "burst", events: [
+            .progress(component: 0, bytes: 50, total: 100),
+            .progress(component: 0, bytes: 100, total: 100),
+            .completed(tempLocation: URL(fileURLWithPath: "/tmp/staged-burst"), component: 0)
+        ])
+        let manager = await DownloadManager(
+            transport: transport,
+            context: ModelContext(container)
+        )
+        // Race explicit calls against each other and against whatever the
+        // init-spawned reconcile is doing; every caller must join or observe
+        // the single completed pass.
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<3 {
+                group.addTask { @MainActor in
+                    await manager.reconcileOnLaunch()
+                }
+            }
+        }
+
+        let reattachCalls = await transport.reattachCount
+        XCTAssertEqual(reattachCalls, 1, "overlapping reconcile callers must not double-fire reattachment")
+
+        var settledTask: DownloadTask?
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            settledTask = await manager.coordinatorTask("burst")
+            if let status = settledTask?.state.status, status == .failed || status == .completed {
+                break
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let task = try XCTUnwrap(settledTask)
+        XCTAssertEqual(task.state.bytesDownloaded, 100)
+        XCTAssertEqual(task.state.totalBytes, 100)
+        XCTAssertEqual(task.state.status, .failed)
+        XCTAssertEqual(task.state.error, .validationFailed)
+    }
 }
