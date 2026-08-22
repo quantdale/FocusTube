@@ -86,7 +86,9 @@ final class AppDependencies {
     /// iTunes backups by marking the FocusTube Application-Support root. A
     /// failure (e.g. directory not created yet) is logged, never fatal.
     private static func excludeMediaFromBackups() {
-        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        // `setResourceValues` is a mutating struct method, so the URL must be
+        // addressable.
+        var root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("FocusTube")
         do {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
