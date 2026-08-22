@@ -97,7 +97,7 @@ final class LibraryStoreTests: XCTestCase {
         let placeholder = DownloadedMedia(id: "d4", videoID: "v4", title: "v4", resolution: 720, fileURL: URL(fileURLWithPath: "/tmp/y.mp4"), sizeBytes: 0, createdAt: Date())
         await store.addDownloadedMedia(placeholder)
 
-        let real = DownloadedMedia(id: "d4", videoID: "v4", title: "Better Title", channelTitle: "Chan", resolution: 720, fileURL: URL(fileURLWithPath: "/tmp/y.mp4"), sizeBytes: 5, createdAt: Date())
+        let real = DownloadedMedia(id: "d4", videoID: "v4", title: "Better Title", resolution: 720, fileURL: URL(fileURLWithPath: "/tmp/y.mp4"), sizeBytes: 5, createdAt: Date(), channelTitle: "Chan")
         await store.addDownloadedMedia(real)
 
         let downloaded = await store.downloaded

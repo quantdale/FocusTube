@@ -52,11 +52,11 @@ final class AppDependencies {
                 id: task.id,
                 videoID: task.videoID,
                 title: metadata?.title ?? task.videoID,
-                channelTitle: metadata?.channelTitle,
                 resolution: task.resolution,
                 fileURL: task.destinationURL,
                 sizeBytes: Int64(size),
-                createdAt: Date()
+                createdAt: Date(),
+                channelTitle: metadata?.channelTitle
             ))
         }
         let player = PlayerCoordinator()

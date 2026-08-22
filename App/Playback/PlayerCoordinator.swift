@@ -150,6 +150,23 @@ public final class PlayerCoordinator {
         apply(stream: stream)
     }
 
+    /// Shared tail of every online-selection path (`prepare`, and therefore
+    /// `loadAndPlay`): installs the stream as the current item and starts
+    /// playback. The caller owns the `generation` bump; this resets waiting
+    /// bookkeeping so a stale watchdog from the previous item can never fire.
+    private func apply(stream: MediaStream) {
+        currentStream = stream
+        let item = AVPlayerItem(url: stream.sourceURL)
+        playerItem = item
+        observe(item: item)
+        player.replaceCurrentItem(with: item)
+        state = PlaybackState(status: .loading)
+        resetWaiting()
+        startProgressObserver()
+        player.play()
+        notifyNowPlayingChanged()
+    }
+
     public func pause() {
         player.pause()
     }

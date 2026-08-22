@@ -251,11 +251,11 @@ final class DownloadService {
                 id: "\(videoID)-\(quality.rawValue)",
                 videoID: videoID,
                 title: title,
-                channelTitle: channelTitle,
                 resolution: quality.rawValue,
                 fileURL: destination,
                 sizeBytes: fileManager.size(of: destination),
-                createdAt: Date()
+                createdAt: Date(),
+                channelTitle: channelTitle
             ))
         case let .failed(error):
             fail(videoID: videoID, title: title, quality: quality, error: error)
