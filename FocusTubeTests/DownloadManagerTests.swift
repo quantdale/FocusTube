@@ -417,7 +417,7 @@ final class DownloadManagerTests: XCTestCase {
         // the single completed pass.
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<3 {
-                group.addTask { @MainActor in
+                group.addTask {
                     await manager.reconcileOnLaunch()
                 }
             }
