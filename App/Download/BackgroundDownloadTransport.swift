@@ -33,20 +33,39 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
     private let session: URLSession
     private let bridge: Bridge
     private let lock = OSAllocatedUnfairLock<State>(initialState: State())
+    /// Filesystem seam for staging-directory setup and the synchronous
+    /// delegate-queue move; injectable so move failures are deterministically
+    /// testable without real I/O.
+    private let files: FileManaging
     /// Durable staging area for finished component files. URLSession deletes
     /// the delegate's temp URL as soon as `didFinishDownloadingTo` returns, so
     /// the file MUST be moved here synchronously before async consumers run.
     private let stagingDirectory: URL
+    private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "download")
 
-    public override init() {
-        let config = URLSessionConfiguration.background(withIdentifier: Self.sessionIdentifier)
+    /// Background-session configuration per docs/03 defaults: background
+    /// launches enabled, non-discretionary, Wi-Fi-only policy expressed by
+    /// refusing cellular/constrained/expensive access, and waiting for
+    /// connectivity instead of failing fast. Factored out so the flags are
+    /// assertable in tests.
+    public static func makeConfiguration() -> URLSessionConfiguration {
+        let config = URLSessionConfiguration.background(withIdentifier: sessionIdentifier)
         config.sessionSendsLaunchEvents = true
         config.isDiscretionary = false
-        config.allowsCellularAccess = true
+        config.allowsCellularAccess = false
+        config.allowsConstrainedNetworkAccess = false
+        config.allowsExpensiveNetworkAccess = false
+        config.waitsForConnectivity = true
         config.httpMaximumConnectionsPerHost = 4
+        return config
+    }
+
+    public override init(files: FileManaging = FileManager.default) {
+        let config = Self.makeConfiguration()
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let staging = base.appendingPathComponent("FocusTube").appendingPathComponent("Incomplete")
-        try? FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try? files.createDirectory(at: staging)
+        self.files = files
         self.stagingDirectory = staging
         let bridge = Bridge()
         let session = URLSession(configuration: config, delegate: bridge, delegateQueue: nil)
@@ -194,6 +213,33 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
         handler?(.failed(error))
     }
 
+    /// Moves a finished download out of URLSession's ephemeral temp location
+    /// into durable staging, returning the staged URL — never the ephemeral
+    /// input URL, which URLSession deletes the moment the delegate callback
+    /// returns. A failed move is a typed storage failure, not a completion.
+    fileprivate func stageComponent(_ taskIdentifier: Int, from location: URL) -> Result<URL, DownloadError> {
+        let destination = stagingDirectory.appendingPathComponent("component-\(taskIdentifier)")
+        try? files.removeItem(at: destination)
+        do {
+            try files.moveItem(at: location, to: destination)
+            return .success(destination)
+        } catch {
+            // Launch-time directory creation may have failed silently; retry
+            // creation once before giving up.
+            do {
+                try files.createDirectory(at: stagingDirectory)
+                try files.moveItem(at: location, to: destination)
+                return .success(destination)
+            } catch {
+                Self.logger.error("Staging move failed for component \(taskIdentifier, privacy: .public): \(String(describing: error), privacy: .private)")
+                // Best effort: don't leave unreadable bytes in URLSession's
+                // temporary custody past this callback.
+                try? FileManager.default.removeItem(at: location)
+                return .failure(.finalizationFailed)
+            }
+        }
+    }
+
     fileprivate func finishEvents() {
         let boxed = lock.withLock { state -> CompletionHandlerBox? in
             let handler = state.backgroundCompletionHandler
@@ -242,16 +288,13 @@ public final class BackgroundDownloadTransport: NSObject, @unchecked Sendable, D
             // URLSession deletes `location` the moment this delegate method
             // returns, while consumers process events asynchronously. Move the
             // file into durable staging synchronously, then hand off that URL.
-            var stagedURL: URL? = transport?.stagingDirectory.appendingPathComponent("component-\(downloadTask.taskIdentifier)")
-            if let destination = stagedURL {
-                try? FileManager.default.removeItem(at: destination)
-                do {
-                    try FileManager.default.moveItem(at: location, to: destination)
-                } catch {
-                    stagedURL = nil // fall back to the original URL, best effort
-                }
+            guard let transport else { return }
+            switch transport.stageComponent(downloadTask.taskIdentifier, from: location) {
+            case .success(let staged):
+                transport.deliverCompleted(taskIdentifier: downloadTask.taskIdentifier, location: staged)
+            case .failure(let error):
+                transport.deliverFailed(taskIdentifier: downloadTask.taskIdentifier, error: error)
             }
-            transport?.deliverCompleted(taskIdentifier: downloadTask.taskIdentifier, location: stagedURL ?? location)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

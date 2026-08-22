@@ -78,6 +78,17 @@ public struct DownloadRequest: Sendable {
     public let destinationURL: URL
     public let components: [DownloadComponent]
 
+    /// Video IDs arrive from API JSON and are later embedded in filesystem
+    /// path components (`<mediaDirectory>/<videoID>/<quality>/media.mp4`).
+    /// Only YouTube's base64url ID alphabet, bounded to 1–64 characters, is
+    /// accepted; anything else could traverse paths or smuggle separators.
+    public static func isValidVideoID(_ videoID: String) -> Bool {
+        guard !videoID.isEmpty, videoID.count <= 64 else { return false }
+        return videoID.allSatisfy { character in
+            character.isASCII && (character.isLetter || character.isNumber || character == "-" || character == "_")
+        }
+    }
+
     public init(
         id: String,
         videoID: String,

@@ -1,5 +1,6 @@
 import AVFoundation
 import MediaPlayer
+import os
 
 /// Coordinates background audio: configures `AVAudioSession`, publishes Now
 /// Playing metadata, routes `MPRemoteCommandCenter` to the player, and observes
@@ -16,9 +17,32 @@ public final class BackgroundMediaCoordinator {
     private var playCommandToken: Any?
     private var pauseCommandToken: Any?
     private var togglePlayPauseCommandToken: Any?
+    private var seekCommandToken: Any?
     /// Token for the installed audio-session interruption observer; non-nil
     /// while a subscription is active.
     private var interruptionObserver: NSObjectProtocol?
+    /// Token for the installed audio-session route-change observer; non-nil
+    /// while a subscription is active.
+    private var routeChangeObserver: NSObjectProtocol?
+    /// Whether the target was playing when the current interruption began;
+    /// gates automatic resume on `.ended(shouldResume: true)` so an
+    /// interruption that began during intentional pause stays paused.
+    private var wasPlayingAtInterruptionBegan: Bool?
+    /// Optional probe of the target's playing state, captured at interruption
+    /// begin to gate auto-resume. When nil (deterministic mapping use), resume
+    /// behavior is unchanged.
+    public var isPlayingProvider: (@MainActor () -> Bool)?
+    /// Observable outcome of the last `configureAudioSession()` attempt so UI
+    /// and diagnostics can see silent `try?` failures.
+    public private(set) var audioSessionState: AudioSessionState = .notConfigured
+
+    public enum AudioSessionState: Equatable {
+        case notConfigured
+        case configured
+        case failed(String)
+    }
+
+    private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "background-media")
 
     public init(target: PlayerCommandTarget) {
         self.target = target
@@ -50,22 +74,39 @@ public final class BackgroundMediaCoordinator {
     public func handleInterruption(_ interruption: Interruption) {
         switch interruption {
         case .began:
+            wasPlayingAtInterruptionBegan = isPlayingProvider?()
             target.pause()
         case .ended(let shouldResume):
-            if shouldResume { target.play() }
+            // Auto-resume only if the target was actually playing when the
+            // interruption began; a pause the user chose stays paused.
+            let shouldAutoResume: Bool
+            if let wasPlaying = wasPlayingAtInterruptionBegan {
+                shouldAutoResume = shouldResume && wasPlaying
+            } else {
+                shouldAutoResume = shouldResume
+            }
+            wasPlayingAtInterruptionBegan = nil
+            if shouldAutoResume { target.play() }
         }
     }
 
     // MARK: - Live wiring (device/Simulator-runnable)
 
     public func configureAudioSession() throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(
-            BackgroundMediaPolicy.audioSessionCategory,
-            mode: BackgroundMediaPolicy.audioSessionMode,
-            options: BackgroundMediaPolicy.audioSessionOptions
-        )
-        try session.setActive(true)
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(
+                BackgroundMediaPolicy.audioSessionCategory,
+                mode: BackgroundMediaPolicy.audioSessionMode,
+                options: BackgroundMediaPolicy.audioSessionOptions
+            )
+            try session.setActive(true)
+            audioSessionState = .configured
+        } catch {
+            audioSessionState = .failed(String(describing: error))
+            Self.logger.fault("Audio session configuration failed: \(String(describing: error), privacy: .public)")
+            throw error
+        }
     }
 
     public func registerRemoteCommands() {
@@ -78,6 +119,7 @@ public final class BackgroundMediaCoordinator {
         if let token = togglePlayPauseCommandToken {
             center.togglePlayPauseCommand.removeTarget(token)
         }
+        if let token = seekCommandToken { center.seekCommand.removeTarget(token) }
         playCommandToken = center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.handleRemoteCommand(.play) }
             return .success
@@ -89,6 +131,43 @@ public final class BackgroundMediaCoordinator {
         togglePlayPauseCommandToken = center.togglePlayPauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.handleRemoteCommand(.togglePlayPause) }
             return .success
+        }
+        seekCommandToken = center.seekCommand.addTarget { [weak self] event in
+            let seconds = event.positionTime
+            Task { @MainActor in self?.handleRemoteCommand(.seek(seconds)) }
+            return .success
+        }
+    }
+
+    /// Subscribes to real `AVAudioSession` route changes; remove-before-add
+    /// keeps repeated registrations from stacking duplicate observers,
+    /// mirroring `registerInterruptionObservation()`. Unplugging the current
+    /// output device pauses playback instead of blaring from speakers.
+    public func registerRouteChangeObservation() {
+        if let token = routeChangeObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+        routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            // Extract Sendable values before hopping actors.
+            let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            Task { @MainActor [weak self] in
+                self?.handleRouteChange(rawReason: reasonValue)
+            }
+        }
+    }
+
+    private func handleRouteChange(rawReason: UInt?) {
+        guard let rawReason,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: rawReason) else { return }
+        switch reason {
+        case .oldDeviceUnavailable:
+            target.pause()
+        default:
+            Self.logger.info("Audio route changed: \(reason.rawValue, privacy: .public)")
         }
     }
 

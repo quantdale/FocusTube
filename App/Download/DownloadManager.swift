@@ -14,6 +14,16 @@ import AVFoundation
 @Observable
 public final class DownloadManager {
     public private(set) var liveTasks: [DownloadTask] = []
+    /// Synchronous duplicate-admission set: task IDs are reserved before any
+    /// await (`reserveAdmission`, called by DownloadService and at the top of
+    /// `enqueue`) and released only at terminal settle/cancel, so two rapid
+    /// download requests cannot both pass an async `liveTasks` check and
+    /// double-start the same transfer.
+    public private(set) var startingIDs: Set<String> = []
+    /// Maximum concurrently admitted logical downloads (docs/03). Additional
+    /// requests persist as `.queued` without starting a transfer and are
+    /// promoted FIFO by DownloadService when a job settles or is cancelled.
+    static let maxConcurrentDownloads = 2
     private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "download-manager")
 
     /// Invoked on the main actor when a download reaches `.completed` through
@@ -115,10 +125,22 @@ public final class DownloadManager {
         sweepMuxingOrphans()
         let recoveredByID = Dictionary(recovered.map { ($0.requestID, $0) }, uniquingKeysWith: { first, _ in first })
 
-        let records = fetchRecords()
+        // A failed record fetch must not be treated as "no records": that
+        // would cancel recovered transfers as unrecorded. Conservative branch:
+        // skip this reconciliation iteration entirely (logged); recovered
+        // transfers keep running untouched.
+        let records: [DownloadRecord]
+        do {
+            records = try fetchRecordsOrThrow()
+        } catch {
+            Self.logger.fault("Record fetch failed during launch reconciliation (\(error.localizedDescription)); skipping iteration")
+            return
+        }
         let tasks = records.map { $0.downloadTask }
         let reconciled = DownloadReconciler.reconcile(tasks) { [weak self] url in
             self?.fileExists(url) ?? false
+        } sizeOf: { [weak self] url in
+            self?.fileSize(url) ?? 0
         }
         for (record, task) in zip(records, reconciled) {
             // Fully recovered transfers keep running; everything else settles
@@ -130,6 +152,9 @@ public final class DownloadManager {
             }
             if record.statusRaw != task.state.status.rawValue || record.errorRaw != task.state.error?.rawValue {
                 record.apply(task)
+            }
+            if task.state.status == .completed || task.state.status == .failed {
+                releaseAdmission(record.id)
             }
         }
         saveContext()
@@ -216,31 +241,100 @@ public final class DownloadManager {
 
     // MARK: - Control
 
+    /// Synchronous admission check for a download request. Returns false when
+    /// a transfer for this task id is already admitted and not yet settled —
+    /// including the window between `enqueue` acceptance and the first live
+    /// progress event, where `liveTasks` is not yet populated. Callers must
+    /// invoke this before any await for the guarantee to hold.
+    @discardableResult
+    public func reserveAdmission(_ taskID: String) -> Bool {
+        if startingIDs.contains(taskID) { return false }
+        startingIDs.insert(taskID)
+        return true
+    }
+
+    public func releaseAdmission(_ taskID: String) {
+        startingIDs.remove(taskID)
+    }
+
+    /// Number of persisted records in a non-terminal status; used for the
+    /// logical-concurrency admission limit.
+    private func activeLogicalCount() -> Int {
+        do {
+            let terminal: Set<String> = [
+                DownloadStatus.completed.rawValue,
+                DownloadStatus.failed.rawValue,
+                DownloadStatus.idle.rawValue
+            ]
+            return try fetchRecordsOrThrow().filter { !terminal.contains($0.statusRaw) }.count
+        } catch {
+            // Availability over stall: an unreadable index must not silently
+            // wedge all future downloads; duplicates are still prevented by
+            // `reserveAdmission`. Logged loudly for diagnosis.
+            Self.logger.fault("Record fetch failed during capacity check (\(error.localizedDescription)); admitting")
+            return 0
+        }
+    }
+
+    /// Upserts the record for `task`; retries/re-resolutions reuse the same
+    /// request id, and duplicate SwiftData records would corrupt
+    /// reconciliation, so a failed record scan skips persistence instead of
+    /// risking an insert.
+    private func upsertRecord(_ task: DownloadTask) {
+        do {
+            if let existing = try fetchRecordsOrThrow().first(where: { $0.id == task.id }) {
+                existing.apply(task)
+            } else {
+                context.insert(DownloadRecord(task: task))
+            }
+            saveContext()
+        } catch {
+            Self.logger.fault("Record fetch failed during upsert (\(error.localizedDescription)); skipping persistence")
+        }
+    }
+
     @discardableResult
     public func enqueue(_ request: DownloadRequest, requiredBytes: Int64 = 0) async -> DownloadTask {
-        if requiredBytes > 0 && requiredBytes > storage.availableCapacity(for: request.destinationURL) {
-            var task = DownloadTask(
+        startingIDs.insert(request.id)
+
+        func refused(_ error: DownloadError) -> DownloadTask {
+            let task = DownloadTask(
                 id: request.id,
                 videoID: request.videoID,
                 resolution: request.resolution,
                 destinationURL: request.destinationURL,
                 components: request.components,
-                state: DownloadState(status: .failed, error: .storageRefused)
+                state: DownloadState(status: .failed, error: error)
             )
-            context.insert(DownloadRecord(task: task))
-            saveContext()
+            upsertRecord(task)
+            releaseAdmission(request.id)
+            return task
+        }
+
+        if requiredBytes > 0 && requiredBytes > storage.availableCapacity(for: request.destinationURL) {
+            return refused(.storageRefused)
+        }
+
+        // Logical concurrency admission (docs/03: at most two concurrent
+        // logical downloads). At the limit the request persists as `.queued`
+        // without contacting the coordinator; DownloadService promotes it FIFO
+        // when a job settles or is cancelled.
+        if activeLogicalCount() >= Self.maxConcurrentDownloads {
+            let task = DownloadTask(
+                id: request.id,
+                videoID: request.videoID,
+                resolution: request.resolution,
+                destinationURL: request.destinationURL,
+                components: request.components,
+                state: DownloadState(status: .queued)
+            )
+            upsertRecord(task)
+            releaseAdmission(request.id)
             return task
         }
 
         let task = await coordinator.enqueue(request)
-        // Upsert: retries/re-resolutions reuse the same request id, and
-        // duplicate SwiftData records would corrupt reconciliation.
-        if let existing = fetchRecords().first(where: { $0.id == request.id }) {
-            existing.apply(task)
-        } else {
-            context.insert(DownloadRecord(task: task))
-        }
-        saveContext()
+        upsertRecord(task)
         return task
     }
 
@@ -257,26 +351,7 @@ public final class DownloadManager {
         await coordinator.cancel(taskID)
         await syncRecord(taskID)
         removeLive(taskID)
-    }
-
-    public func retry(_ taskID: String) async {
-        guard let record = fetchRecords().first(where: { $0.id == taskID }) else { return }
-        let components = record.components
-        guard !components.isEmpty else { return }
-        let request = DownloadRequest(
-            id: record.id,
-            videoID: record.videoID,
-            resolution: record.resolution,
-            destinationURL: record.destinationURL,
-            components: components
-        )
-        _ = await coordinator.enqueue(request)
-        await coordinator.begin(request.id) { [weak self] task in
-            Task { @MainActor in
-                self?.applyLive(task)
-            }
-        }
-        await syncRecord(taskID)
+        releaseAdmission(taskID)
     }
 
     public var records: [DownloadTask] {
@@ -331,6 +406,7 @@ public final class DownloadManager {
         }
         if task.state.status == .completed || task.state.status == .failed {
             removeLive(task.id)
+            releaseAdmission(task.id)
         }
     }
 
@@ -342,24 +418,78 @@ public final class DownloadManager {
         do {
             try context.save()
         } catch {
-            Self.logger.fault("SwiftData save failed (\(error.localizedDescription, privacy: .public)) for task state")
+            Self.logger.fault("SwiftData save failed (\(error.localizedDescription)) for task state")
         }
     }
 
     // MARK: - Helpers
 
+    private func fetchRecordsOrThrow() throws -> [DownloadRecord] {
+        try context.fetch(FetchDescriptor<DownloadRecord>())
+    }
+
+    /// Non-decisional convenience: for display/diagnostic reads where an
+    /// empty result is safe. Decision paths use `fetchRecordsOrThrow`.
     private func fetchRecords() -> [DownloadRecord] {
-        (try? context.fetch(FetchDescriptor<DownloadRecord>())) ?? []
+        do {
+            return try fetchRecordsOrThrow()
+        } catch {
+            Self.logger.fault("Record fetch failed (\(error.localizedDescription)); returning empty")
+            return []
+        }
+    }
+
+    /// Persists user-facing presentation metadata (title/channel) captured at
+    /// enqueue time so background-completed downloads register in the library
+    /// with real titles instead of the videoID placeholder.
+    public func setPresentationMetadata(taskID: String, title: String, channelTitle: String) {
+        do {
+            guard let record = try fetchRecordsOrThrow().first(where: { $0.id == taskID }) else { return }
+            record.applyPresentationMetadata(title: title, channelTitle: channelTitle)
+            saveContext()
+        } catch {
+            Self.logger.fault("Record fetch failed while storing presentation metadata (\(error.localizedDescription))")
+        }
+    }
+
+    /// Lookup of stored presentation metadata; nil when the record is unknown.
+    /// `title` itself may be nil for legacy rows created before the additive
+    /// fields existed — callers fall back to the videoID.
+    public func presentationMetadata(taskID: String) -> (title: String?, channelTitle: String?)? {
+        let record: DownloadRecord?
+        do {
+            record = try fetchRecordsOrThrow().first(where: { $0.id == taskID })
+        } catch {
+            Self.logger.fault("Record fetch failed while reading presentation metadata (\(error.localizedDescription))")
+            return nil
+        }
+        guard let record else { return nil }
+        return (record.title, record.channelTitle)
     }
 
     private func fileExists(_ url: URL) -> Bool {
         FileManager.default.fileExists(atPath: url.path)
     }
 
+    private func fileSize(_ url: URL) -> Int64 {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]) else { return 0 }
+        return Int64(values.fileSize ?? 0)
+    }
+
     private func syncRecord(_ taskID: String) async {
-        guard let record = fetchRecords().first(where: { $0.id == taskID }) else { return }
+        let record: DownloadRecord?
+        do {
+            record = try fetchRecordsOrThrow().first(where: { $0.id == taskID })
+        } catch {
+            Self.logger.fault("Record fetch failed during sync (\(error.localizedDescription)); skipping persistence")
+            return
+        }
+        guard let record else { return }
         guard let task = await coordinator.task(taskID) else { return }
         record.apply(task)
+        if task.state.status == .completed || task.state.status == .failed {
+            releaseAdmission(taskID)
+        }
         saveContext()
     }
 
@@ -374,6 +504,7 @@ public final class DownloadManager {
         // passes through DownloadService, so register it here; the library
         // upserts by id so in-app registration stays idempotent.
         if task.state.status == .completed {
+            releaseAdmission(taskID)
             onMediaFinalized?(task)
         }
     }

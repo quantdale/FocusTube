@@ -20,7 +20,16 @@ final class LibraryStore {
     // MARK: - Watch history / resume
 
     public func recordProgress(videoID: String, title: String, channelTitle: String, position: Double, duration: Int?, completed: Bool) {
-        if let existing = historyEntry(videoID) {
+        // A failed fetch must not silently insert a duplicate entry for a
+        // video that may already have history — abort and log instead.
+        let existing: WatchHistoryEntry?
+        do {
+            existing = try historyEntryOrThrow(videoID)
+        } catch {
+            Self.logger.fault("History fetch failed (\(error.localizedDescription)); aborting progress update")
+            return
+        }
+        if let existing {
             existing.title = title
             existing.channelTitle = channelTitle
             existing.lastPositionSeconds = position
@@ -42,33 +51,72 @@ final class LibraryStore {
     }
 
     public func resumePosition(for videoID: String) -> Double? {
-        historyEntry(videoID)?.lastPositionSeconds
+        do {
+            return try historyEntryOrThrow(videoID)?.lastPositionSeconds
+        } catch {
+            Self.logger.error("History fetch failed (\(error.localizedDescription)); no resume position")
+            return nil
+        }
     }
 
     public var history: [WatchHistoryEntry] {
-        (try? context.fetch(FetchDescriptor<WatchHistoryEntry>())) ?? []
+        do {
+            return try context.fetch(FetchDescriptor<WatchHistoryEntry>())
+        } catch {
+            Self.logger.error("History fetch failed (\(error.localizedDescription)); displaying empty")
+            return []
+        }
     }
 
     // MARK: - Saves
 
     public func save(videoID: String, title: String, channelTitle: String) {
-        if savedItem(videoID) == nil {
+        // A failed fetch must not silently insert a duplicate save — abort.
+        let existing: SavedItem?
+        do {
+            existing = try savedItemOrThrow(videoID)
+        } catch {
+            Self.logger.fault("Saved-item fetch failed (\(error.localizedDescription)); aborting save")
+            return
+        }
+        if existing == nil {
             context.insert(SavedItem(videoID: videoID, title: title, channelTitle: channelTitle, savedAt: Date()))
             save()
         }
     }
 
     public var saved: [SavedItem] {
-        (try? context.fetch(FetchDescriptor<SavedItem>())) ?? []
+        do {
+            return try context.fetch(FetchDescriptor<SavedItem>())
+        } catch {
+            Self.logger.error("Saved list fetch failed (\(error.localizedDescription)); displaying empty")
+            return []
+        }
     }
 
     // MARK: - Downloaded media index
 
     public func addDownloadedMedia(_ media: DownloadedMedia) {
         // Upsert by the unique id: re-downloading the same video+quality must
-        // refresh the entry, never duplicate it.
-        if let existing = downloaded.first(where: { $0.id == media.id }) {
-            existing.title = media.title
+        // refresh the entry, never duplicate it. A failed fetch aborts the
+        // upsert rather than risking a duplicate row.
+        let existing: DownloadedMedia?
+        do {
+            existing = try downloadedEntryOrThrow(media.id)
+        } catch {
+            Self.logger.fault("Downloaded-index fetch failed (\(error.localizedDescription)); aborting library upsert")
+            return
+        }
+        if let existing {
+            // Never downgrade a real title to a videoID-shaped placeholder:
+            // background completion can register before/after in-app
+            // registration with only the videoID at hand.
+            let newIsPlaceholder = media.title == media.videoID
+            let existingIsPlaceholder = existing.title == existing.videoID
+            if !newIsPlaceholder || existingIsPlaceholder {
+                existing.title = media.title
+            }
+            existing.channelTitle = media.channelTitle ?? existing.channelTitle
             existing.resolution = media.resolution
             existing.fileURL = media.fileURL
             existing.sizeBytes = media.sizeBytes
@@ -80,7 +128,12 @@ final class LibraryStore {
     }
 
     public var downloaded: [DownloadedMedia] {
-        (try? context.fetch(FetchDescriptor<DownloadedMedia>())) ?? []
+        do {
+            return try context.fetch(FetchDescriptor<DownloadedMedia>())
+        } catch {
+            Self.logger.error("Downloaded index fetch failed (\(error.localizedDescription)); displaying empty")
+            return []
+        }
     }
 
     /// Removes index entries whose files no longer exist on disk (orphan cleanup).
@@ -93,10 +146,29 @@ final class LibraryStore {
     }
 
     /// Atomically removes both the file and its metadata. A missing file is not
-    /// an error; the metadata is always removed so no orphan remains.
+    /// an error; the metadata is still removed so no orphan remains. Any other
+    /// removal failure keeps the metadata row so the entry stays deletable and
+    /// diagnosable instead of silently orphaning the file.
     public func deleteDownloadedMedia(id: String) {
-        guard let item = downloaded.first(where: { $0.id == id }) else { return }
-        try? fileManager.removeItem(at: item.fileURL)
+        let existing: DownloadedMedia?
+        do {
+            existing = try downloadedEntryOrThrow(id)
+        } catch {
+            Self.logger.fault("Downloaded-index fetch failed (\(error.localizedDescription)); aborting delete")
+            return
+        }
+        guard let item = existing else { return }
+        do {
+            try fileManager.removeItem(at: item.fileURL)
+        } catch let error as NSError {
+            let isFileNotFound =
+                error.domain == NSCocoaErrorDomain
+                && (error.code == NSFileNoSuchFileError || error.code == NSFileReadNoSuchFileError)
+            guard isFileNotFound else {
+                Self.logger.fault("Final-media removal failed (\(error.localizedDescription)); keeping library entry")
+                return
+            }
+        }
         pruneEmptyAncestors(of: item.fileURL)
         context.delete(item)
         save()
@@ -104,12 +176,16 @@ final class LibraryStore {
 
     // MARK: - Helpers
 
-    private func historyEntry(_ videoID: String) -> WatchHistoryEntry? {
-        history.first { $0.videoID == videoID }
+    private func historyEntryOrThrow(_ videoID: String) throws -> WatchHistoryEntry? {
+        try context.fetch(FetchDescriptor<WatchHistoryEntry>()).first { $0.videoID == videoID }
     }
 
-    private func savedItem(_ videoID: String) -> SavedItem? {
-        saved.first { $0.videoID == videoID }
+    private func savedItemOrThrow(_ videoID: String) throws -> SavedItem? {
+        try context.fetch(FetchDescriptor<SavedItem>()).first { $0.videoID == videoID }
+    }
+
+    private func downloadedEntryOrThrow(_ id: String) throws -> DownloadedMedia? {
+        try context.fetch(FetchDescriptor<DownloadedMedia>()).first { $0.id == id }
     }
 
     // MARK: - Persistence / filesystem hygiene
@@ -120,7 +196,7 @@ final class LibraryStore {
         do {
             try context.save()
         } catch {
-            Self.logger.fault("SwiftData save failed (\(error.localizedDescription, privacy: .public))")
+            Self.logger.fault("SwiftData save failed (\(error.localizedDescription))")
         }
     }
 

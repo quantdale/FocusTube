@@ -107,6 +107,8 @@ Caches/
 
 Never store final offline media only in Caches or tmp.
 
+Note: the implemented layout is authoritative per accepted ADR-0006 — final media lives at `Media/<video-id>/<quality>/media.<container>` (one subdirectory per quality variant).
+
 ## Validation before completed state
 
 A download is `completed` only when:

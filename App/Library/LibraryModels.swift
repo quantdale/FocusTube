@@ -50,8 +50,10 @@ final class DownloadedMedia {
     var fileURL: URL
     var sizeBytes: Int64
     var createdAt: Date
+    /// Additive optional (lightweight migration: legacy rows decode as nil).
+    var channelTitle: String?
 
-    init(id: String, videoID: String, title: String, resolution: Int, fileURL: URL, sizeBytes: Int64, createdAt: Date) {
+    init(id: String, videoID: String, title: String, resolution: Int, fileURL: URL, sizeBytes: Int64, createdAt: Date, channelTitle: String? = nil) {
         self.id = id
         self.videoID = videoID
         self.title = title
@@ -59,5 +61,6 @@ final class DownloadedMedia {
         self.fileURL = fileURL
         self.sizeBytes = sizeBytes
         self.createdAt = createdAt
+        self.channelTitle = channelTitle
     }
 }

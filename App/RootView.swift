@@ -67,6 +67,7 @@ struct RootView: View {
             try? backgroundMedia.configureAudioSession()
             backgroundMedia.registerRemoteCommands()
             backgroundMedia.registerInterruptionObservation()
+            backgroundMedia.registerRouteChangeObservation()
         }
     }
 }
@@ -123,11 +124,55 @@ struct DownloadsView: View {
                 }
             }
 
+            Section("Failed downloads") {
+                // Failed/interrupted records stay listed so the promised retry
+                // is actionable: Retry re-invokes the service, which re-resolves
+                // fresh signed URLs instead of replaying expired ones.
+                let failed = downloadManager.records.filter { $0.state.status == .failed }
+                if failed.isEmpty {
+                    Text("No failed downloads.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(failed) { task in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(downloadManager.presentationMetadata(taskID: task.id)?.title ?? task.videoID)
+                                .lineLimit(2)
+                            Text("\(task.resolution)p · \(task.state.error?.rawValue ?? task.state.status.rawValue)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let quality = DownloadQuality(rawValue: task.resolution) {
+                            let metadata = downloadManager.presentationMetadata(taskID: task.id)
+                            Button("Retry") {
+                                Task {
+                                    await downloadService.download(
+                                        videoID: task.videoID,
+                                        title: metadata?.title ?? task.videoID,
+                                        channelTitle: metadata?.channelTitle ?? "",
+                                        quality: quality
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Section("Downloaded") {
                 ForEach(store.downloaded, id: \.id) { item in
                     HStack {
                         Button {
-                            playerCoordinator.playLocalFile(item.fileURL)
+                            // Local playback must not tick the online video
+                            // page's history handler; route progress away and
+                            // set local Now Playing metadata explicitly.
+                            playerCoordinator.onProgress = nil
+                            playerCoordinator.playLocalFile(
+                                item.fileURL,
+                                title: item.title,
+                                artist: nil
+                            )
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.title).lineLimit(2)
@@ -223,10 +268,12 @@ private struct HomeFeedView: View {
                     }
                 }
             }
-            Button {
-                Task { await store.loadMore() }
-            } label: {
-                Label("Load more", systemImage: "arrow.down.circle")
+            if store.nextPageToken != nil {
+                Button {
+                    Task { await store.loadMore() }
+                } label: {
+                    Label("Load more", systemImage: "arrow.down.circle")
+                }
             }
         }
         .navigationTitle("Home")

@@ -16,8 +16,12 @@ private struct NoopTransport: DownloadTransport {
     func cancel(taskID: String) async {}
 }
 
-private struct FailingTransport: DownloadTransport {
+private final class FailingTransport: DownloadTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var beginCount = 0
+
     func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {
+        lock.withLock { beginCount += 1 }
         onEvent(.failed(.transportFailed))
     }
 
@@ -120,6 +124,28 @@ private final class SwitchableTransport: DownloadTransport, @unchecked Sendable 
     }
 
     func cancel(taskID: String) async {}
+}
+
+/// Per-video resolver so concurrent downloads exercise independent media;
+/// counts resolutions to prove retries re-resolve instead of replaying URLs.
+private final class PerVideoExtractor: MediaExtracting, @unchecked Sendable {
+    let mediaByID: [String: ResolvedMedia]
+    private let lock = NSLock()
+    private var resolves: [String: Int] = [:]
+
+    init(mediaByID: [String: ResolvedMedia]) {
+        self.mediaByID = mediaByID
+    }
+
+    func resolveCount(for videoID: String) -> Int {
+        lock.withLock { resolves[videoID, default: 0] }
+    }
+
+    func resolve(videoID: String) async throws -> ResolvedMedia {
+        lock.withLock { resolves[videoID, default: 0] += 1 }
+        guard let media = mediaByID[videoID] else { throw ExtractionError.unavailable }
+        return media
+    }
 }
 
 @MainActor
@@ -479,6 +505,203 @@ final class DownloadServiceTests: XCTestCase {
         let downloaded = await library.downloaded
         XCTAssertEqual(downloaded.count, 1)
         XCTAssertEqual(downloaded.first?.resolution, 720)
+    }
+
+    func testConcurrentFailuresDoNotCrossContaminateRetries() async throws {
+        // Two downloads fail at once. Each retry decision must consume its own
+        // local outcome: exactly one automatic retry per download (2 begins
+        // each), and neither failure suppresses nor duplicates the other's.
+        let failing = FailingTransport()
+        let extractor = PerVideoExtractor(mediaByID: [
+            "va": combinedMedia(videoID: "va", resolution: 720),
+            "vb": combinedMedia(videoID: "vb", resolution: 480)
+        ])
+        let service = await DownloadService(
+            extractor: extractor,
+            downloadManager: DownloadManager(
+                transport: failing,
+                context: ModelContext(try makeContainer()),
+                validate: nil
+            ),
+            library: try await makeLibrary()
+        )
+
+        async let a: Void = service.download(videoID: "va", title: "A", channelTitle: "C", quality: .p720)
+        async let b: Void = service.download(videoID: "vb", title: "B", channelTitle: "C", quality: .p480)
+        _ = await (a, b)
+
+        XCTAssertEqual(failing.beginCount, 4)
+        XCTAssertEqual(extractor.resolveCount(for: "va"), 2)
+        XCTAssertEqual(extractor.resolveCount(for: "vb"), 2)
+    }
+
+    func testRapidDuplicateDownloadStartsExactlyOneTransfer() async throws {
+        // Two back-to-back starts without waiting for progress: admission is
+        // reserved synchronously, so exactly one transfer may begin.
+        let gated = GatedTransport(tempLocation: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("unused-\(UUID().uuidString).mp4"))
+        let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()), validate: nil)
+        let service = await DownloadService(
+            extractor: FakeExtractor(result: .success(combinedMedia(videoID: "vd", resolution: 720))),
+            downloadManager: manager,
+            library: try await makeLibrary()
+        )
+
+        let a = Task {
+            await service.download(videoID: "vd", title: "T", channelTitle: "C", quality: .p720)
+        }
+        // Second rapid start, fired before any progress event can populate
+        // the live projection.
+        await service.download(videoID: "vd", title: "T", channelTitle: "C", quality: .p720)
+        XCTAssertEqual(gated.beginCount, 1)
+
+        gated.release()
+        await a.value
+    }
+
+    func testThirdConcurrentDownloadStaysQueuedUntilSlotFrees() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let temp = root.appendingPathComponent("component.mp4")
+        try Data([0x01]).write(to: temp)
+        let gated = GatedTransport(tempLocation: temp)
+        let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()), validate: nil)
+        let service = await DownloadService(
+            extractor: PerVideoExtractor(mediaByID: [
+                "v20": combinedMedia(videoID: "v20", resolution: 720),
+                "v21": combinedMedia(videoID: "v21", resolution: 720),
+                "v22": combinedMedia(videoID: "v22", resolution: 720)
+            ]),
+            downloadManager: manager,
+            library: try await makeLibrary(),
+            mediaDirectory: root.appendingPathComponent("Media")
+        )
+
+        let first = Task { await service.download(videoID: "v20", title: "1", channelTitle: "C", quality: .p720) }
+        let second = Task { await service.download(videoID: "v21", title: "2", channelTitle: "C", quality: .p720) }
+        await waitUntil({ [manager] in
+            await manager.coordinatorTask("v20-720") != nil && await manager.coordinatorTask("v21-720") != nil
+        }, "first two transfers never started")
+        XCTAssertEqual(gated.beginCount, 2)
+
+        // docs/03: at most two concurrent logical downloads — the third
+        // persists as .queued without starting a transfer.
+        let third = Task { await service.download(videoID: "v22", title: "3", channelTitle: "C", quality: .p720) }
+        await waitUntil({ [service] in
+            await service.isInFlight(videoID: "v22", quality: .p720) == false
+                && await manager.records.contains { $0.id == "v22-720" && $0.state.status == .queued }
+        }, "third download never parked as queued")
+        let thirdTask = await manager.coordinatorTask("v22-720")
+        XCTAssertNil(thirdTask)
+        XCTAssertEqual(gated.beginCount, 2)
+
+        // Settling a job frees its slot; the oldest queued request promotes FIFO.
+        gated.release()
+        await first.value
+        await second.value
+        await waitUntil({ [manager] in await manager.coordinatorTask("v22-720") != nil },
+                        "queued download was never promoted after a slot freed")
+        XCTAssertEqual(gated.beginCount, 3)
+
+        gated.release()
+        await third.value
+    }
+
+    func testCancelFreesSlotAndPromotesQueuedDownload() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let temp = root.appendingPathComponent("component.mp4")
+        try Data([0x01]).write(to: temp)
+        let gated = GatedTransport(tempLocation: temp)
+        let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()), validate: nil)
+        let service = await DownloadService(
+            extractor: PerVideoExtractor(mediaByID: [
+                "v23": combinedMedia(videoID: "v23", resolution: 720),
+                "v24": combinedMedia(videoID: "v24", resolution: 720)
+            ]),
+            downloadManager: manager,
+            library: try await makeLibrary(),
+            mediaDirectory: root.appendingPathComponent("Media")
+        )
+
+        let running = Task { await service.download(videoID: "v23", title: "1", channelTitle: "C", quality: .p720) }
+        await waitUntil({ service.isInFlight(videoID: "v23", quality: .p720) },
+                        "transfer never appeared in flight")
+
+        let queued = Task { await service.download(videoID: "v24", title: "2", channelTitle: "C", quality: .p720) }
+        await waitUntil({ [manager] in
+            await manager.records.contains { $0.id == "v24-720" && $0.state.status == .queued }
+        }, "second download never parked as queued")
+
+        // Cancelling frees a logical slot; the parked request promotes.
+        await service.cancel(videoID: "v23", quality: .p720)
+        await running.value
+        await waitUntil({ [manager] in await manager.coordinatorTask("v24-720") != nil },
+                        "queued download was never promoted after cancel")
+        XCTAssertEqual(gated.beginCount, 2)
+
+        gated.release()
+        await queued.value
+    }
+
+    func testRetryFromFailureListReResolvesFreshComponents() async throws {
+        // Mirrors the Downloads failed-list Retry button: re-invoking the
+        // service must resolve fresh URLs (not replay expired persisted ones).
+        let switchable = SwitchableTransport(tempLocation: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("unused-\(UUID().uuidString).mp4"))
+        let extractor = PerVideoExtractor(mediaByID: [
+            "v25": combinedMedia(videoID: "v25", resolution: 720)
+        ])
+        let manager = DownloadManager(transport: switchable, context: ModelContext(try makeContainer()), validate: nil)
+        let library = try await makeLibrary()
+        let service = await DownloadService(
+            extractor: extractor,
+            downloadManager: manager,
+            library: library
+        )
+
+        await service.download(videoID: "v25", title: "Real Title", channelTitle: "Real Channel", quality: .p720)
+        var failure = await service.lastFailure
+        XCTAssertEqual(failure?.error, .transportFailed)
+
+        // The Retry button path: stored metadata feeds the new request.
+        let metadata = await manager.presentationMetadata(taskID: "v25-720")
+        switchable.completeSubsequentTransfers()
+        await service.download(
+            videoID: "v25",
+            title: metadata?.title ?? "v25",
+            channelTitle: metadata?.channelTitle ?? "",
+            quality: .p720
+        )
+        failure = await service.lastFailure
+        XCTAssertNil(failure)
+        // Initial attempt + its one automatic retry + this manual retry: every
+        // path re-resolved fresh URLs.
+        XCTAssertEqual(extractor.resolveCount(for: "v25"), 3)
+        let downloaded = await library.downloaded
+        XCTAssertEqual(downloaded.first?.title, "Real Title")
+    }
+
+    func testDownloadPersistsPresentationMetadataOnRecord() async throws {
+        let manager = DownloadManager(
+            transport: FailingTransport(),
+            context: ModelContext(try makeContainer()),
+            validate: nil
+        )
+        let service = await DownloadService(
+            extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v26", resolution: 720))),
+            downloadManager: manager,
+            library: try await makeLibrary()
+        )
+        await service.download(videoID: "v26", title: "Meta Title", channelTitle: "Meta Channel", quality: .p720)
+
+        let metadata = await manager.presentationMetadata(taskID: "v26-720")
+        XCTAssertEqual(metadata?.title, "Meta Title")
+        XCTAssertEqual(metadata?.channelTitle, "Meta Channel")
     }
 
     private func makeContainer() throws -> ModelContainer {

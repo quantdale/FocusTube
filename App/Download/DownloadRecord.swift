@@ -19,6 +19,12 @@ final class DownloadRecord {
     var errorRaw: String?
     var createdAt: Date
     var componentsData: Data
+    /// Presentation metadata captured at enqueue time so background-completed
+    /// downloads can register in the library with a real title instead of the
+    /// videoID placeholder. Additive optionals: legacy rows decode as nil
+    /// (lightweight migration), and nil falls back to `videoID` at lookup.
+    var title: String?
+    var channelTitle: String?
 
     init(task: DownloadTask) {
         self.id = task.id
@@ -40,7 +46,7 @@ final class DownloadRecord {
         do {
             return try JSONDecoder().decode([DownloadComponent].self, from: componentsData)
         } catch {
-            Self.logger.error("Components decode failed (\(error.localizedDescription, privacy: .public)); treating as empty")
+            Self.logger.error("Components decode failed (\(error.localizedDescription)); treating as empty")
             return []
         }
     }
@@ -67,6 +73,13 @@ final class DownloadRecord {
         self.errorRaw = task.state.error?.rawValue
         self.bytesDownloaded = task.state.bytesDownloaded
         self.totalBytes = task.state.totalBytes
+    }
+
+    /// Stores user-facing presentation metadata; status/progress fields are
+    /// untouched so state-machine events can never clobber it.
+    func applyPresentationMetadata(title: String, channelTitle: String) {
+        self.title = title
+        self.channelTitle = channelTitle
     }
 
     private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "download-record")

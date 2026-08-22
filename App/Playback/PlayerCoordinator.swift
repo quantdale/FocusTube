@@ -44,10 +44,17 @@ public final class PlayerCoordinator {
     private var timeObserver: Any?
     private var itemObservation: NSKeyValueObservation?
     private var timeControlObservation: NSKeyValueObservation?
-    private var waitingSince: Date?
+    /// Monotonic token bumped on every selection entry point (`loadAndPlay`,
+    /// `prepare`, `playLocalFile`, `stop`). Async work captures it at entry and
+    /// may only mutate playback state while it is still current, so overlapping
+    /// or late-arriving extractions can never clobber newer selections.
+    private var generation = 0
+    /// Generation-bound watchdog armed while buffering after `.ready`; fires
+    /// `.stalled` without needing another KVO delivery to arrive.
+    private var stallWatchdog: Task<Void, Never>?
     /// How long `waitingToPlayAtSpecifiedRate` may persist after `.ready`
     /// before playback is declared stalled. Injectable for deterministic tests.
-    private let stallTimeout: TimeInterval
+    var stallTimeout: TimeInterval
     private let extractor: MediaExtracting
 
     public init(extractor: MediaExtracting = YouTubeKitMediaExtractor(), stallTimeout: TimeInterval = 10) {
@@ -58,6 +65,7 @@ public final class PlayerCoordinator {
         self.playerViewController = AVPlayerViewController()
         self.playerViewController.player = player
         self.playerViewController.allowsPictureInPicturePlayback = true
+        self.playerViewController.canStartPictureInPictureAutomaticallyFromInline = true
     }
 
     deinit {
@@ -117,9 +125,12 @@ public final class PlayerCoordinator {
     /// begins native playback. Extraction and selection failures are typed and
     /// observable via `state`.
     public func loadAndPlay(videoID: String) async {
+        generation += 1
+        let gen = generation
         currentVideoID = videoID
         do {
             let media = try await extractor.resolve(videoID: videoID)
+            guard gen == generation else { return }
             lastResolvedMedia = media
             guard let stream = selectOnlineStream(from: media) else {
                 state = PlaybackState(status: .failed, error: .noPlayableStream)
@@ -127,6 +138,7 @@ public final class PlayerCoordinator {
             }
             prepare(stream: stream)
         } catch {
+            guard gen == generation else { return }
             lastResolvedMedia = nil
             state = PlaybackState(status: .failed, error: mapExtractionFailure(error))
         }
@@ -134,15 +146,8 @@ public final class PlayerCoordinator {
 
     /// Attaches an already-selected stream to the player and starts playback.
     public func prepare(stream: MediaStream) {
-        currentStream = stream
-        let item = AVPlayerItem(url: stream.sourceURL)
-        playerItem = item
-        observe(item: item)
-        player.replaceCurrentItem(with: item)
-        state = PlaybackState(status: .loading)
-        startProgressObserver()
-        player.play()
-        notifyNowPlayingChanged()
+        generation += 1
+        apply(stream: stream)
     }
 
     public func pause() {
@@ -154,18 +159,29 @@ public final class PlayerCoordinator {
     }
 
     /// Plays an already-finalized local media file with no network dependency.
-    public func playLocalFile(_ url: URL) {
+    /// Clears every field tied to prior online playback (stream, video ID,
+    /// resolved media, Now Playing metadata) so local playback can never be
+    /// attributed to — or write history under — the previously loaded video.
+    public func playLocalFile(_ url: URL, title: String? = nil, artist: String? = nil) {
+        generation += 1
+        currentStream = nil
+        currentVideoID = nil
+        lastResolvedMedia = nil
+        nowPlayingTitle = title
+        nowPlayingArtist = artist
         let item = AVPlayerItem(url: url)
         playerItem = item
         observe(item: item)
         player.replaceCurrentItem(with: item)
         state = PlaybackState(status: .loading)
+        resetWaiting()
         startProgressObserver()
         player.play()
         notifyNowPlayingChanged()
     }
 
     public func stop() {
+        generation += 1
         itemObservation?.invalidate()
         timeControlObservation?.invalidate()
         stopProgressObserver()
@@ -173,7 +189,11 @@ public final class PlayerCoordinator {
         playerItem = nil
         currentStream = nil
         currentVideoID = nil
+        // Nil it so an expired stream URL cannot be replayed later by the
+        // quality picker after playback has been torn down.
+        lastResolvedMedia = nil
         state = PlaybackState(status: .idle)
+        resetWaiting()
         notifyNowPlayingChanged()
     }
 
@@ -201,12 +221,18 @@ public final class PlayerCoordinator {
 
     private func observe(item: AVPlayerItem) {
         itemObservation?.invalidate()
+        // Bind deliveries to this exact item identity (Sendable token): late
+        // callbacks from a replaced item must never mark a healthy successor
+        // failed or ready.
+        let observedItemID = ObjectIdentifier(item)
         itemObservation = item.observe(\.status, options: [.new]) { [weak self] observed, _ in
             // Extract the Sendable status before hopping actors; capturing the
             // non-Sendable AVPlayerItem across a Task boundary is illegal on
             // Swift 6.0 toolchains.
             let status = observed.status
             Task { @MainActor in
+                guard let currentItem = self?.player.currentItem,
+                      ObjectIdentifier(currentItem) == observedItemID else { return }
                 self?.handle(itemStatus: status)
             }
         }
@@ -242,28 +268,51 @@ public final class PlayerCoordinator {
     private func handle(timeControlStatus: AVPlayer.TimeControlStatus) {
         switch timeControlStatus {
         case .playing:
-            waitingSince = nil
+            resetWaiting()
             if state.status == .ready {
                 try? state.transition(to: .playing)
             }
         case .paused:
+            resetWaiting()
             if state.status == .playing {
                 try? state.transition(to: .paused)
             }
         case .waitingToPlayAtSpecifiedRate:
             // Buffering right after ready is normal; only a sustained wait
             // (no `playing` transition within the stall timeout) is a stall.
-            if state.status == .ready {
-                if waitingSince == nil { waitingSince = Date() }
-                if Date().timeIntervalSince(waitingSince!) > stallTimeout {
-                    waitingSince = nil
-                    state = PlaybackState(status: .failed, error: .stalled)
+            // A generation-bound watchdog fires even if no further KVO
+            // callback arrives, so the check does not depend on more traffic.
+            if state.status == .ready, stallWatchdog == nil {
+                let gen = generation
+                let timeout = stallTimeout
+                stallWatchdog = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    await self?.checkForStall(generation: gen)
                 }
             }
         @unknown default:
             break
         }
         notifyNowPlayingChanged()
+    }
+
+    /// Watchdog body: fails playback as `.stalled` only if this generation is
+    /// still current and the player is still waiting after `.ready`.
+    private func checkForStall(generation gen: Int) {
+        guard gen == generation else { return }
+        guard state.status == .ready,
+              player.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+        stallWatchdog = nil
+        state = PlaybackState(status: .failed, error: .stalled)
+        notifyNowPlayingChanged()
+    }
+
+    /// Cancels any pending stall watchdog and clears waiting bookkeeping;
+    /// called on every non-waiting transition and every selection change so a
+    /// stale timestamp can never trigger an instant false stall later.
+    private func resetWaiting() {
+        stallWatchdog?.cancel()
+        stallWatchdog = nil
     }
 
     private func mapExtractionFailure(_ error: Error) -> PlaybackError {

@@ -20,39 +20,50 @@ public struct AdaptiveMuxer {
         let videoAsset = AVURLAsset(url: videoURL)
         let audioAsset = AVURLAsset(url: audioURL)
 
+        // Track-load failures mean a component carries no readable media.
+        let videoTracks: [AVAssetTrack]
+        let audioTracks: [AVAssetTrack]
         do {
-            let videoTracks = try await videoAsset.loadTracks(withMediaType: .video)
-            let audioTracks = try await audioAsset.loadTracks(withMediaType: .audio)
-            guard let videoTrack = videoTracks.first else { return .failure(.missingComponent) }
-            guard let audioTrack = audioTracks.first else { return .failure(.missingComponent) }
-
-            let composition = AVMutableComposition()
-            guard let compVideo = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
-                  let compAudio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else {
-                return .failure(.incompatible)
-            }
-
-            try compVideo.insertTimeRange(videoTrack.timeRange, of: videoTrack, at: .zero)
-            try compAudio.insertTimeRange(audioTrack.timeRange, of: audioTrack, at: .zero)
-
-            guard let export = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
-                return .failure(.incompatible)
-            }
-            export.outputURL = outputURL
-            export.outputFileType = .mp4
-
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                export.exportAsynchronously { continuation.resume() }
-            }
-
-            switch export.status {
-            case .completed:
-                return .success(outputURL)
-            default:
-                return .failure(.exportFailed)
-            }
+            videoTracks = try await videoAsset.loadTracks(withMediaType: .video)
+            audioTracks = try await audioAsset.loadTracks(withMediaType: .audio)
         } catch {
             return .failure(.missingComponent)
+        }
+        guard let videoTrack = videoTracks.first else { return .failure(.missingComponent) }
+        guard let audioTrack = audioTracks.first else { return .failure(.missingComponent) }
+
+        let composition = AVMutableComposition()
+        guard let compVideo = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
+              let compAudio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            return .failure(.incompatible)
+        }
+
+        // Insert failures mean the media exists but cannot be composed (codec
+        // or format incompatibility), not that a component is missing.
+        do {
+            try compVideo.insertTimeRange(videoTrack.timeRange, of: videoTrack, at: .zero)
+            try compAudio.insertTimeRange(audioTrack.timeRange, of: audioTrack, at: .zero)
+        } catch {
+            return .failure(.incompatible)
+        }
+
+        guard let export = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
+            return .failure(.incompatible)
+        }
+        export.outputURL = outputURL
+        export.outputFileType = .mp4
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            export.exportAsynchronously { continuation.resume() }
+        }
+
+        switch export.status {
+        case .completed:
+            return .success(outputURL)
+        default:
+            // Never leave a partial/failed export product behind.
+            try? FileManager.default.removeItem(at: outputURL)
+            return .failure(.exportFailed)
         }
     }
 }

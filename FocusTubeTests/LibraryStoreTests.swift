@@ -3,6 +3,21 @@ import SwiftData
 @testable import FocusTube
 import FocusTubeCore
 
+/// Fake file manager whose removal can be made to fail with a chosen error,
+/// so delete-ordering behavior is observable without real filesystem faults.
+private final class FaultingFileManager: FileManaging, @unchecked Sendable {
+    var removeError: NSError?
+
+    func fileExists(at url: URL) -> Bool { false }
+    func size(of url: URL) -> Int64 { 0 }
+    func createDirectory(at url: URL) throws {}
+    func replaceItem(at destination: URL, withItemAt item: URL) throws {}
+    func moveItem(at item: URL, to destination: URL) throws {}
+    func removeItem(at url: URL) throws {
+        if let removeError { throw removeError }
+    }
+}
+
 @MainActor
 final class LibraryStoreTests: XCTestCase {
     func makeContainer() throws -> ModelContainer {
@@ -61,5 +76,58 @@ final class LibraryStoreTests: XCTestCase {
         await store.save(videoID: "v2", title: "T", channelTitle: "C")
         let savedCount = await store.saved.count
         XCTAssertEqual(savedCount, 1)
+    }
+
+    func testUpsertNeverDowngradesRealTitleToVideoIDPlaceholder() async throws {
+        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        let media = DownloadedMedia(id: "d3", videoID: "v3", title: "Real Title", resolution: 720, fileURL: URL(fileURLWithPath: "/tmp/x.mp4"), sizeBytes: 0, createdAt: Date())
+        await store.addDownloadedMedia(media)
+
+        // Background completion registering later only knows the videoID.
+        let placeholder = DownloadedMedia(id: "d3", videoID: "v3", title: "v3", resolution: 720, fileURL: URL(fileURLWithPath: "/tmp/x.mp4"), sizeBytes: 0, createdAt: Date())
+        await store.addDownloadedMedia(placeholder)
+
+        let downloaded = await store.downloaded
+        XCTAssertEqual(downloaded.count, 1)
+        XCTAssertEqual(downloaded.first?.title, "Real Title")
+    }
+
+    func testUpsertUpgradesPlaceholderToRealTitle() async throws {
+        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        let placeholder = DownloadedMedia(id: "d4", videoID: "v4", title: "v4", resolution: 720, fileURL: URL(fileURLWithPath: "/tmp/y.mp4"), sizeBytes: 0, createdAt: Date())
+        await store.addDownloadedMedia(placeholder)
+
+        let real = DownloadedMedia(id: "d4", videoID: "v4", title: "Better Title", channelTitle: "Chan", resolution: 720, fileURL: URL(fileURLWithPath: "/tmp/y.mp4"), sizeBytes: 5, createdAt: Date())
+        await store.addDownloadedMedia(real)
+
+        let downloaded = await store.downloaded
+        XCTAssertEqual(downloaded.count, 1)
+        XCTAssertEqual(downloaded.first?.title, "Better Title")
+        XCTAssertEqual(downloaded.first?.channelTitle, "Chan")
+        XCTAssertEqual(downloaded.first?.sizeBytes, 5)
+    }
+
+    func testDeleteKeepsRowWhenRemovalFailsWithRealError() async throws {
+        let files = FaultingFileManager()
+        files.removeError = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError, userInfo: nil)
+        let store = await LibraryStore(context: ModelContext(try makeContainer()), fileManager: files)
+        let media = DownloadedMedia(id: "d5", videoID: "v", title: "T", resolution: 720, fileURL: URL(fileURLWithPath: "/tmp/stuck.mp4"), sizeBytes: 0, createdAt: Date())
+        await store.addDownloadedMedia(media)
+
+        await store.deleteDownloadedMedia(id: "d5")
+        let count = await store.downloaded.count
+        XCTAssertEqual(count, 1, "metadata must survive a failed file removal so the entry stays diagnosable/deletable")
+    }
+
+    func testDeleteRemovesRowWhenFileAlreadyMissing() async throws {
+        let files = FaultingFileManager()
+        files.removeError = NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError, userInfo: nil)
+        let store = await LibraryStore(context: ModelContext(try makeContainer()), fileManager: files)
+        let media = DownloadedMedia(id: "d6", videoID: "v", title: "T", resolution: 720, fileURL: URL(fileURLWithPath: "/tmp/gone.mp4"), sizeBytes: 0, createdAt: Date())
+        await store.addDownloadedMedia(media)
+
+        await store.deleteDownloadedMedia(id: "d6")
+        let count = await store.downloaded.count
+        XCTAssertEqual(count, 0, "a missing file must not block metadata cleanup (no orphan row)")
     }
 }

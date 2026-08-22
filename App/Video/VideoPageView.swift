@@ -129,6 +129,12 @@ struct VideoPageView: View {
             await loadQualities()
             await loadComments()
         }
+        .onDisappear {
+            // Sheet dismissal must stop this page from recording watch-history
+            // rows under its video ID — e.g. when local playback from Downloads
+            // reuses the shared coordinator afterwards.
+            coordinator.onProgress = nil
+        }
     }
 
     private func loadQualities() async {

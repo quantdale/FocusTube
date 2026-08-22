@@ -137,13 +137,25 @@ public actor DownloadCoordinator {
         var updated = task
         updated.apply(DownloadState(status: .failed, error: .cancelled))
         tasks[taskID] = updated
+        removeComponentTemps(taskID)
+        // Only an actively transferring task can have written toward the
+        // destination. A queued/idle cancel of a re-enqueued id must preserve
+        // the previous generation's finalized media, which the library record
+        // still points at.
+        if task.state.status == .downloading {
+            try? fileManager.removeItem(at: task.destinationURL)
+        }
+        eventChains[taskID] = nil
+    }
+
+    /// Best-effort removal of staged component temp files so failed/cancelled
+    /// attempts never orphan bytes in the incomplete-work area.
+    private func removeComponentTemps(_ taskID: String) {
         for url in (componentTempLocations[taskID] ?? [:]).values {
             try? fileManager.removeItem(at: url)
         }
         componentTempLocations[taskID] = nil
         componentProgress[taskID] = nil
-        try? fileManager.removeItem(at: task.destinationURL)
-        eventChains[taskID] = nil
     }
 
     // MARK: - Event handling
@@ -297,6 +309,9 @@ public actor DownloadCoordinator {
                     try fileManager.moveItem(at: tempLocations[0], to: destination)
                 }
             } catch {
+                // Unify with the validate-catch policy: no staged component
+                // temp may outlive a failed finalization.
+                removeComponentTemps(task.id)
                 fail(task: &task, with: .finalizationFailed)
                 return
             }
@@ -366,6 +381,7 @@ public actor DownloadCoordinator {
                 try fileManager.moveItem(at: output, to: destination)
             } catch {
                 try? fileManager.removeItem(at: output)
+                removeComponentTemps(task.id)
                 fail(task: &task, with: .finalizationFailed)
                 return
             }
@@ -392,6 +408,7 @@ public actor DownloadCoordinator {
             complete(task: &task)
         } catch {
             try? fileManager.removeItem(at: muxOutput)
+            removeComponentTemps(task.id)
             fail(task: &task, with: .muxFailed)
         }
     }

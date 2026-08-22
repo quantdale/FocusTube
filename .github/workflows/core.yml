@@ -9,6 +9,7 @@ on:
 jobs:
   core:
     runs-on: macos-26
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

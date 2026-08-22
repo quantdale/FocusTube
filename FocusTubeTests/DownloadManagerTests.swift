@@ -248,4 +248,57 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(records.first?.state.status, .failed)
         XCTAssertEqual(records.first?.state.error, .cancelled)
     }
+
+    func testThirdRequestAtCapacityLimitPersistsQueuedWithoutCoordinatorTask() async throws {
+        // docs/03: at most two concurrent logical downloads. The first two
+        // occupy the slots (queued records count as active); the third must
+        // persist as .queued without a coordinator transfer to promote later.
+        let manager = await DownloadManager(
+            transport: NoopTransport(),
+            context: ModelContext(try makeContainer())
+        )
+        _ = await manager.enqueue(makeRequest(id: "s1"))
+        _ = await manager.enqueue(makeRequest(id: "s2"))
+        let third = await manager.enqueue(makeRequest(id: "s3"))
+
+        XCTAssertEqual(third.state.status, .queued)
+        let records = await manager.records
+        XCTAssertEqual(records.count, 3)
+        let thirdCoordinatorTask = await manager.coordinatorTask("s3")
+        XCTAssertNil(thirdCoordinatorTask)
+        // Occupying requests are tracked by the coordinator as usual.
+        let firstCoordinatorTask = await manager.coordinatorTask("s1")
+        XCTAssertNotNil(firstCoordinatorTask)
+    }
+
+    func testPresentationMetadataRoundTripsAndLegacyRowsFallBackToNil() async throws {
+        let manager = await DownloadManager(
+            transport: NoopTransport(),
+            context: ModelContext(try makeContainer())
+        )
+        // Legacy row created before the additive metadata fields existed.
+        _ = await manager.enqueue(makeRequest(id: "legacy"))
+        let legacyMetadata = await manager.presentationMetadata(taskID: "legacy")
+        XCTAssertNil(legacyMetadata?.title)
+        XCTAssertNil(legacyMetadata?.channelTitle)
+
+        await manager.setPresentationMetadata(taskID: "legacy", title: "Real", channelTitle: "Channel")
+        let stored = await manager.presentationMetadata(taskID: "legacy")
+        XCTAssertEqual(stored?.title, "Real")
+        XCTAssertEqual(stored?.channelTitle, "Channel")
+    }
+
+    func testCancelReleasesAdmissionReservation() async throws {
+        let manager = await DownloadManager(
+            transport: NoopTransport(),
+            context: ModelContext(try makeContainer())
+        )
+        let reserved = await manager.reserveAdmission("r1")
+        XCTAssertTrue(reserved)
+        let reReserve = await manager.reserveAdmission("r1")
+        XCTAssertFalse(reReserve)
+        await manager.cancel("r1")
+        let afterCancel = await manager.reserveAdmission("r1")
+        XCTAssertTrue(afterCancel)
+    }
 }
