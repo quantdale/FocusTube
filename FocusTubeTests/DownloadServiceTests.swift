@@ -537,7 +537,10 @@ final class DownloadServiceTests: XCTestCase {
 
     func testRapidDuplicateDownloadStartsExactlyOneTransfer() async throws {
         // Two back-to-back starts without waiting for progress: admission is
-        // reserved synchronously, so exactly one transfer may begin.
+        // reserved synchronously, so exactly one transfer may begin. The first
+        // start runs in its own task; wait until it has actually reached the
+        // transport so the second call below is guaranteed to be the refused
+        // duplicate rather than racing it for the reservation.
         let gated = GatedTransport(tempLocation: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("unused-\(UUID().uuidString).mp4"))
         let manager = DownloadManager(transport: gated, context: ModelContext(try makeContainer()), validate: nil)
         let service = await DownloadService(
@@ -549,8 +552,10 @@ final class DownloadServiceTests: XCTestCase {
         let a = Task {
             await service.download(videoID: "vd", title: "T", channelTitle: "C", quality: .p720)
         }
-        // Second rapid start, fired before any progress event can populate
-        // the live projection.
+        await waitUntil({ gated.beginCount == 1 }, "first transfer never began")
+
+        // Second rapid start while the first is mid-flight: must be refused
+        // synchronously by admission, never re-enqueueing or re-beginning.
         await service.download(videoID: "vd", title: "T", channelTitle: "C", quality: .p720)
         XCTAssertEqual(gated.beginCount, 1)
 
@@ -661,7 +666,26 @@ final class DownloadServiceTests: XCTestCase {
     func testRetryFromFailureListReResolvesFreshComponents() async throws {
         // Mirrors the Downloads failed-list Retry button: re-invoking the
         // service must resolve fresh URLs (not replay expired persisted ones).
-        let switchable = SwitchableTransport(tempLocation: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("unused-\(UUID().uuidString).mp4"))
+        // The completion path needs a real staged temp and an existing
+        // destination, mirroring the other finalize-path fixtures.
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let mediaDirectory = root.appendingPathComponent("Media")
+        let destination = mediaDirectory
+            .appendingPathComponent("v25")
+            .appendingPathComponent("720")
+            .appendingPathComponent("media.mp4")
+        let temp = root.appendingPathComponent("component.mp4")
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([0x01, 0x02]).write(to: temp)
+        try Data([0x00]).write(to: destination)
+
+        let switchable = SwitchableTransport(tempLocation: temp)
         let extractor = PerVideoExtractor(mediaByID: [
             "v25": combinedMedia(videoID: "v25", resolution: 720)
         ])
@@ -670,14 +694,18 @@ final class DownloadServiceTests: XCTestCase {
         let service = await DownloadService(
             extractor: extractor,
             downloadManager: manager,
-            library: library
+            library: library,
+            mediaDirectory: mediaDirectory
         )
 
         await service.download(videoID: "v25", title: "Real Title", channelTitle: "Real Channel", quality: .p720)
         var failure = await service.lastFailure
         XCTAssertEqual(failure?.error, .transportFailed)
 
-        // The Retry button path: stored metadata feeds the new request.
+        // The Retry button path: stored metadata feeds the new request. The
+        // failure banner is acknowledged (dismissed) before retrying, so the
+        // post-retry assertion below proves the RETRY produced no new failure.
+        await service.acknowledgeFailure()
         let metadata = await manager.presentationMetadata(taskID: "v25-720")
         switchable.completeSubsequentTransfers()
         await service.download(
