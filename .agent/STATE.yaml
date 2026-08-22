@@ -1,28 +1,34 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-22T00:50:00+08:00
+updated_at: 2026-08-22T09:20:00+08:00
 
-campaign:
-  id: DEVICE_VALIDATION_V1
+active_campaign:
+  id: HARDENING_V2
   status: active
-  autonomy_mode: continuous
-  supervision: minimal
-  scope: DV-0..DV-9 release validation and remediation (no new features)
-  entry_state: personal_release_candidate
-  exit_gate: DV-9 final release validation report
-  on_exit: personal_release_validated | personal_release_validated_with_deferred_device_evidence
-  previous_campaigns:
-    - id: INTEGRATION_COMPLETION_V1
-      terminal_state: personal_release_candidate
-      evidence_commit: 03ce6f6
-      docs_commit: 47e1126
+  kind: adversarial second hardening campaign (no new features)
+  baseline: 4a7903f
+  exit_gate: H2-EXIT
+  on_exit: hardening_v2_complete_device_validation_pending
+suspended_campaign:
+  id: DEVICE_VALIDATION_V1
+  reason: awaiting_owner_device_evidence
+  pending_items:
+    - owner Part 0 setup (Apple team, Google OAuth client, Secrets.local.xcconfig)
+    - DEVICE_VALIDATION_BATCH_A.md items A1-A14
+    - one live_smoke workflow_dispatch run
+  restore_on_hardening_v2_exit: true
+previous_campaigns:
+  - id: INTEGRATION_COMPLETION_V1
+    terminal_state: personal_release_candidate
+    evidence_commit: 03ce6f6
+    docs_commit: 47e1126
 
-status: physical_device_validation_in_progress
-current_milestone: DEVICE_VALIDATION
-current_gate: DV-0_PASSED
-current_work_packet: DV-3..DV-7-DEVICE-EVIDENCE
-current_packet_status: awaiting_owner_device_evidence
+status: hardening_v2_in_progress
+current_milestone: HARDENING_V2
+current_gate: DV-0_PASSED (device validation) / H2-AUDIT (hardening v2)
+current_work_packet: H2-W1-VERIFY-SEED-FINDINGS
+current_packet_status: in_progress
 current_waypoint:
   id: DEVICE_VALIDATION_BATCH_A_PENDING
   objective: >
