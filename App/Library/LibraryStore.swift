@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SwiftData
 import os
 import FocusTubeCore
@@ -6,8 +7,20 @@ import FocusTubeCore
 /// Library store: watch history / resume, saves, and the offline-media index.
 /// Persists across relaunch, reconciles the file index with the filesystem, and
 /// deletes files + metadata atomically (no half-deleted final state).
+///
+/// `@Observable` with an explicit revision counter: the public collections are
+/// computed SwiftData fetches, so WITHOUT a tracked stored dependency mutated
+/// by every write, SwiftUI views rendering these lists would never invalidate
+/// on mid-session changes (e.g. a finished download registering while the
+/// Downloads tab is frontmost).
 @MainActor
+@Observable
 final class LibraryStore {
+    /// Bumped by every mutation; read by every collection getter so the
+    /// observation machinery ties list reads to write invalidation.
+    private var revision = 0
+
+    private func mutate() { revision &+= 1 }
     private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "library-store")
     private let context: ModelContext
     private let fileManager: FileManaging
@@ -47,6 +60,7 @@ final class LibraryStore {
                 completed: completed
             ))
         }
+        mutate()
         save()
     }
 
@@ -60,6 +74,7 @@ final class LibraryStore {
     }
 
     public var history: [WatchHistoryEntry] {
+        _ = revision
         do {
             // Most-recent-first so "Continue watching" reads chronologically.
             let descriptor = FetchDescriptor<WatchHistoryEntry>(
@@ -76,6 +91,7 @@ final class LibraryStore {
     public func removeHistory(videoID: String) {
         guard case let entry? = (try? historyEntryOrThrow(videoID)) else { return }
         context.delete(entry)
+        mutate()
         save()
     }
 
@@ -92,6 +108,7 @@ final class LibraryStore {
         }
         if existing == nil {
             context.insert(SavedItem(videoID: videoID, title: title, channelTitle: channelTitle, savedAt: Date()))
+            mutate()
             save()
         }
     }
@@ -106,10 +123,12 @@ final class LibraryStore {
     public func removeSaved(videoID: String) {
         guard case let existing? = (try? savedItemOrThrow(videoID)) else { return }
         context.delete(existing)
+        mutate()
         save()
     }
 
     public var saved: [SavedItem] {
+        _ = revision
         do {
             let descriptor = FetchDescriptor<SavedItem>(
                 sortBy: [SortDescriptor(\.savedAt, order: .reverse)]
@@ -154,10 +173,12 @@ final class LibraryStore {
         } else {
             context.insert(media)
         }
+        mutate()
         save()
     }
 
     public var downloaded: [DownloadedMedia] {
+        _ = revision
         do {
             let descriptor = FetchDescriptor<DownloadedMedia>(
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
@@ -171,10 +192,13 @@ final class LibraryStore {
 
     /// Removes index entries whose files no longer exist on disk (orphan cleanup).
     public func reconcileDownloads() {
+        var removedAny = false
         for item in downloaded where !fileManager.fileExists(at: item.fileURL) {
             context.delete(item)
             pruneEmptyAncestors(of: item.fileURL)
+            removedAny = true
         }
+        if removedAny { mutate() }
         save()
     }
 
@@ -204,6 +228,7 @@ final class LibraryStore {
         }
         pruneEmptyAncestors(of: item.fileURL)
         context.delete(item)
+        mutate()
         save()
     }
 

@@ -372,10 +372,12 @@ final class Journeys: XCTestCase {
             app.alerts["Download failed"].waitForExistence(timeout: 10),
             "transport failure must surface the typed failure alert"
         )
+        // iOS 26 hosts alert message copy outside the alert's staticTexts
+        // subtree; assert the typed cause app-wide instead.
         XCTAssertTrue(
-            app.alerts["Download failed"].staticTexts.matching(
+            app.staticTexts.matching(
                 NSPredicate(format: "label CONTAINS %@", "network problem")
-            ).firstMatch.exists,
+            ).firstMatch.waitForExistence(timeout: 5),
             "failure copy should explain the cause and whether retry can help"
         )
     }
