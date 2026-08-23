@@ -10,7 +10,6 @@ struct SearchView: View {
     let library: LibraryStore
 
     @State private var queryText = ""
-    @State private var showVideo = false
     @State private var selectedVideo: VideoSummary?
 
     var body: some View {
@@ -56,7 +55,6 @@ struct SearchView: View {
             ForEach(store.results) { video in
                 Button {
                     selectedVideo = video
-                    showVideo = true
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(video.title).lineLimit(2)
@@ -76,22 +74,20 @@ struct SearchView: View {
             }
         }
         .navigationTitle("Search")
-        .sheet(isPresented: $showVideo) {
-            if let video = selectedVideo {
-                NavigationStack {
-                    VideoPageView(
-                        video: video,
-                        coordinator: playerCoordinator,
-                        auth: auth,
-                        api: api,
-                        downloadService: downloadService,
-                        library: library
-                    )
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Close") { showVideo = false }
-                        }
-                    }
+        // Pushed video page (see LibraryView note): modal presentation of
+        // AVKit-hosting content is unreliable on current iOS 26 runtimes.
+        .navigationDestination(item: $selectedVideo) { video in
+            VideoPageView(
+                video: video,
+                coordinator: playerCoordinator,
+                auth: auth,
+                api: api,
+                downloadService: downloadService,
+                library: library
+            )
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { selectedVideo = nil }
                 }
             }
         }

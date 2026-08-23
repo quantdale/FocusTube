@@ -241,7 +241,6 @@ struct LibraryView: View {
     let downloadService: DownloadService
 
     @State private var selectedSummary: VideoSummary?
-    @State private var showVideo = false
 
     var body: some View {
         List {
@@ -296,22 +295,23 @@ struct LibraryView: View {
             }
         }
         .navigationTitle("Library")
-        .sheet(isPresented: $showVideo) {
-            if let summary = selectedSummary {
-                NavigationStack {
-                    VideoPageView(
-                        video: summary,
-                        coordinator: playerCoordinator,
-                        auth: auth,
-                        api: api,
-                        downloadService: downloadService,
-                        library: store
-                    )
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Close") { showVideo = false }
-                        }
-                    }
+        // The video page is a pushed route, not a modal sheet: modal
+        // presentation of AVKit-hosting content proved unreliable on current
+        // iOS 26 runtimes (content never reached the accessibility hierarchy),
+        // while a stack push keeps the deliberate long-form flow and gives the
+        // page real back-swipe/navigation semantics.
+        .navigationDestination(item: $selectedSummary) { summary in
+            VideoPageView(
+                video: summary,
+                coordinator: playerCoordinator,
+                auth: auth,
+                api: api,
+                downloadService: downloadService,
+                library: store
+            )
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { selectedSummary = nil }
                 }
             }
         }
@@ -319,7 +319,6 @@ struct LibraryView: View {
 
     private func open(_ summary: VideoSummary) {
         selectedSummary = summary
-        showVideo = true
     }
 
     /// Rebuilds the navigation payload from persisted fields; optional API-only
@@ -359,7 +358,6 @@ private struct HomeFeedView: View {
     let downloadService: DownloadService
     let library: LibraryStore
 
-    @State private var showVideo = false
     @State private var selectedVideo: VideoSummary?
 
     var body: some View {
@@ -401,7 +399,6 @@ private struct HomeFeedView: View {
             ForEach(store.videos) { video in
                 Button {
                     selectedVideo = video
-                    showVideo = true
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(video.title).lineLimit(2)
@@ -429,22 +426,20 @@ private struct HomeFeedView: View {
             await store.restore()
             await store.load()
         }
-        .sheet(isPresented: $showVideo) {
-            if let video = selectedVideo {
-                NavigationStack {
-                    VideoPageView(
-                        video: video,
-                        coordinator: playerCoordinator,
-                        auth: auth,
-                        api: api,
-                        downloadService: downloadService,
-                        library: library
-                    )
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Close") { showVideo = false }
-                        }
-                    }
+        // Pushed video page (see LibraryView note): modal presentation of
+        // AVKit-hosting content is unreliable on current iOS 26 runtimes.
+        .navigationDestination(item: $selectedVideo) { video in
+            VideoPageView(
+                video: video,
+                coordinator: playerCoordinator,
+                auth: auth,
+                api: api,
+                downloadService: downloadService,
+                library: library
+            )
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { selectedVideo = nil }
                 }
             }
         }
