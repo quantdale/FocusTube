@@ -329,26 +329,31 @@ final class Journeys: XCTestCase {
         XCTAssertEqual(app.staticTexts["video-title"].label, "Fixture Documentary One")
         XCTAssertTrue(app.staticTexts["video-channel"].exists)
 
-        // A coordinate tap can land during a player-overlay layout transition
-        // and miss the control; verify the state change and retry bounded.
-        // Verification must also use FRESH queries: captured elements can
-        // serve stale labels after SwiftUI rebuilds the row.
+        // Reveal first (no tap) so the pre-action label is observable, then
+        // toggle with bounded retries. All reads use fresh queries: captured
+        // elements can serve stale labels after SwiftUI rebuilds the row.
+        let revealTrace = interact(app, locate: { $0.buttons["save-toggle"].firstMatch }, tap: false)
+        XCTAssertTrue(revealTrace.isEmpty, "save action must be revealed [\(revealTrace)]")
+        XCTAssertEqual(
+            app.buttons["save-toggle"].firstMatch.label,
+            "Save video",
+            "accessibility label reflects the action, not the state"
+        )
+
         var toggledToSaved = false
-        var sawActionLabel = false
         for _ in 0..<3 {
             let saveTrace = interact(app, locate: { $0.buttons["save-toggle"].firstMatch }, tap: true)
-            XCTAssertTrue(saveTrace.isEmpty, "save action must be revealed [\(saveTrace)]")
-            let freshSave = app.buttons["save-toggle"].firstMatch
-            guard freshSave.exists else { continue }
-            if freshSave.label == "Save video" { sawActionLabel = true }
+            XCTAssertTrue(saveTrace.isEmpty, "save action must be tappable [\(saveTrace)]")
             let savedLabel = NSPredicate(format: "label == %@", "Remove from saved")
-            let savedExpectation = XCTNSPredicateExpectation(predicate: savedLabel, object: freshSave)
+            let savedExpectation = XCTNSPredicateExpectation(
+                predicate: savedLabel,
+                object: app.buttons["save-toggle"].firstMatch
+            )
             if XCTWaiter.wait(for: [savedExpectation], timeout: 3) == .completed {
                 toggledToSaved = true
                 break
             }
         }
-        XCTAssertTrue(sawActionLabel, "accessibility label must reflect the action ('Save video'), not the state")
         XCTAssertTrue(
             toggledToSaved,
             "save toggle must reflect saved state; label was '\(app.buttons["save-toggle"].firstMatch.label)'"
