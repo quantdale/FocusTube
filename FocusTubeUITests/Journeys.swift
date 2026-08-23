@@ -83,18 +83,38 @@ final class Journeys: XCTestCase {
         return trace + ";" + treeDiagnostics(app)
     }
 
-    /// Brings an off-screen element into the lazy List hierarchy with bounded
-    /// swipes. SwiftUI Lists on current iOS runtimes only materialize rows near
-    /// the viewport, so below-the-fold controls (Save, download quality,
-    /// comments) do not exist for XCUITest until the list scrolls to them.
+    /// Brings an element into the lazy List hierarchy AND into a tappable
+    /// position. SwiftUI Lists on current iOS runtimes materialize only rows
+    /// near the viewport, and scrolling can overshoot an element above the
+    /// top edge where its hit point is invalid — so this alternates
+    /// swipe-up (until it exists) with swipe-down nudges (until hittable).
     @discardableResult
-    private func scrollToExist(_ app: XCUIApplication, _ element: XCUIElement, maxSwipes: Int = 5) -> Bool {
+    private func scrollToHittable(_ app: XCUIApplication, _ element: XCUIElement, maxSwipes: Int = 10) -> Bool {
         var swipes = 0
-        while !element.exists, swipes < maxSwipes {
-            app.swipeUp()
+        while swipes < maxSwipes {
+            if element.exists, element.isHittable { return true }
+            if element.exists {
+                // Materialized but outside the tappable viewport: nudge back.
+                app.swipeDown()
+            } else {
+                app.swipeUp()
+            }
             swipes += 1
         }
-        return element.exists
+        return element.exists && element.isHittable
+    }
+
+    /// Waits until the element exists, scrolls it into a tappable position,
+    /// and waits until it is enabled — a tap on a disabled control is
+    /// silently swallowed, which manifests downstream as "the action never
+    /// happened".
+    @discardableResult
+    private func waitTappable(_ app: XCUIApplication, _ element: XCUIElement, timeout: TimeInterval = 10) -> Bool {
+        guard element.waitForExistence(timeout: timeout) else { return false }
+        guard scrollToHittable(app, element) else { return false }
+        let enabled = NSPredicate(format: "isEnabled == true")
+        let expectation = XCTNSPredicateExpectation(predicate: enabled, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     // MARK: - Journey A: shell
@@ -268,8 +288,7 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(app.staticTexts["video-channel"].exists)
 
         let save = app.buttons["save-toggle"]
-        scrollToExist(app, save)
-        XCTAssertTrue(save.exists, "save action must exist once scrolled into the lazy hierarchy")
+        XCTAssertTrue(waitTappable(app, save), "save action must exist, be visible, and be enabled")
         XCTAssertEqual(save.label, "Save video", "accessibility label reflects the action, not the state")
         save.tap()
         XCTAssertEqual(
@@ -278,8 +297,7 @@ final class Journeys: XCTestCase {
         )
 
         let download = app.buttons["download-button"]
-        scrollToExist(app, download)
-        XCTAssertTrue(download.exists)
+        XCTAssertTrue(waitTappable(app, download))
         XCTAssertTrue(download.isEnabled, "picker must offer qualities resolved by the extractor")
 
         let comment = app.staticTexts["Fixture comment alpha"]
@@ -333,8 +351,10 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
 
         let download = app.buttons["download-button"]
-        scrollToExist(app, download)
-        XCTAssertTrue(download.exists, "download action must appear once qualities resolve")
+        XCTAssertTrue(
+            waitTappable(app, download),
+            "download action must appear once qualities resolve [\(trace)]"
+        )
         download.tap()
 
         app.tabBars.buttons["Downloads"].tap()
@@ -369,8 +389,10 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
 
         let download = app.buttons["download-button"]
-        scrollToExist(app, download)
-        XCTAssertTrue(download.exists, "download action must appear once qualities resolve")
+        XCTAssertTrue(
+            waitTappable(app, download),
+            "download action must appear once qualities resolve [\(trace)]"
+        )
         download.tap()
 
         XCTAssertTrue(
