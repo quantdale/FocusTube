@@ -57,6 +57,14 @@ jobs:
           set -o pipefail
           xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-build.log
 
+      # Release configuration must compile independently (RELEASE_CONFIDENCE_V1
+      # Wave 13): proves optimization settings, the absence of DEBUG-only test
+      # fixtures, and release signing-exempt packaging all stay healthy.
+      - name: Build (Release)
+        run: |
+          set -o pipefail
+          xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -configuration Release             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-release.log
+
       # App-hosted unit tests, bounded per test so one hung test cannot eat the
       # job. A watchdog emits the last observed test line as an annotation while
       # the step runs, because remote agents cannot read Actions logs without
@@ -136,6 +144,7 @@ jobs:
           tail_annotation("unit", "Artifacts/xcodebuild-unit.log")
           tail_annotation("ui", "Artifacts/xcodebuild-ui.log")
           tail_annotation("build", "Artifacts/xcodebuild-build.log")
+          tail_annotation("release", "Artifacts/xcodebuild-release.log")
           PY
           {
             echo "### xcodebuild errors"
@@ -145,6 +154,10 @@ jobs:
             echo "### Build log tail"
             echo '```'
             tail -40 Artifacts/xcodebuild-build.log 2>/dev/null || true
+            echo '```'
+            echo "### Release log tail"
+            echo '```'
+            tail -40 Artifacts/xcodebuild-release.log 2>/dev/null || true
             echo '```'
             echo "### Unit log tail"
             echo '```'

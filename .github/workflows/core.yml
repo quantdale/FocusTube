@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One deterministic core run per ref at a time; newer pushes supersede older.
+concurrency:
+  group: core-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core:
     runs-on: macos-26

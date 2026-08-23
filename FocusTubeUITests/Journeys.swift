@@ -46,6 +46,23 @@ final class Journeys: XCTestCase {
         )
     }
 
+    // MARK: - Journey B2: signed-in Home error recovery
+
+    func testHomeFeedErrorSurfacesAndRetryStaysInteractive() {
+        let app = launch("home-network-error")
+        XCTAssertTrue(
+            app.staticTexts["Network error loading your subscriptions."].waitForExistence(timeout: 5),
+            "feed failure must be visible, never a silent blank list"
+        )
+        let retry = app.buttons["Try again"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        retry.tap()
+        XCTAssertTrue(
+            app.staticTexts["Network error loading your subscriptions."].waitForExistence(timeout: 5),
+            "repeated failure stays in a coherent recoverable error state"
+        )
+    }
+
     // MARK: - Journey C: signed-in Home
 
     func testHomeFeedLoadsAndExplicitLoadMoreAppends() {

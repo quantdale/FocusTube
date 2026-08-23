@@ -382,6 +382,22 @@ private struct HomeFeedView: View {
             if store.isLoading {
                 ProgressView("Loading feed…")
             }
+            if let error = store.error {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(Self.errorLabel(error), systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                    Button("Try again") {
+                        Task { await store.load() }
+                    }
+                }
+                .accessibilityIdentifier("home-error")
+            } else if !store.isLoading,
+                      store.isAuthenticated,
+                      store.videos.isEmpty {
+                Text("No long-form videos from your subscriptions yet.")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("home-empty")
+            }
             ForEach(store.videos) { video in
                 Button {
                     selectedVideo = video
@@ -405,6 +421,11 @@ private struct HomeFeedView: View {
         }
         .navigationTitle("Home")
         .task {
+            // Auto-load ONLY a still-empty feed: tab switches must not re-fetch
+            // the whole subscription aggregate (quota churn) or clobber scroll
+            // position. Explicit recovery paths are the Try-again button and
+            // the sign-in CTA.
+            guard store.videos.isEmpty else { return }
             await store.restore()
             await store.load()
         }
@@ -426,6 +447,16 @@ private struct HomeFeedView: View {
                     }
                 }
             }
+        }
+    }
+
+    private static func errorLabel(_ error: YouTubeAPIError) -> String {
+        switch error {
+        case .quotaExceeded: return "Subscription quota exceeded. Try again later."
+        case .unauthorized: return "Sign in to see your subscriptions."
+        case .network: return "Network error loading your subscriptions."
+        case .unknown: return "Couldn't load your subscriptions."
+        default: return "Subscriptions unavailable."
         }
     }
 }

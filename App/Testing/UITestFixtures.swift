@@ -229,6 +229,7 @@ final class ScriptedDownloadTransport: DownloadTransport, @unchecked Sendable {
 enum FixtureLibrarySeeder {
     /// Seeds history/saved rows once per store file so relaunch journeys can
     /// prove persistence without re-seeding duplicates.
+    @MainActor
     static func seedIfNeeded(_ library: LibraryStore) {
         guard library.history.isEmpty, library.saved.isEmpty else { return }
         library.recordProgress(
