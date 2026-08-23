@@ -83,16 +83,12 @@ final class Journeys: XCTestCase {
         return trace + ";" + treeDiagnostics(app)
     }
 
-        /// Reveals an element inside a visible window using FRAME GEOMETRY
-    /// (never `isHittable`, which reports false for plainly visible SwiftUI
-    /// List rows on iOS 26) and optionally taps via normalized coordinate —
-    /// bypassing activation-point validation — after the control reports
-    /// enabled, because a tap delivered to a disabled control is silently
-    /// swallowed.
-    ///
-    /// `locate` is re-resolved on EVERY read: a captured XCUIElement can
-    /// serve stale cached frames after SwiftUI rebuilds list rows, which
-    /// otherwise drives geometry decisions against phantom positions.
+            /// Reveals an element fully inside the visible window (with a safety
+    /// margin) using FRAME GEOMETRY, requires its frame to hold still across
+    /// a real time gap (mid-push-animation snapshots can fake stability via
+    /// cached results), then performs a NATIVE tap — valid whenever the
+    /// activation point is comfortably on screen, which the margin
+    /// guarantees. Never trusts `isHittable` (unreliable on iOS 26).
     /// Returns "" on success, otherwise a diagnostic trace.
     private func interact(
         _ app: XCUIApplication,
@@ -113,55 +109,53 @@ final class Journeys: XCTestCase {
         guard !win.isNull else {
             return "no-usable-window;windows=\(windowCount);appFrame=\(app.frame)"
         }
+
+        func visible(_ f: CGRect) -> Bool {
+            let margin: CGFloat = 24
+            return f.height > 0
+                && f.minY >= win.minY + margin
+                && f.maxY <= win.maxY - margin
+                && f.minX >= win.minX
+                && f.maxX <= win.maxX
+        }
+
         var swipes = 0
+        var settled: XCUIElement?
         while swipes < 16 {
             let current = locate(app)
             if current.exists {
                 let f = current.frame
-                if f.height > 0 {
-                    if f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 { break }
+                if visible(f) {
+                    // Require the SAME frame again after a real runloop gap;
+                    // two immediate reads can share one cached snapshot.
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+                    let recheck = locate(app)
+                    if recheck.exists, recheck.frame == f {
+                        settled = recheck
+                        break
+                    }
+                } else if f.height > 0 {
                     if f.maxY < win.midY { app.swipeDown() } else { app.swipeUp() }
                 }
-                // Degenerate frame: the cell exists but has not been laid
-                // out yet; re-snapshot after a beat.
+                // Degenerate frame: cell realized but not laid out yet.
             } else {
                 app.swipeUp()
             }
             swipes += 1
-            _ = locate(app).waitForExistence(timeout: 1)
         }
-        let el = locate(app)
-        guard el.exists else {
-            return "never-existed-after-\(swipes)-swipes;tree=\(treeDiagnostics(app))"
-        }
-        // Stability gate: a frame captured mid push/overlay animation keeps
-        // moving after the snapshot; tapping such a coordinate can land on
-        // whatever settles under it (including toolbar actions). Require the
-        // frame to hold still across a short evaluation window, then act on
-        // the settled position.
-        var preFrame = el.frame
-        var stableCheck = NSPredicate { _, _ in locate(app).frame == preFrame }
-        _ = XCTWaiter.wait(
-            for: [XCTNSPredicateExpectation(predicate: stableCheck, object: el)],
-            timeout: 2
-        )
-        let settled = locate(app)
-        guard settled.exists else {
-            return "vanished-during-settle"
-        }
-        let f = settled.frame
-        guard f.height > 0, f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 else {
-            return "offscreen-after-settle;frame=\(f);win=\(win);swipes=\(swipes);tree=\(treeDiagnostics(app))"
+
+        guard let el = settled else {
+            return "not-revealed-after-\(swipes)-attempts;tree=\(treeDiagnostics(app))"
         }
         guard tap else { return "" }
         let enabled = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isEnabled == true"),
-            object: settled
+            object: el
         )
         guard XCTWaiter.wait(for: [enabled], timeout: timeout) == .completed else {
-            return "never-enabled;frame=\(f);win=\(win)"
+            return "never-enabled;frame=\(el.frame)"
         }
-        settled.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        el.tap()
         return ""
     }
 
