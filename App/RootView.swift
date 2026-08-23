@@ -7,13 +7,12 @@ struct RootView: View {
 
     let dependencies: AppDependencies
 
-    @State private var homeStore = HomeFeedStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
-    @State private var searchStore = SearchStore(auth: GoogleSignInAuthSession(), api: YouTubeDataClient())
-    @State private var auth: AuthSession = GoogleSignInAuthSession()
-    @State private var api: YouTubeAPI = YouTubeDataClient()
-
     // Long-lived dependencies are owned by AppDependencies (created once per
     // process); these accessors keep the body below readable.
+    private var homeStore: HomeFeedStore { dependencies.homeStore }
+    private var searchStore: SearchStore { dependencies.searchStore }
+    private var auth: AuthSession { dependencies.auth }
+    private var api: YouTubeAPI { dependencies.api }
     private var playerCoordinator: PlayerCoordinator { dependencies.playerCoordinator }
     private var libraryStore: LibraryStore { dependencies.libraryStore }
     private var downloadManager: DownloadManager { dependencies.downloadManager }
@@ -190,9 +189,11 @@ struct DownloadsView: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.title).lineLimit(2)
+                                    .accessibilityIdentifier("downloaded-row-title")
                                 Text("\(item.resolution)p · \(item.sizeBytes) bytes").font(.caption).foregroundStyle(.secondary)
                             }
                         }
+                        .accessibilityIdentifier("downloaded-row")
                         Spacer()
                         Button(role: .destructive) {
                             pendingDelete = item
@@ -215,8 +216,8 @@ struct DownloadsView: View {
                 get: { pendingDelete != nil },
                 set: { if !$0 { pendingDelete = nil } }
             ),
-            presenting: pendingDelete,
-            titleVisibility: .visible
+            titleVisibility: .visible,
+            presenting: pendingDelete
         ) { media in
             Button("Delete", role: .destructive) {
                 store.deleteDownloadedMedia(id: media.id)
@@ -261,6 +262,7 @@ struct LibraryView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .accessibilityIdentifier("library-history-row")
                     .accessibilityHint("Opens the video and resumes where you left off")
                 }
                 .onDelete { offsets in
@@ -283,6 +285,7 @@ struct LibraryView: View {
                             Text(item.channelTitle).font(.caption).foregroundStyle(.secondary)
                         }
                     }
+                    .accessibilityIdentifier("library-saved-row")
                     .accessibilityHint("Opens the saved video")
                 }
                 .onDelete { offsets in
@@ -389,6 +392,7 @@ private struct HomeFeedView: View {
                         Text(video.channelTitle).font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                .accessibilityIdentifier("feed-video-row")
             }
             if store.nextPageToken != nil {
                 Button {
@@ -396,6 +400,7 @@ private struct HomeFeedView: View {
                 } label: {
                     Label("Load more", systemImage: "arrow.down.circle")
                 }
+                .accessibilityIdentifier("load-more-button")
             }
         }
         .navigationTitle("Home")

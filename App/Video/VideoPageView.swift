@@ -44,9 +44,11 @@ struct VideoPageView: View {
             Section {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(video.title).font(.headline)
+                        .accessibilityIdentifier("video-title")
                     Text(video.channelTitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("video-channel")
                 }
                 Button {
                     if isSaved {
@@ -67,6 +69,7 @@ struct VideoPageView: View {
                     )
                 }
                 .accessibilityLabel(isSaved ? "Remove from saved" : "Save video")
+                .accessibilityIdentifier("save-toggle")
             }
 
             Section("Download quality") {
@@ -91,6 +94,7 @@ struct VideoPageView: View {
                     }
                 }
                 .disabled(downloadInFlight || qualities.isEmpty)
+                .accessibilityIdentifier("download-button")
             }
 
             Section("Comments") {

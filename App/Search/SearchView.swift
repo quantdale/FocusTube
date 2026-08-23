@@ -22,10 +22,12 @@ struct SearchView: View {
                         .submitLabel(.search)
                         .onSubmit(submit)
                         .accessibilityLabel("Search query")
+                        .accessibilityIdentifier("search-field")
                     Button("Search") {
                         submit()
                     }
                     .disabled(queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("search-submit-button")
                 }
             }
 
@@ -61,6 +63,7 @@ struct SearchView: View {
                         Text(video.channelTitle).font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                .accessibilityIdentifier("search-result-row")
             }
 
             if store.nextPageToken != nil {
@@ -69,6 +72,7 @@ struct SearchView: View {
                 } label: {
                     Label("Load more", systemImage: "arrow.down.circle")
                 }
+                .accessibilityIdentifier("load-more-button")
             }
         }
         .navigationTitle("Search")
