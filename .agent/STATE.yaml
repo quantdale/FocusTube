@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-23T13:35:00+08:00
+updated_at: 2026-08-23T14:20:00+08:00
 
 active_campaign:
   id: DEVICE_VALIDATION_V1
@@ -81,6 +81,14 @@ repo_baseline:
     baseline green again (swift build clean; swift test 74 XCTest + 11
     swift-testing, 0 failures). Full release-readiness config audit PASS,
     zero defects: see .agent/checkpoints/20260823-DV-readiness-reaudit.md.
+  takeover_2026_08_23_b: >
+    Second same-day verification session at HEAD 51e1850: Core Tests run
+    32620238065 SUCCESS and iOS CI run 32620238054 SUCCESS on the docs tip;
+    local swift test green again (74+11, 0 failures); smoke opt-in gating
+    re-inspected (XCTSkipIf on FOCUSTUBE_LIVE_SMOKE; push/PR deterministic);
+    live-smoke dispatch re-attempted and confirmed blocked — gh
+    unauthenticated, no ambient tokens, anonymous API cannot POST dispatch
+    events. See .agent/checkpoints/20260823-DV-takeover-live-smoke-blocked.md.
 
 continuation_policy:
   continue_after_packet: true
