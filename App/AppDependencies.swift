@@ -106,6 +106,7 @@ final class AppDependencies {
             container: container,
             mediaDirectory: scratch.appendingPathComponent("Media"),
             incompleteDirectory: scratch.appendingPathComponent("Incomplete"),
+            storage: FixtureStorage(),
             // The scripted transport writes plain bytes; AVFoundation track
             // validation cannot pass on them (and must not run) in fixtures.
             validate: nil
@@ -123,6 +124,7 @@ final class AppDependencies {
         container: ModelContainer,
         mediaDirectory: URL,
         incompleteDirectory: URL,
+        storage: StorageProviding = VolumeStorage(),
         validate: (@Sendable (URL) async throws -> Void)?
     ) {
         self.auth = auth
@@ -131,6 +133,7 @@ final class AppDependencies {
         let manager = DownloadManager(
             transport: transport,
             context: ModelContext(container),
+            storage: storage,
             mediaDirectory: mediaDirectory,
             incompleteDirectory: incompleteDirectory,
             validate: validate

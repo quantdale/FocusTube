@@ -193,6 +193,13 @@ struct FixtureExtractor: MediaExtracting {
 
 // MARK: - Scripted download transport
 
+/// Deterministic admission: fixtures must never depend on host-disk free
+/// space (a failed/low volume query refuses transfers conservatively with
+/// zero bytes).
+struct FixtureStorage: StorageProviding {
+    func availableCapacity(for url: URL) -> Int64 { 512 * 1024 * 1024 * 1024 }
+}
+
 /// Drives the REAL coordinator/manager/service state machine with deterministic
 /// byte events. `failsAfterProgress` switches the script to a transport failure.
 final class ScriptedDownloadTransport: DownloadTransport, @unchecked Sendable {

@@ -99,6 +99,10 @@ final class Journeys: XCTestCase {
         // NOTE: no up-front existence wait — below-the-fold List rows do not
         // exist AT ALL until the list scrolls near them, so waiting first
         // simply times out. Swipe-and-recheck from the start.
+        // Give near-viewport rows a moment to materialize before deciding to
+        // scroll; treat empty frames as "layout not settled" (wait), never as
+        // a scroll-direction signal.
+        _ = element.waitForExistence(timeout: 6)
         var win = CGRect.null
         let windowCount = app.windows.count
         for index in 0..<max(windowCount, 0) {
@@ -116,13 +120,17 @@ final class Journeys: XCTestCase {
         while swipes < 14 {
             if element.exists {
                 let f = element.frame
-                if f.height > 0, f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 { break }
-                if f.maxY < win.midY { app.swipeDown() } else { app.swipeUp() }
+                if f.height > 0 {
+                    if f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 { break }
+                    if f.maxY < win.midY { app.swipeDown() } else { app.swipeUp() }
+                } else {
+                    _ = element.waitForExistence(timeout: 1)
+                }
             } else {
                 app.swipeUp()
+                _ = element.waitForExistence(timeout: 2)
             }
             swipes += 1
-            _ = element.waitForExistence(timeout: 2)
         }
         guard element.exists else { return "never-existed-after-\(swipes)-swipes" }
         let f = element.frame
@@ -381,6 +389,12 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(
             dlTrace.isEmpty,
             "download action must appear once qualities resolve [\(trace);\(dlTrace)]"
+        )
+        // Precise signal if the scripted happy path ever surfaces a failure:
+        // registration cannot succeed when admission refused the transfer.
+        XCTAssertFalse(
+            app.alerts["Download failed"].waitForExistence(timeout: 2),
+            "scripted happy-path download must not surface a failure alert"
         )
 
         app.tabBars.buttons["Downloads"].tap()
