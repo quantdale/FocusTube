@@ -32,7 +32,6 @@ public struct PlayerView: View {
     public var body: some View {
         ZStack {
             PlayerViewControllerRepresentation(controller: coordinator.playerViewController)
-                .ignoresSafeArea(edges: .bottom)
 
             switch coordinator.state.status {
             case .loading:
@@ -64,5 +63,11 @@ public struct PlayerView: View {
                 EmptyView()
             }
         }
+        // Hard internal bound: overlay states propose unbounded flexible
+        // frames, and an unconstrained ZStack lets them inflate the hosting
+        // List row (pushing every following section below the lazy-render
+        // fold) on current iOS runtimes. The caller applies the same height;
+        // this makes the contract local to the player surface.
+        .frame(height: 240)
     }
 }

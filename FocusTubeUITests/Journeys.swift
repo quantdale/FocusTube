@@ -83,6 +83,20 @@ final class Journeys: XCTestCase {
         return trace + ";" + treeDiagnostics(app)
     }
 
+    /// Brings an off-screen element into the lazy List hierarchy with bounded
+    /// swipes. SwiftUI Lists on current iOS runtimes only materialize rows near
+    /// the viewport, so below-the-fold controls (Save, download quality,
+    /// comments) do not exist for XCUITest until the list scrolls to them.
+    @discardableResult
+    private func scrollToExist(_ app: XCUIApplication, _ element: XCUIElement, maxSwipes: Int = 5) -> Bool {
+        var swipes = 0
+        while !element.exists, swipes < maxSwipes {
+            app.swipeUp()
+            swipes += 1
+        }
+        return element.exists
+    }
+
     // MARK: - Journey A: shell
 
     func testShellTabsExistAndSwitchWithoutCorruption() {
@@ -252,10 +266,10 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(title.exists, "video title must render [\(trace)]")
         XCTAssertEqual(app.staticTexts["video-title"].label, "Fixture Documentary One")
         XCTAssertTrue(app.staticTexts["video-channel"].exists)
-        XCTAssertTrue(app.staticTexts["Fixture comment alpha"].waitForExistence(timeout: 5))
 
         let save = app.buttons["save-toggle"]
-        XCTAssertTrue(save.exists)
+        scrollToExist(app, save)
+        XCTAssertTrue(save.exists, "save action must exist once scrolled into the lazy hierarchy")
         XCTAssertEqual(save.label, "Save video", "accessibility label reflects the action, not the state")
         save.tap()
         XCTAssertEqual(
@@ -264,8 +278,13 @@ final class Journeys: XCTestCase {
         )
 
         let download = app.buttons["download-button"]
-        XCTAssertTrue(waitExists(download))
+        scrollToExist(app, download)
+        XCTAssertTrue(download.exists)
         XCTAssertTrue(download.isEnabled, "picker must offer qualities resolved by the extractor")
+
+        let comment = app.staticTexts["Fixture comment alpha"]
+        scrollToExist(app, comment)
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
 
         app.buttons["Close"].tap()
         XCTAssertTrue(
@@ -309,10 +328,13 @@ final class Journeys: XCTestCase {
     func testDownloadCompletesRegistersAndDeletes() {
         let app = launch("download-flow")
         XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
-        let download = app.buttons["download-button"]
-        let trace = openVideoPageFromFeed(app, expecting: download)
+        let page = app.staticTexts["video-title"]
+        let trace = openVideoPageFromFeed(app, expecting: page)
+        XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
 
-        XCTAssertTrue(download.exists, "download action must appear once qualities resolve [\(trace)]")
+        let download = app.buttons["download-button"]
+        scrollToExist(app, download)
+        XCTAssertTrue(download.exists, "download action must appear once qualities resolve")
         download.tap()
 
         app.tabBars.buttons["Downloads"].tap()
@@ -337,10 +359,13 @@ final class Journeys: XCTestCase {
     func testDownloadFailureSurfacesTypedAlert() {
         let app = launch("download-failure")
         XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
-        let download = app.buttons["download-button"]
-        let trace = openVideoPageFromFeed(app, expecting: download)
+        let page = app.staticTexts["video-title"]
+        let trace = openVideoPageFromFeed(app, expecting: page)
+        XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
 
-        XCTAssertTrue(download.exists, "download action must appear once qualities resolve [\(trace)]")
+        let download = app.buttons["download-button"]
+        scrollToExist(app, download)
+        XCTAssertTrue(download.exists, "download action must appear once qualities resolve")
         download.tap()
 
         XCTAssertTrue(
