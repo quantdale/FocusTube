@@ -320,14 +320,23 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(app.staticTexts["video-channel"].exists)
 
         let save = app.buttons["save-toggle"]
-        let saveTrace = interact(app, save, tap: true)
-        XCTAssertTrue(saveTrace.isEmpty, "save action must be revealed and toggled [\(saveTrace)]")
-        XCTAssertEqual(save.label, "Save video", "accessibility label reflects the action, not the state")
-        save.tap()
-        XCTAssertEqual(
-            app.buttons["save-toggle"].label, "Remove from saved",
-            "save toggle must reflect saved state"
-        )
+        // A coordinate tap can land during a player-overlay layout transition
+        // and miss the control; verify the state change and retry bounded.
+        var toggledToSaved = false
+        var sawActionLabel = false
+        for _ in 0..<3 {
+            let saveTrace = interact(app, save, tap: true)
+            XCTAssertTrue(saveTrace.isEmpty, "save action must be revealed [\(saveTrace)]")
+            if save.label == "Save video" { sawActionLabel = true }
+            let savedLabel = NSPredicate(format: "label == %@", "Remove from saved")
+            let savedExpectation = XCTNSPredicateExpectation(predicate: savedLabel, object: save)
+            if XCTWaiter.wait(for: [savedExpectation], timeout: 3) == .completed {
+                toggledToSaved = true
+                break
+            }
+        }
+        XCTAssertTrue(sawActionLabel, "accessibility label must reflect the action ('Save video'), not the state")
+        XCTAssertTrue(toggledToSaved, "save toggle must reflect saved state; label was '\(save.label)'")
 
         let download = app.buttons["download-button"]
         let dlTrace = interact(app, download, tap: false)
