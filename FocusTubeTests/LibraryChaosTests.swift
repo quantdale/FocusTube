@@ -124,4 +124,26 @@ final class LibraryChaosTests: XCTestCase {
         let count = await store.downloaded.count
         XCTAssertEqual(count, 0, "missing legacy file + nil channelTitle sweeps cleanly")
     }
+
+    func testBlankChannelTitleOnRetryNeverClobbersKnownChannel() async throws {
+        // The failed-download Retry path re-invokes the service without a
+        // captured channel title (""); the upsert must keep the real one.
+        let container = try makeContainer()
+        let fileURL = try makeTempFile(bytes: [0x05])
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let store = LibraryStore(context: ModelContext(container))
+
+        await store.addDownloadedMedia(DownloadedMedia(
+            id: "rc", videoID: "v", title: "Real Title", resolution: 720,
+            fileURL: fileURL, sizeBytes: 1, createdAt: Date(), channelTitle: "Real Channel"
+        ))
+        await store.addDownloadedMedia(DownloadedMedia(
+            id: "rc", videoID: "v", title: "Real Title", resolution: 720,
+            fileURL: fileURL, sizeBytes: 1, createdAt: Date(), channelTitle: ""
+        ))
+
+        let downloaded = await store.downloaded
+        XCTAssertEqual(downloaded.count, 1)
+        XCTAssertEqual(downloaded.first?.channelTitle, "Real Channel")
+    }
 }

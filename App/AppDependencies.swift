@@ -79,7 +79,7 @@ final class AppDependencies {
         // every other scenario stays fully in-memory for isolation.
         let container: ModelContainer
         if scenario == .librarySeeded {
-            let config = ModelConfiguration(url: FixtureLibrarySeeder.containerURL, schema: schema)
+            let config = ModelConfiguration(schema: schema, url: FixtureLibrarySeeder.containerURL)
             container = (try? ModelContainer(for: schema, configurations: [config]))
                 ?? (try! ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]))
         } else {

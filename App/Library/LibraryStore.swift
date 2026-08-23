@@ -135,15 +135,18 @@ final class LibraryStore {
             return
         }
         if let existing {
-            // Never downgrade a real title to a videoID-shaped placeholder:
-            // background completion can register before/after in-app
-            // registration with only the videoID at hand.
+            // Never downgrade real presentation metadata: background
+            // completion may register with only the videoID, and the failed-
+            // download retry path may carry an empty channel title. Absent or
+            // blank must never clobber a known value.
             let newIsPlaceholder = media.title == media.videoID
             let existingIsPlaceholder = existing.title == existing.videoID
             if !newIsPlaceholder || existingIsPlaceholder {
                 existing.title = media.title
             }
-            existing.channelTitle = media.channelTitle ?? existing.channelTitle
+            if let channelTitle = media.channelTitle, !channelTitle.isEmpty {
+                existing.channelTitle = channelTitle
+            }
             existing.resolution = media.resolution
             existing.fileURL = media.fileURL
             existing.sizeBytes = media.sizeBytes
