@@ -58,21 +58,21 @@ current_waypoint:
 resume_token: DEVICE_VALIDATION_V1:2c7646d
 repo_baseline:
   branch: main
-  commit: b224098
+  commit: ab30b51
   note: >
     HARDENING_V2 recovery complete on 2c7646d with both workflows green:
-    Core Tests run 32584881846; iOS CI run 32584881870 (job 97059652867 —
-    Build success, Unit tests Executed 75 / 0 failures / 4 skipped, UI tests
-    Executed 1 / 0 failures, Gate success). Subsequent evidence commits carry
-    their own observed green runs: c318ae7 -> Core 32585836440 / iOS CI
-    32585836433 (job 97061945271); b224098 (current HEAD) -> Core run
-    32592587334 and iOS CI run 32592587296 (job 97078582115; unit Executed
-    75 / 0 failures / 4 skipped, UI Executed 1 / 0 failures) both success.
-    Windows local baseline also green: swift build clean; swift test
-    "Executed 74 tests, with 0 failures" repeated runs (Swift 6.3.3).
-    Interrupted-commit diagnostics (ann.json/jobid.txt/jobs.json/runs.json
-    from a2134f1) removed in forward commit e513234 after their evidence was
-    preserved in .agent/checkpoints/20260822-H2-recovery.md.
+    Core Tests run 32584881846; iOS CI run 32584881870 (job 97059652867).
+    Every subsequent commit carries its own observed green push-triggered
+    runs: c318ae7 -> Core 32585836440 / iOS CI 32585836433; b224098 -> Core
+    32592587334 / iOS CI 32592587296 (unit 75/0/4 skipped, UI 1/0);
+    ab30b51 (current tip) -> Core 32607499216 / iOS CI 32607499244. Windows
+    local baseline also green: swift build clean; swift test "Executed 74
+    tests, with 0 failures" repeated runs (Swift 6.3.3).
+  pointer_convention: >
+    Docs-only commits (STATE/checkpoints/README) do NOT require refreshing
+    this baseline pointer or re-recording their own CI runs; the code
+    lineage they document is already evidenced. Refresh this pointer only
+    when a code-affecting change lands or a workflow turns red.
 
 continuation_policy:
   continue_after_packet: true
@@ -182,10 +182,15 @@ human_inputs_pending:
   - id: live-smoke-dispatch
     detail: >
       One opt-in live_smoke run of ios-ci (workflow_dispatch input) for real
-      YouTube extraction/download/mux evidence. Requires authenticated GitHub
-      access (gh auth login) or a manual Actions-page dispatch by the owner;
-      anonymous API cannot trigger workflow_dispatch. Repository secrets are
-      already configured from Part 0 plumbing (6a0d48e).
+      YouTube extraction/download/mux evidence. As of 2026-08-23 no
+      workflow_dispatch event exists in repository history: dispatch has
+      never been attempted. Requires authenticated GitHub access (gh auth
+      login on the authoring host, then gh workflow run ios-ci.yml --ref
+      main -f live_smoke=true) or a manual Actions-page dispatch by the
+      owner; anonymous API cannot trigger workflow_dispatch. Repository
+      secrets are already configured from Part 0 plumbing (6a0d48e).
+      Config/Secrets.local.xcconfig verified ABSENT locally — Part 0 not
+      yet started on the authoring machine.
 
 physical_device_checks_deferred:
   - PiP real-device behavior
