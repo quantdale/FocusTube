@@ -134,19 +134,34 @@ final class Journeys: XCTestCase {
         guard el.exists else {
             return "never-existed-after-\(swipes)-swipes;tree=\(treeDiagnostics(app))"
         }
-        let f = el.frame
+        // Stability gate: a frame captured mid push/overlay animation keeps
+        // moving after the snapshot; tapping such a coordinate can land on
+        // whatever settles under it (including toolbar actions). Require the
+        // frame to hold still across a short evaluation window, then act on
+        // the settled position.
+        var preFrame = el.frame
+        var stableCheck = NSPredicate { _, _ in locate(app).frame == preFrame }
+        _ = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: stableCheck, object: el)],
+            timeout: 2
+        )
+        let settled = locate(app)
+        guard settled.exists else {
+            return "vanished-during-settle"
+        }
+        let f = settled.frame
         guard f.height > 0, f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 else {
-            return "offscreen;frame=\(f);win=\(win);swipes=\(swipes);tree=\(treeDiagnostics(app))"
+            return "offscreen-after-settle;frame=\(f);win=\(win);swipes=\(swipes);tree=\(treeDiagnostics(app))"
         }
         guard tap else { return "" }
         let enabled = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isEnabled == true"),
-            object: el
+            object: settled
         )
         guard XCTWaiter.wait(for: [enabled], timeout: timeout) == .completed else {
             return "never-enabled;frame=\(f);win=\(win)"
         }
-        el.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        settled.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         return ""
     }
 
@@ -330,6 +345,7 @@ final class Journeys: XCTestCase {
             let saveTrace = interact(app, locate: { $0.buttons["save-toggle"].firstMatch }, tap: true)
             XCTAssertTrue(saveTrace.isEmpty, "save action must be revealed [\(saveTrace)]")
             let freshSave = app.buttons["save-toggle"].firstMatch
+            guard freshSave.exists else { continue }
             if freshSave.label == "Save video" { sawActionLabel = true }
             let savedLabel = NSPredicate(format: "label == %@", "Remove from saved")
             let savedExpectation = XCTNSPredicateExpectation(predicate: savedLabel, object: freshSave)
