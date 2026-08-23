@@ -16,6 +16,14 @@ final class Journeys: XCTestCase {
         return app
     }
 
+    /// Cold simulator launches can take several seconds before freshly pushed
+    /// content exists; every existence wait uses this generous bound instead of
+    /// asserting against first-frame latency.
+    @discardableResult
+    private func waitExists(_ element: XCUIElement, _ timeout: TimeInterval = 15) -> Bool {
+        element.waitForExistence(timeout: timeout)
+    }
+
     // MARK: - Journey A: shell
 
     func testShellTabsExistAndSwitchWithoutCorruption() {
@@ -41,7 +49,7 @@ final class Journeys: XCTestCase {
     func testSignedOutHomeShowsSignInCallToAction() {
         let app = launch("signed-out")
         XCTAssertTrue(
-            app.buttons["Sign in with Google"].waitForExistence(timeout: 5),
+            app.buttons["Sign in with Google"].waitForExistence(timeout: 15),
             "fresh signed-out install must surface the sign-in CTA"
         )
     }
@@ -51,7 +59,7 @@ final class Journeys: XCTestCase {
     func testHomeFeedErrorSurfacesAndRetryStaysInteractive() {
         let app = launch("home-network-error")
         XCTAssertTrue(
-            app.staticTexts["Network error loading your subscriptions."].waitForExistence(timeout: 5),
+            app.staticTexts["Network error loading your subscriptions."].waitForExistence(timeout: 15),
             "feed failure must be visible, never a silent blank list"
         )
         let retry = app.buttons["Try again"]
@@ -68,10 +76,10 @@ final class Journeys: XCTestCase {
     func testHomeFeedLoadsAndExplicitLoadMoreAppends() {
         let app = launch("home-loaded")
         let firstRow = app.buttons["feed-video-row"].firstMatch
-        XCTAssertTrue(firstRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(firstRow), "fixture feed rows must render")
 
         let loadMore = app.buttons["load-more-button"]
-        XCTAssertTrue(loadMore.waitForExistence(timeout: 5), "page one advertises continuation")
+        XCTAssertTrue(waitExists(loadMore), "page one advertises continuation")
         loadMore.tap()
 
         let appended = app.buttons.matching(identifier: "feed-video-row").element(boundBy: 3)
@@ -82,8 +90,9 @@ final class Journeys: XCTestCase {
 
     func testSearchButtonSubmitsAndShortsNeverAppear() {
         let app = launch("search-ready")
+        app.tabBars.buttons["Search"].tap()
         let field = app.textFields["search-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
         field.tap()
         field.typeText("documentary")
 
@@ -109,8 +118,9 @@ final class Journeys: XCTestCase {
 
     func testKeyboardReturnSubmitsSearch() {
         let app = launch("search-ready")
+        app.tabBars.buttons["Search"].tap()
         let field = app.textFields["search-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
         field.tap()
         // Trailing newline presses the keyboard's Search key: proves the
         // onSubmit path without touching the Search button.
@@ -124,8 +134,9 @@ final class Journeys: XCTestCase {
 
     func testEmptyQuerySubmitIsRejectedWithoutNetworkOrStateChange() {
         let app = launch("search-ready")
+        app.tabBars.buttons["Search"].tap()
         let field = app.textFields["search-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
 
         XCTAssertFalse(
             app.buttons["search-submit-button"].isEnabled,
@@ -139,8 +150,9 @@ final class Journeys: XCTestCase {
 
     func testSearchErrorSurfacesAndRetryStaysInteractive() {
         let app = launch("search-error")
+        app.tabBars.buttons["Search"].tap()
         let field = app.textFields["search-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
         field.tap()
         field.typeText("anything\n")
 
@@ -158,8 +170,9 @@ final class Journeys: XCTestCase {
 
     func testSearchWithNoHitsShowsEmptyState() {
         let app = launch("search-empty")
+        app.tabBars.buttons["Search"].tap()
         let field = app.textFields["search-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
         field.tap()
         field.typeText("nothing to find\n")
 
@@ -173,10 +186,10 @@ final class Journeys: XCTestCase {
 
     func testVideoPageShowsMetadataSaveCommentsAndCloses() {
         let app = launch("video-page")
-        XCTAssertTrue(app.buttons["feed-video-row"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
         app.buttons["feed-video-row"].firstMatch.tap()
 
-        XCTAssertTrue(app.staticTexts["video-title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(app.staticTexts["video-title"]), "video title must render")
         XCTAssertEqual(app.staticTexts["video-title"].label, "Fixture Documentary One")
         XCTAssertTrue(app.staticTexts["video-channel"].exists)
         XCTAssertTrue(app.staticTexts["Fixture comment alpha"].waitForExistence(timeout: 5))
@@ -191,11 +204,14 @@ final class Journeys: XCTestCase {
         )
 
         let download = app.buttons["download-button"]
-        XCTAssertTrue(download.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(download))
         XCTAssertTrue(download.isEnabled, "picker must offer qualities resolved by the extractor")
 
         app.buttons["Close"].tap()
-        XCTAssertTrue(app.buttons["feed-video-row"].firstMatch.waitForExistence(timeout: 5), "dismissal returns to the feed")
+        XCTAssertTrue(
+            waitExists(app.buttons["feed-video-row"].firstMatch),
+            "dismissal returns to the feed"
+        )
     }
 
     // MARK: - Journey F/H: library persistence + relaunch + actionability
@@ -205,7 +221,7 @@ final class Journeys: XCTestCase {
         app.tabBars.buttons["Library"].tap()
 
         let historyRow = app.buttons["library-history-row"]
-        XCTAssertTrue(historyRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(historyRow))
         let savedRow = app.buttons["library-saved-row"]
         XCTAssertTrue(savedRow.exists)
 
@@ -213,13 +229,13 @@ final class Journeys: XCTestCase {
         app.terminate()
         let relaunched = launch("library-seeded")
         relaunched.tabBars.buttons["Library"].tap()
-        XCTAssertTrue(relaunched.buttons["library-history-row"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(relaunched.buttons["library-history-row"]))
         XCTAssertTrue(relaunched.buttons["library-saved-row"].exists)
 
         // Continue Watching is actionable: opens the video page for that entry.
         relaunched.buttons["library-history-row"].firstMatch.tap()
         XCTAssertTrue(
-            relaunched.staticTexts["Seeded In-Progress Video"].waitForExistence(timeout: 5),
+            relaunched.staticTexts["Seeded In-Progress Video"].waitForExistence(timeout: 15),
             "tapping Continue Watching must open the stored video"
         )
     }
@@ -228,11 +244,11 @@ final class Journeys: XCTestCase {
 
     func testDownloadCompletesRegistersAndDeletes() {
         let app = launch("download-flow")
-        XCTAssertTrue(app.buttons["feed-video-row"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
         app.buttons["feed-video-row"].firstMatch.tap()
 
         let download = app.buttons["download-button"]
-        XCTAssertTrue(download.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(download), "download action must appear once qualities resolve")
         download.tap()
 
         app.tabBars.buttons["Downloads"].tap()
@@ -256,11 +272,11 @@ final class Journeys: XCTestCase {
 
     func testDownloadFailureSurfacesTypedAlert() {
         let app = launch("download-failure")
-        XCTAssertTrue(app.buttons["feed-video-row"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
         app.buttons["feed-video-row"].firstMatch.tap()
 
         let download = app.buttons["download-button"]
-        XCTAssertTrue(download.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitExists(download), "download action must appear once qualities resolve")
         download.tap()
 
         XCTAssertTrue(

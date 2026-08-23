@@ -103,23 +103,28 @@ final class PlayerCoordinatorTests: XCTestCase {
 
     // MARK: - Resume seek + stale selection (RELEASE_CONFIDENCE_V1)
 
-    /// Extraction seam whose first call parks on a gate so a stale-selection
-    /// race can be driven deterministically from the test.
+    /// Extraction seam that parks ONLY the gated video's resolution on a
+    /// deterministic gate; other videos resolve immediately. Lets a stale-
+    /// selection race be driven without sleeps.
     @MainActor
     private final class GatedExtractor: MediaExtracting, @unchecked Sendable {
+        private let gateVideoID: String
         private var continuation: CheckedContinuation<ResolvedMedia, Never>?
-        private var immediateResult: ResolvedMedia?
         private(set) var isWaiting = false
 
-        init(immediateResult: ResolvedMedia? = nil) {
-            self.immediateResult = immediateResult
+        init(gateVideoID: String) {
+            self.gateVideoID = gateVideoID
         }
 
         func resolve(videoID: String) async throws -> ResolvedMedia {
-            if let immediateResult {
-                let result = immediateResult
-                self.immediateResult = nil
-                return result
+            guard videoID == gateVideoID else {
+                return ResolvedMedia(
+                    videoID: videoID,
+                    extractedAt: Date(),
+                    combined: [Self.stream(id: "c720-\(videoID)", videoID: videoID)],
+                    videoOnly: [],
+                    audioOnly: []
+                )
             }
             isWaiting = true
             defer { isWaiting = false }
@@ -130,6 +135,21 @@ final class PlayerCoordinatorTests: XCTestCase {
 
         func release(_ media: ResolvedMedia) {
             continuation?.resume(returning: media)
+        }
+
+        static func stream(id: String, videoID: String) -> MediaStream {
+            MediaStream(
+                id: id,
+                videoID: videoID,
+                resolution: 720,
+                kind: .combined,
+                nativePlayable: true,
+                container: "mp4",
+                videoCodec: "avc1",
+                audioCodec: "mp4a",
+                sourceURL: URL(string: "https://e/\(videoID)")!,
+                expiresAt: nil
+            )
         }
     }
 
@@ -198,19 +218,29 @@ final class PlayerCoordinatorTests: XCTestCase {
     }
 
     func testLateFirstSelectionCannotClobberNewerSelection() async throws {
-        let extractor = GatedExtractor(immediateResult: media(videoID: "B"))
+        let extractor = GatedExtractor(gateVideoID: "A")
         let coordinator = await PlayerCoordinator(extractor: extractor)
 
         // A starts extracting and parks on the gate...
         let taskA = Task { await coordinator.loadAndPlay(videoID: "A") }
-        while !extractor.isWaiting { await Task.yield() }
+        var spins = 0
+        while !extractor.isWaiting {
+            spins += 1
+            if spins > 10_000 {
+                XCTFail("gated extraction for A never parked; harness deadlock")
+                extractor.release(GatedExtractor.stream(id: "c720-A", videoID: "A"))
+                await taskA.value
+                return
+            }
+            await Task.yield()
+        }
 
         // ...B resolves immediately and becomes current.
         await coordinator.loadAndPlay(videoID: "B")
         XCTAssertEqual(coordinator.currentVideoID, "B")
 
         // A's late result arrives; the generation guard must discard it.
-        extractor.release(media(videoID: "A"))
+        extractor.release(GatedExtractor.stream(id: "c720-A", videoID: "A"))
         await taskA.value
         XCTAssertEqual(coordinator.currentVideoID, "B", "a late extraction for A must never replace B")
         XCTAssertEqual(coordinator.currentStream?.id, "c720-B")
