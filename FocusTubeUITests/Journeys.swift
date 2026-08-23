@@ -320,24 +320,29 @@ final class Journeys: XCTestCase {
         XCTAssertEqual(app.staticTexts["video-title"].label, "Fixture Documentary One")
         XCTAssertTrue(app.staticTexts["video-channel"].exists)
 
-        let save = app.buttons["save-toggle"]
         // A coordinate tap can land during a player-overlay layout transition
         // and miss the control; verify the state change and retry bounded.
+        // Verification must also use FRESH queries: captured elements can
+        // serve stale labels after SwiftUI rebuilds the row.
         var toggledToSaved = false
         var sawActionLabel = false
         for _ in 0..<3 {
             let saveTrace = interact(app, locate: { $0.buttons["save-toggle"].firstMatch }, tap: true)
             XCTAssertTrue(saveTrace.isEmpty, "save action must be revealed [\(saveTrace)]")
-            if save.label == "Save video" { sawActionLabel = true }
+            let freshSave = app.buttons["save-toggle"].firstMatch
+            if freshSave.label == "Save video" { sawActionLabel = true }
             let savedLabel = NSPredicate(format: "label == %@", "Remove from saved")
-            let savedExpectation = XCTNSPredicateExpectation(predicate: savedLabel, object: save)
+            let savedExpectation = XCTNSPredicateExpectation(predicate: savedLabel, object: freshSave)
             if XCTWaiter.wait(for: [savedExpectation], timeout: 3) == .completed {
                 toggledToSaved = true
                 break
             }
         }
         XCTAssertTrue(sawActionLabel, "accessibility label must reflect the action ('Save video'), not the state")
-        XCTAssertTrue(toggledToSaved, "save toggle must reflect saved state; label was '\(save.label)'")
+        XCTAssertTrue(
+            toggledToSaved,
+            "save toggle must reflect saved state; label was '\(app.buttons["save-toggle"].firstMatch.label)'"
+        )
 
         let download = app.buttons["download-button"]
         let dlTrace = interact(app, locate: { $0.buttons["download-button"].firstMatch }, tap: false)
