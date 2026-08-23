@@ -301,8 +301,7 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(download.isEnabled, "picker must offer qualities resolved by the extractor")
 
         let comment = app.staticTexts["Fixture comment alpha"]
-        scrollToExist(app, comment)
-        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(app, comment), "fixture comment must render once scrolled into view")
 
         app.buttons["Close"].tap()
         XCTAssertTrue(
