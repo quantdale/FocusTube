@@ -24,6 +24,65 @@ final class Journeys: XCTestCase {
         element.waitForExistence(timeout: timeout)
     }
 
+    // MARK: - Diagnostics
+
+    /// Compact, bounded view of what XCUITest actually sees when an expected
+    /// video-page element fails to appear. Emitted only inside failure messages
+    /// (assertion autoclosures), so passing tests pay nothing. Remote agents can
+    /// read these through check-run annotations without authenticated API access.
+    private func treeDiagnostics(_ app: XCUIApplication) -> String {
+        var facts = ["sheets=\(app.sheets.count)"]
+        let probes: [(String, XCUIElement)] = [
+            ("title", app.staticTexts["video-title"]),
+            ("channel", app.staticTexts["video-channel"]),
+            ("save", app.buttons["save-toggle"]),
+            ("dl", app.buttons["download-button"]),
+            ("close", app.buttons["Close"]),
+            ("failed", app.staticTexts["Playback failed"]),
+            ("loading", app.staticTexts["Loading…"]),
+            ("row0", app.buttons.matching(identifier: "feed-video-row").element(boundBy: 0)),
+            ("alert", app.alerts.element(boundBy: 0))
+        ]
+        for (name, el) in probes {
+            guard el.exists else { facts.append("\(name)=no"); continue }
+            facts.append(el.isHittable ? "\(name)=hit" : "\(name)=flat")
+        }
+        let interesting = app.debugDescription
+            .split(separator: "\n")
+            .filter { line in
+                ["Sheet", "Alert", "video-title", "download-button", "save-toggle",
+                 "'Close'", "Playback failed", "Loading…", "feed-video-row", "Window",
+                 "Application"]
+                    .contains { line.contains($0) }
+            }
+            .prefix(30)
+        return "FACTS{\(facts.joined(separator: ","))} TREE{\(interesting.joined(separator: " ~ "))}"
+    }
+
+    /// Opens the fixture video page from the Home feed and returns a diagnostic
+    /// trace (empty when the marker appeared after the first tap).
+    ///
+    /// iOS 26 cold-simulator launches have a documented tendency to swallow the
+    /// first injected tap; the bounded single retry below re-taps ONLY while the
+    /// feed row itself is still hittable, so a sheet that did present is never
+    /// tapped through or dismissed by this helper.
+    @discardableResult
+    private func openVideoPageFromFeed(_ app: XCUIApplication, expecting marker: XCUIElement) -> String {
+        app.buttons.matching(identifier: "feed-video-row").firstMatch.tap()
+        if marker.waitForExistence(timeout: 15) { return "" }
+
+        var trace = "tap1-no-marker"
+        let row = app.buttons.matching(identifier: "feed-video-row").firstMatch
+        if row.exists, row.isHittable {
+            row.tap()
+            if marker.waitForExistence(timeout: 10) { return "recovered-on-retry-tap" }
+            trace += ";tap2-no-marker"
+        } else {
+            trace += ";row-gone-or-covered"
+        }
+        return trace + ";" + treeDiagnostics(app)
+    }
+
     // MARK: - Journey A: shell
 
     func testShellTabsExistAndSwitchWithoutCorruption() {
@@ -187,9 +246,10 @@ final class Journeys: XCTestCase {
     func testVideoPageShowsMetadataSaveCommentsAndCloses() {
         let app = launch("video-page")
         XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
-        app.buttons["feed-video-row"].firstMatch.tap()
+        let title = app.staticTexts["video-title"]
+        let trace = openVideoPageFromFeed(app, expecting: title)
 
-        XCTAssertTrue(waitExists(app.staticTexts["video-title"]), "video title must render")
+        XCTAssertTrue(title.exists, "video title must render [\(trace)]")
         XCTAssertEqual(app.staticTexts["video-title"].label, "Fixture Documentary One")
         XCTAssertTrue(app.staticTexts["video-channel"].exists)
         XCTAssertTrue(app.staticTexts["Fixture comment alpha"].waitForExistence(timeout: 5))
@@ -233,11 +293,15 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(relaunched.buttons["library-saved-row"].exists)
 
         // Continue Watching is actionable: opens the video page for that entry.
+        // Asserted against the video page's own identifier, not the row label,
+        // which would otherwise match the tapped row itself (vacuous pass).
         relaunched.buttons["library-history-row"].firstMatch.tap()
+        let resumedTitle = relaunched.staticTexts["video-title"]
         XCTAssertTrue(
-            relaunched.staticTexts["Seeded In-Progress Video"].waitForExistence(timeout: 15),
-            "tapping Continue Watching must open the stored video"
+            resumedTitle.waitForExistence(timeout: 15),
+            "tapping Continue Watching must open the stored video; \(treeDiagnostics(relaunched))"
         )
+        XCTAssertEqual(resumedTitle.label, "Seeded In-Progress Video")
     }
 
     // MARK: - Journey G: downloads
@@ -245,10 +309,10 @@ final class Journeys: XCTestCase {
     func testDownloadCompletesRegistersAndDeletes() {
         let app = launch("download-flow")
         XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
-        app.buttons["feed-video-row"].firstMatch.tap()
-
         let download = app.buttons["download-button"]
-        XCTAssertTrue(waitExists(download), "download action must appear once qualities resolve")
+        let trace = openVideoPageFromFeed(app, expecting: download)
+
+        XCTAssertTrue(download.exists, "download action must appear once qualities resolve [\(trace)]")
         download.tap()
 
         app.tabBars.buttons["Downloads"].tap()
@@ -273,10 +337,10 @@ final class Journeys: XCTestCase {
     func testDownloadFailureSurfacesTypedAlert() {
         let app = launch("download-failure")
         XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
-        app.buttons["feed-video-row"].firstMatch.tap()
-
         let download = app.buttons["download-button"]
-        XCTAssertTrue(waitExists(download), "download action must appear once qualities resolve")
+        let trace = openVideoPageFromFeed(app, expecting: download)
+
+        XCTAssertTrue(download.exists, "download action must appear once qualities resolve [\(trace)]")
         download.tap()
 
         XCTAssertTrue(
