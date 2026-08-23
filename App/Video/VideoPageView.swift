@@ -20,6 +20,7 @@ struct VideoPageView: View {
     @State private var commentsError: YouTubeAPIError?
     @State private var isLoadingComments = false
     @State private var isDownloading = false
+    @State private var isSaved = false
 
     private var commentsService: CommentsService { CommentsService(api: api) }
 
@@ -39,6 +40,34 @@ struct VideoPageView: View {
             PlayerView(coordinator: coordinator)
                 .frame(height: 240)
                 .listRowInsets(EdgeInsets())
+
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(video.title).font(.headline)
+                    Text(video.channelTitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    if isSaved {
+                        library.removeSaved(videoID: video.id)
+                        isSaved = false
+                    } else {
+                        library.save(
+                            videoID: video.id,
+                            title: video.title,
+                            channelTitle: video.channelTitle
+                        )
+                        isSaved = true
+                    }
+                } label: {
+                    Label(
+                        isSaved ? "Saved" : "Save",
+                        systemImage: isSaved ? "bookmark.fill" : "bookmark"
+                    )
+                }
+                .accessibilityLabel(isSaved ? "Remove from saved" : "Save video")
+            }
 
             Section("Download quality") {
                 DownloadQualityPickerView(available: qualities, selection: $selectedQuality)
@@ -125,7 +154,11 @@ struct VideoPageView: View {
             }
             coordinator.nowPlayingTitle = video.title
             coordinator.nowPlayingArtist = video.channelTitle
-            await coordinator.loadAndPlay(videoID: video.id)
+            isSaved = library.isSaved(videoID: video.id)
+            await coordinator.loadAndPlay(
+                videoID: video.id,
+                resumeAt: library.resumePosition(for: video.id)
+            )
             await loadQualities()
             await loadComments()
         }

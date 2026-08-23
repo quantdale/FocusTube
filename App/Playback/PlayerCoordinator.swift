@@ -40,6 +40,14 @@ public final class PlayerCoordinator {
     public var nowPlayingTitle: String?
     public var nowPlayingArtist: String?
 
+    /// Resume position requested for the CURRENT selection only. Set by
+    /// `loadAndPlay`, consumed exactly once when the item reports ready, and
+    /// cleared by every other selection-change path so a stale seek can never
+    /// fire against a later video.
+    var pendingResumeSeek: TimeInterval?
+    /// Injectable for deterministic tests; defaults to the live player seek.
+    var seekAction: (@MainActor (TimeInterval) -> Void)?
+
     private var playerItem: AVPlayerItem?
     private var timeObserver: Any?
     private var itemObservation: NSKeyValueObservation?
@@ -124,15 +132,17 @@ public final class PlayerCoordinator {
     /// Resolves a video ID through the extractor, selects the online stream, and
     /// begins native playback. Extraction and selection failures are typed and
     /// observable via `state`.
-    public func loadAndPlay(videoID: String) async {
+    public func loadAndPlay(videoID: String, resumeAt: TimeInterval? = nil) async {
         generation += 1
         let gen = generation
         currentVideoID = videoID
+        pendingResumeSeek = resumeAt
         do {
             let media = try await extractor.resolve(videoID: videoID)
             guard gen == generation else { return }
             lastResolvedMedia = media
             guard let stream = selectOnlineStream(from: media) else {
+                pendingResumeSeek = nil
                 state = PlaybackState(status: .failed, error: .noPlayableStream)
                 return
             }
@@ -140,6 +150,7 @@ public final class PlayerCoordinator {
         } catch {
             guard gen == generation else { return }
             lastResolvedMedia = nil
+            pendingResumeSeek = nil
             state = PlaybackState(status: .failed, error: mapExtractionFailure(error))
         }
     }
@@ -186,6 +197,7 @@ public final class PlayerCoordinator {
         lastResolvedMedia = nil
         nowPlayingTitle = title
         nowPlayingArtist = artist
+        pendingResumeSeek = nil
         let item = AVPlayerItem(url: url)
         playerItem = item
         observe(item: item)
@@ -209,6 +221,7 @@ public final class PlayerCoordinator {
         // Nil it so an expired stream URL cannot be replayed later by the
         // quality picker after playback has been torn down.
         lastResolvedMedia = nil
+        pendingResumeSeek = nil
         state = PlaybackState(status: .idle)
         resetWaiting()
         notifyNowPlayingChanged()
@@ -263,7 +276,10 @@ public final class PlayerCoordinator {
         }
     }
 
-    private func handle(itemStatus: AVPlayerItem.Status) {
+    /// Internal (not private) so deterministic tests can drive item-status
+    /// transitions directly instead of depending on AVFoundation readiness
+    /// timing. Production callers are the KVO bindings only.
+    func handle(itemStatus: AVPlayerItem.Status) {
         switch itemStatus {
         case .readyToPlay:
             if state.status == .loading {
@@ -271,6 +287,7 @@ public final class PlayerCoordinator {
                 if player.timeControlStatus == .playing {
                     try? state.transition(to: .playing)
                 }
+                consumeResumeSeek()
             }
         case .failed:
             state = PlaybackState(status: .failed, error: .itemFailed)
@@ -330,6 +347,19 @@ public final class PlayerCoordinator {
     private func resetWaiting() {
         stallWatchdog?.cancel()
         stallWatchdog = nil
+    }
+
+    /// Applies this selection's stored resume position exactly once, when the
+    /// item first reports ready. Sub-millisecond/no-op targets skip the seek.
+    private func consumeResumeSeek() {
+        guard let target = pendingResumeSeek else { return }
+        pendingResumeSeek = nil
+        guard target > 0.5 else { return }
+        if let seekAction {
+            seekAction(target)
+        } else {
+            player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+        }
     }
 
     private func mapExtractionFailure(_ error: Error) -> PlaybackError {

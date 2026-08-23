@@ -61,11 +61,22 @@ final class LibraryStore {
 
     public var history: [WatchHistoryEntry] {
         do {
-            return try context.fetch(FetchDescriptor<WatchHistoryEntry>())
+            // Most-recent-first so "Continue watching" reads chronologically.
+            let descriptor = FetchDescriptor<WatchHistoryEntry>(
+                sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+            )
+            return try context.fetch(descriptor)
         } catch {
             Self.logger.error("History fetch failed (\(error.localizedDescription)); displaying empty")
             return []
         }
+    }
+
+    /// Removes one history entry. A missing entry or failed fetch is a no-op.
+    public func removeHistory(videoID: String) {
+        guard case let entry? = (try? historyEntryOrThrow(videoID)) else { return }
+        context.delete(entry)
+        save()
     }
 
     // MARK: - Saves
@@ -85,9 +96,25 @@ final class LibraryStore {
         }
     }
 
+    /// True when the video currently has a saved entry.
+    public func isSaved(videoID: String) -> Bool {
+        guard let item = try? savedItemOrThrow(videoID) else { return false }
+        return item != nil
+    }
+
+    /// Removes a saved entry. A missing entry or failed fetch is a no-op.
+    public func removeSaved(videoID: String) {
+        guard case let existing? = (try? savedItemOrThrow(videoID)) else { return }
+        context.delete(existing)
+        save()
+    }
+
     public var saved: [SavedItem] {
         do {
-            return try context.fetch(FetchDescriptor<SavedItem>())
+            let descriptor = FetchDescriptor<SavedItem>(
+                sortBy: [SortDescriptor(\.savedAt, order: .reverse)]
+            )
+            return try context.fetch(descriptor)
         } catch {
             Self.logger.error("Saved list fetch failed (\(error.localizedDescription)); displaying empty")
             return []
@@ -129,7 +156,10 @@ final class LibraryStore {
 
     public var downloaded: [DownloadedMedia] {
         do {
-            return try context.fetch(FetchDescriptor<DownloadedMedia>())
+            let descriptor = FetchDescriptor<DownloadedMedia>(
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            )
+            return try context.fetch(descriptor)
         } catch {
             Self.logger.error("Downloaded index fetch failed (\(error.localizedDescription)); displaying empty")
             return []

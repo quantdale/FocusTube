@@ -20,10 +20,12 @@ struct SearchView: View {
                     TextField("Search YouTube", text: $queryText)
                         .textFieldStyle(.roundedBorder)
                         .submitLabel(.search)
+                        .onSubmit(submit)
+                        .accessibilityLabel("Search query")
                     Button("Search") {
-                        Task { await store.submit(queryText) }
+                        submit()
                     }
-                    .disabled(queryText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
 
@@ -32,7 +34,20 @@ struct SearchView: View {
             }
 
             if let error = store.error {
-                Label(errorLabel(error), systemImage: "exclamationmark.triangle")
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(errorLabel(error), systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                    Button("Try again") {
+                        // Retry resubmits the last EXECUTED query, not whatever
+                        // currently sits in the field.
+                        queryText = store.query
+                        submit()
+                    }
+                }
+            } else if !store.isLoading,
+                      !store.query.isEmpty,
+                      store.results.isEmpty {
+                Text("No results for \"\(store.query)\".")
                     .foregroundStyle(.secondary)
             }
 
@@ -76,6 +91,15 @@ struct SearchView: View {
                 }
             }
         }
+    }
+
+    /// Single explicit-submit path shared by the keyboard (Return/Search key)
+    /// and the button. Whitespace-only queries are rejected without an API call;
+    /// the trimmed text is what gets submitted.
+    private func submit() {
+        let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        Task { await store.submit(trimmed) }
     }
 
     private func errorLabel(_ error: YouTubeAPIError) -> String {

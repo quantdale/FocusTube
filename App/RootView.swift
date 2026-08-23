@@ -57,7 +57,13 @@ struct RootView: View {
             .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
 
             NavigationStack {
-                LibraryView(store: libraryStore)
+                LibraryView(
+                    store: libraryStore,
+                    playerCoordinator: playerCoordinator,
+                    auth: auth,
+                    api: api,
+                    downloadService: downloadService
+                )
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
         }
@@ -78,6 +84,8 @@ struct DownloadsView: View {
     let downloadService: DownloadService
     let playerCoordinator: PlayerCoordinator
 
+    @State private var pendingDelete: DownloadedMedia?
+
     /// Phases the coordinator's state machine allows cancelling. Validating/
     /// muxing/finalizing are intentionally non-cancellable — the coordinator
     /// rejects cancel transitions out of those phases so a final file is never
@@ -96,7 +104,12 @@ struct DownloadsView: View {
                 ForEach(downloadManager.liveTasks) { task in
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(task.videoID).font(.subheadline).lineLimit(1)
+                            Text(
+                                downloadManager.presentationMetadata(taskID: task.id)?.title
+                                    ?? task.videoID
+                            )
+                            .font(.subheadline)
+                            .lineLimit(1)
                             Text("\(task.resolution)p · \(task.state.status.rawValue)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -119,6 +132,7 @@ struct DownloadsView: View {
                             } label: {
                                 Image(systemName: "stop.fill")
                             }
+                            .accessibilityLabel("Cancel download")
                         }
                     }
                 }
@@ -181,10 +195,11 @@ struct DownloadsView: View {
                         }
                         Spacer()
                         Button(role: .destructive) {
-                            store.deleteDownloadedMedia(id: item.id)
+                            pendingDelete = item
                         } label: {
                             Image(systemName: "trash")
                         }
+                        .accessibilityLabel("Delete download")
                     }
                 }
                 if store.downloaded.isEmpty {
@@ -194,33 +209,140 @@ struct DownloadsView: View {
             }
         }
         .navigationTitle("Downloads")
+        .confirmationDialog(
+            "Delete downloaded video?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            presenting: pendingDelete,
+            titleVisibility: .visible
+        ) { media in
+            Button("Delete", role: .destructive) {
+                store.deleteDownloadedMedia(id: media.id)
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDelete = nil
+            }
+        } message: { _ in
+            Text("The downloaded file will be removed from this device.")
+        }
         .task { store.reconcileDownloads() }
     }
 }
 
 struct LibraryView: View {
     let store: LibraryStore
+    let playerCoordinator: PlayerCoordinator
+    let auth: AuthSession
+    let api: YouTubeAPI
+    let downloadService: DownloadService
+
+    @State private var selectedSummary: VideoSummary?
+    @State private var showVideo = false
 
     var body: some View {
         List {
             Section("Continue watching") {
-                ForEach(store.history, id: \.videoID) { entry in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.title).lineLimit(2)
-                        Text(entry.channelTitle).font(.caption).foregroundStyle(.secondary)
+                let inProgress = store.history.filter { !$0.completed }
+                if inProgress.isEmpty {
+                    Text("Nothing in progress.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(inProgress, id: \.videoID) { entry in
+                    Button {
+                        open(Self.summary(from: entry))
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.title).lineLimit(2)
+                            Text(entry.channelTitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityHint("Opens the video and resumes where you left off")
+                }
+                .onDelete { offsets in
+                    for index in offsets {
+                        store.removeHistory(videoID: inProgress[index].videoID)
                     }
                 }
             }
             Section("Saved") {
+                if store.saved.isEmpty {
+                    Text("No saved videos yet.")
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(store.saved, id: \.videoID) { item in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.title).lineLimit(2)
-                        Text(item.channelTitle).font(.caption).foregroundStyle(.secondary)
+                    Button {
+                        open(Self.summary(from: item))
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title).lineLimit(2)
+                            Text(item.channelTitle).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityHint("Opens the saved video")
+                }
+                .onDelete { offsets in
+                    for index in offsets {
+                        store.removeSaved(videoID: store.saved[index].videoID)
                     }
                 }
             }
         }
         .navigationTitle("Library")
+        .sheet(isPresented: $showVideo) {
+            if let summary = selectedSummary {
+                NavigationStack {
+                    VideoPageView(
+                        video: summary,
+                        coordinator: playerCoordinator,
+                        auth: auth,
+                        api: api,
+                        downloadService: downloadService,
+                        library: store
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Close") { showVideo = false }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func open(_ summary: VideoSummary) {
+        selectedSummary = summary
+        showVideo = true
+    }
+
+    /// Rebuilds the navigation payload from persisted fields; optional API-only
+    /// attributes (thumbnail/publish date/description) are not stored locally.
+    private static func summary(from entry: WatchHistoryEntry) -> VideoSummary {
+        VideoSummary(
+            id: entry.videoID,
+            title: entry.title,
+            channelTitle: entry.channelTitle,
+            durationSeconds: entry.durationSeconds,
+            publishedAt: nil,
+            thumbnailURL: nil,
+            description: nil
+        )
+    }
+
+    private static func summary(from item: SavedItem) -> VideoSummary {
+        VideoSummary(
+            id: item.videoID,
+            title: item.title,
+            channelTitle: item.channelTitle,
+            durationSeconds: nil,
+            publishedAt: nil,
+            thumbnailURL: nil,
+            description: nil
+        )
     }
 }
 

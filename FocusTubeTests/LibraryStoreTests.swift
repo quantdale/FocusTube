@@ -130,4 +130,98 @@ final class LibraryStoreTests: XCTestCase {
         let count = await store.downloaded.count
         XCTAssertEqual(count, 0, "a missing file must not block metadata cleanup (no orphan row)")
     }
+
+    // MARK: - Save/history removal and ordering (RELEASE_CONFIDENCE_V1)
+
+    func testIsSavedReflectsSaveAndRemove() async throws {
+        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        let savedBefore = await store.isSaved(videoID: "v9")
+        XCTAssertFalse(savedBefore)
+
+        await store.save(videoID: "v9", title: "T", channelTitle: "C")
+        let savedAfter = await store.isSaved(videoID: "v9")
+        XCTAssertTrue(savedAfter)
+
+        await store.removeSaved(videoID: "v9")
+        let savedAfterRemoval = await store.isSaved(videoID: "v9")
+        XCTAssertFalse(savedAfterRemoval)
+    }
+
+    func testRemoveSavedIsSafeForUnknownAndRepeatedCalls() async throws {
+        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        // Unknown ID and repeated removal must both be no-ops, never throw/crash.
+        await store.removeSaved(videoID: "missing")
+        await store.save(videoID: "v10", title: "T", channelTitle: "C")
+        await store.removeSaved(videoID: "v10")
+        await store.removeSaved(videoID: "v10")
+        let count = await store.saved.count
+        XCTAssertEqual(count, 0)
+    }
+
+    func testRemoveHistoryDeletesOnlyTargetEntry() async throws {
+        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        await store.recordProgress(videoID: "h1", title: "A", channelTitle: "C", position: 10, duration: 100, completed: false)
+        await store.recordProgress(videoID: "h2", title: "B", channelTitle: "C", position: 20, duration: 100, completed: false)
+
+        await store.removeHistory(videoID: "h1")
+        let history = await store.history
+        XCTAssertEqual(history.map(\.videoID), ["h2"])
+
+        // Removing the remaining entry leaves the section empty; repeat is a no-op.
+        await store.removeHistory(videoID: "h2")
+        await store.removeHistory(videoID: "h2")
+        let finalCount = await store.history.count
+        XCTAssertEqual(finalCount, 0)
+    }
+
+    func testHistorySortedMostRecentFirst() async throws {
+        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        await store.recordProgress(videoID: "old", title: "Old", channelTitle: "C", position: 5, duration: 100, completed: false)
+        // Ensure distinct timestamps even with coarse clock resolution.
+        try await Task.sleep(nanoseconds: 20_000_000)
+        await store.recordProgress(videoID: "newer", title: "Newer", channelTitle: "C", position: 6, duration: 100, completed: false)
+
+        let history = await store.history
+        XCTAssertEqual(history.map(\.videoID), ["newer", "old"])
+    }
+
+    func testSavedSortedNewestFirst() async throws {
+        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        await store.save(videoID: "s1", title: "First", channelTitle: "C")
+        try await Task.sleep(nanoseconds: 20_000_000)
+        await store.save(videoID: "s2", title: "Second", channelTitle: "C")
+
+        let saved = await store.saved
+        XCTAssertEqual(saved.map(\.videoID), ["s2", "s1"])
+    }
+
+    func testCompletedEntriesStayInHistoryButAreMarkedDone() async throws {
+        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        await store.recordProgress(videoID: "done", title: "Done", channelTitle: "C", position: 600, duration: 600, completed: true)
+        await store.recordProgress(videoID: "partial", title: "Partial", channelTitle: "C", position: 60, duration: 600, completed: false)
+
+        let history = await store.history
+        XCTAssertEqual(history.count, 2)
+        let completed = history.filter(\.completed).map(\.videoID)
+        XCTAssertEqual(completed, ["done"])
+    }
+
+    func testRepeatedReconcileConvergesWithoutMutation() async throws {
+        let store = await LibraryStore(context: ModelContext(try makeContainer()))
+        let existingURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("focustube-conv-\(UUID().uuidString).mp4")
+        try Data([0x01]).write(to: existingURL)
+        defer { try? FileManager.default.removeItem(at: existingURL) }
+        let missingURL = URL(fileURLWithPath: "/tmp/focustube-missing-\(UUID().uuidString).mp4")
+
+        await store.addDownloadedMedia(DownloadedMedia(id: "keep", videoID: "k", title: "Keep", resolution: 360, fileURL: existingURL, sizeBytes: 1, createdAt: Date()))
+        await store.addDownloadedMedia(DownloadedMedia(id: "drop", videoID: "d", title: "Drop", resolution: 360, fileURL: missingURL, sizeBytes: 0, createdAt: Date()))
+
+        // reconcile(); reconcile(); reconcile() must converge after the first
+        // pass and keep mutating nothing valid afterwards.
+        for _ in 0..<3 {
+            await store.reconcileDownloads()
+        }
+        let downloaded = await store.downloaded
+        XCTAssertEqual(downloaded.map(\.id), ["keep"])
+    }
 }
