@@ -83,29 +83,40 @@ final class Journeys: XCTestCase {
         return trace + ";" + treeDiagnostics(app)
     }
 
-    /// Reveals an element inside the visible window using FRAME GEOMETRY
-    /// (window-bounds intersection) — never `isHittable`, which reports false
-    /// for plainly visible SwiftUI List rows on iOS 26 — and optionally taps
-    /// it via a normalized coordinate. Coordinate taps bypass the flaky
-    /// activation-point validation that hard-fails `XCUIElement.tap()` for
-    /// rows near the viewport edge. Gates taps on `isEnabled` first, because
-    /// a tap delivered to a disabled control is silently swallowed.
-    @discardableResult
+    /// Reveals an element inside a visible window using FRAME GEOMETRY
+    /// (never `isHittable`, which reports false for plainly visible SwiftUI
+    /// List rows on iOS 26, and never `app.frame`, which can be degenerate).
+    /// Taps via normalized coordinate — bypassing activation-point
+    /// validation — after the element reports enabled, because a tap on a
+    /// disabled control is silently swallowed.
+    /// Returns "" on success, otherwise a diagnostic trace.
     private func interact(
         _ app: XCUIApplication,
         _ element: XCUIElement,
         tap: Bool,
         timeout: TimeInterval = 12
-    ) -> Bool {
-        guard element.waitForExistence(timeout: timeout) else { return false }
-        let win = app.frame
+    ) -> String {
+        guard element.waitForExistence(timeout: timeout) else {
+            return "never-existed"
+        }
+        var win = CGRect.null
+        let windowCount = app.windows.count
+        for index in 0..<max(windowCount, 0) {
+            let f = app.windows.element(boundBy: index).frame
+            if f.width > 1, f.height > 1 { win = f; break }
+        }
+        if win.isNull {
+            let af = app.frame
+            if af.width > 1, af.height > 1 { win = af }
+        }
+        guard !win.isNull else {
+            return "no-usable-window;exists=\(element.exists);elemFrame=\(element.frame);appFrame=\(app.frame);windows=\(windowCount)"
+        }
         var swipes = 0
-        while swipes < 12 {
+        while swipes < 14 {
             if element.exists {
                 let f = element.frame
-                if f.height > 0, f.minY >= win.minY, f.maxY <= win.maxY { break }
-                // Geometry decides direction: above the viewport scrolls down,
-                // below/not-yet-materialized scrolls up.
+                if f.height > 0, f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 { break }
                 if f.maxY < win.midY { app.swipeDown() } else { app.swipeUp() }
             } else {
                 app.swipeUp()
@@ -113,17 +124,21 @@ final class Journeys: XCTestCase {
             swipes += 1
             _ = element.waitForExistence(timeout: 2)
         }
-        guard element.exists else { return false }
+        guard element.exists else { return "lost-after-scroll" }
         let f = element.frame
-        guard f.height > 0, f.minY >= win.minY, f.maxY <= win.maxY else { return false }
-        guard tap else { return true }
+        guard f.height > 0, f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 else {
+            return "offscreen;frame=\(f);win=\(win);swipes=\(swipes)"
+        }
+        guard tap else { return "" }
         let enabled = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isEnabled == true"),
             object: element
         )
-        guard XCTWaiter.wait(for: [enabled], timeout: timeout) == .completed else { return false }
+        guard XCTWaiter.wait(for: [enabled], timeout: timeout) == .completed else {
+            return "never-enabled;frame=\(f);win=\(win)"
+        }
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        return true
+        return ""
     }
 
     // MARK: - Journey A: shell
@@ -297,7 +312,8 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(app.staticTexts["video-channel"].exists)
 
         let save = app.buttons["save-toggle"]
-        XCTAssertTrue(interact(app, save, tap: true), "save action must be revealed and toggle")
+        let saveTrace = interact(app, save, tap: true)
+        XCTAssertTrue(saveTrace.isEmpty, "save action must be revealed and toggled [\(saveTrace)]")
         XCTAssertEqual(save.label, "Save video", "accessibility label reflects the action, not the state")
         save.tap()
         XCTAssertEqual(
@@ -306,11 +322,13 @@ final class Journeys: XCTestCase {
         )
 
         let download = app.buttons["download-button"]
-        XCTAssertTrue(interact(app, download, tap: false))
+        let dlTrace = interact(app, download, tap: false)
+        XCTAssertTrue(dlTrace.isEmpty, "download control must be revealed [\(dlTrace)]")
         XCTAssertTrue(download.isEnabled, "picker must offer qualities resolved by the extractor")
 
         let comment = app.staticTexts["Fixture comment alpha"]
-        XCTAssertTrue(interact(app, comment, tap: false), "fixture comment must render once scrolled into view")
+        let commentTrace = interact(app, comment, tap: false)
+        XCTAssertTrue(commentTrace.isEmpty, "fixture comment must render once scrolled into view [\(commentTrace)]")
 
         app.buttons["Close"].tap()
         XCTAssertTrue(
@@ -359,9 +377,10 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
 
         let download = app.buttons["download-button"]
+        let dlTrace = interact(app, download, tap: true)
         XCTAssertTrue(
-            interact(app, download, tap: true),
-            "download action must appear once qualities resolve [\(trace)]"
+            dlTrace.isEmpty,
+            "download action must appear once qualities resolve [\(trace);\(dlTrace)]"
         )
 
         app.tabBars.buttons["Downloads"].tap()
@@ -396,9 +415,10 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
 
         let download = app.buttons["download-button"]
+        let dlTrace = interact(app, download, tap: true)
         XCTAssertTrue(
-            interact(app, download, tap: true),
-            "download action must appear once qualities resolve [\(trace)]"
+            dlTrace.isEmpty,
+            "download action must appear once qualities resolve [\(trace);\(dlTrace)]"
         )
 
         XCTAssertTrue(
