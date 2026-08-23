@@ -224,6 +224,14 @@ final class DownloadServiceTests: XCTestCase {
         XCTAssertFalse(failure?.userMessage.isEmpty ?? true)
     }
 
+    func testTransportFailureCopyExplainsCauseAndRetry() {
+        // The UI alert presents this copy; the exact wording is pinned here so
+        // a regression cannot silently produce a vague "unknown" message.
+        let failure = DownloadFailure(videoID: "v", title: "T", quality: .p720, error: .transportFailed)
+        XCTAssertTrue(failure.userMessage.contains("network problem"), failure.userMessage)
+        XCTAssertTrue(failure.userMessage.contains("Try again"), failure.userMessage)
+    }
+
     func testRequestedQualityUnavailableSurfacesTypedError() async throws {
         // Only 360p exists; requesting 720p must fail without downgrading.
         let service = await DownloadService(
