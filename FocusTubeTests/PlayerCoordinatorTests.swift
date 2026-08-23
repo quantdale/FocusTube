@@ -137,6 +137,16 @@ final class PlayerCoordinatorTests: XCTestCase {
             continuation?.resume(returning: media)
         }
 
+        static func media(videoID: String) -> ResolvedMedia {
+            ResolvedMedia(
+                videoID: videoID,
+                extractedAt: Date(),
+                combined: [stream(id: "c720-\(videoID)", videoID: videoID)],
+                videoOnly: [],
+                audioOnly: []
+            )
+        }
+
         static func stream(id: String, videoID: String) -> MediaStream {
             MediaStream(
                 id: id,
@@ -228,7 +238,7 @@ final class PlayerCoordinatorTests: XCTestCase {
             spins += 1
             if spins > 10_000 {
                 XCTFail("gated extraction for A never parked; harness deadlock")
-                extractor.release(GatedExtractor.stream(id: "c720-A", videoID: "A"))
+                extractor.release(GatedExtractor.media(videoID: "A"))
                 await taskA.value
                 return
             }
@@ -240,7 +250,7 @@ final class PlayerCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.currentVideoID, "B")
 
         // A's late result arrives; the generation guard must discard it.
-        extractor.release(GatedExtractor.stream(id: "c720-A", videoID: "A"))
+        extractor.release(GatedExtractor.media(videoID: "A"))
         await taskA.value
         XCTAssertEqual(coordinator.currentVideoID, "B", "a late extraction for A must never replace B")
         XCTAssertEqual(coordinator.currentStream?.id, "c720-B")
