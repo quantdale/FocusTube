@@ -132,7 +132,7 @@ final class Journeys: XCTestCase {
         }
         let el = locate(app)
         guard el.exists else {
-            return "never-existed-after-\(swipes)-swipes"
+            return "never-existed-after-\(swipes)-swipes;tree=\(treeDiagnostics(app))"
         }
         let f = el.frame
         guard f.height > 0, f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 else {

@@ -36,12 +36,16 @@ struct VideoPageView: View {
     }
 
     var body: some View {
-        List {
-            PlayerView(coordinator: coordinator)
-                .frame(height: 240)
-                .listRowInsets(EdgeInsets())
+        // A bounded detail page uses a plain scroll view: List laziness only
+        // materializes near-viewport rows on current iOS runtimes, which made
+        // below-the-fold controls intermittently absent from both the
+        // accessibility hierarchy and XCUITest queries.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                PlayerView(coordinator: coordinator)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 240)
 
-            Section {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(video.title).font(.headline)
                         .accessibilityIdentifier("video-title")
@@ -50,6 +54,10 @@ struct VideoPageView: View {
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("video-channel")
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                .padding(.top, 12)
+
                 Button {
                     if isSaved {
                         library.removeSaved(videoID: video.id)
@@ -70,61 +78,78 @@ struct VideoPageView: View {
                 }
                 .accessibilityLabel(isSaved ? "Remove from saved" : "Save video")
                 .accessibilityIdentifier("save-toggle")
-            }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
 
-            Section("Download quality") {
-                DownloadQualityPickerView(available: qualities, selection: $selectedQuality)
-                Button {
-                    Task {
-                        isDownloading = true
-                        await downloadService.download(
-                            videoID: video.id,
-                            title: video.title,
-                            channelTitle: video.channelTitle,
-                            quality: effectiveQuality,
-                            durationSeconds: Double(video.durationSeconds ?? 0)
-                        )
-                        isDownloading = false
-                    }
-                } label: {
-                    if downloadInFlight {
-                        Label("Downloading…", systemImage: "arrow.down.circle")
-                    } else {
-                        Label("Download", systemImage: "arrow.down.circle")
-                    }
-                }
-                .disabled(downloadInFlight || qualities.isEmpty)
-                .accessibilityIdentifier("download-button")
-            }
+                Divider()
 
-            Section("Comments") {
-                if commentsDisabled {
-                    Text("Comments are disabled for this video.")
-                        .foregroundStyle(.secondary)
-                } else if isLoadingComments {
-                    ProgressView()
-                } else if let commentsError {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(commentsErrorLabel(commentsError), systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.secondary)
-                        Button("Retry") {
-                            Task { await loadComments() }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Download quality")
+                        .font(.headline)
+                    DownloadQualityPickerView(available: qualities, selection: $selectedQuality)
+                    Button {
+                        Task {
+                            isDownloading = true
+                            await downloadService.download(
+                                videoID: video.id,
+                                title: video.title,
+                                channelTitle: video.channelTitle,
+                                quality: effectiveQuality,
+                                durationSeconds: Double(video.durationSeconds ?? 0)
+                            )
+                            isDownloading = false
+                        }
+                    } label: {
+                        if downloadInFlight {
+                            Label("Downloading…", systemImage: "arrow.down.circle")
+                        } else {
+                            Label("Download", systemImage: "arrow.down.circle")
                         }
                     }
-                } else {
-                    ForEach(comments) { comment in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(comment.author).font(.caption.bold())
-                            Text(comment.text)
-                            ForEach(comment.replies) { reply in
-                                Text("↳ \(reply.text)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.leading, 12)
+                    .disabled(downloadInFlight || qualities.isEmpty)
+                    .accessibilityIdentifier("download-button")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Comments")
+                        .font(.headline)
+                    if commentsDisabled {
+                        Text("Comments are disabled for this video.")
+                            .foregroundStyle(.secondary)
+                    } else if isLoadingComments {
+                        ProgressView()
+                    } else if let commentsError {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(commentsErrorLabel(commentsError), systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.secondary)
+                            Button("Retry") {
+                                Task { await loadComments() }
+                            }
+                        }
+                    } else {
+                        ForEach(comments) { comment in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(comment.author).font(.caption.bold())
+                                Text(comment.text)
+                                ForEach(comment.replies) { reply in
+                                    Text("↳ \(reply.text)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.leading, 12)
+                                }
                             }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+                .padding(.bottom, 24)
             }
         }
         .navigationTitle("Video")
