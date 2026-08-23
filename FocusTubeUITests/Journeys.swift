@@ -83,26 +83,23 @@ final class Journeys: XCTestCase {
         return trace + ";" + treeDiagnostics(app)
     }
 
-    /// Reveals an element inside a visible window using FRAME GEOMETRY
+        /// Reveals an element inside a visible window using FRAME GEOMETRY
     /// (never `isHittable`, which reports false for plainly visible SwiftUI
-    /// List rows on iOS 26, and never `app.frame`, which can be degenerate).
-    /// Taps via normalized coordinate — bypassing activation-point
-    /// validation — after the element reports enabled, because a tap on a
-    /// disabled control is silently swallowed.
+    /// List rows on iOS 26) and optionally taps via normalized coordinate —
+    /// bypassing activation-point validation — after the control reports
+    /// enabled, because a tap delivered to a disabled control is silently
+    /// swallowed.
+    ///
+    /// `locate` is re-resolved on EVERY read: a captured XCUIElement can
+    /// serve stale cached frames after SwiftUI rebuilds list rows, which
+    /// otherwise drives geometry decisions against phantom positions.
     /// Returns "" on success, otherwise a diagnostic trace.
     private func interact(
         _ app: XCUIApplication,
-        _ element: XCUIElement,
+        locate: @escaping (XCUIApplication) -> XCUIElement,
         tap: Bool,
         timeout: TimeInterval = 12
     ) -> String {
-        // NOTE: no up-front existence wait — below-the-fold List rows do not
-        // exist AT ALL until the list scrolls near them, so waiting first
-        // simply times out. Swipe-and-recheck from the start.
-        // Give near-viewport rows a moment to materialize before deciding to
-        // scroll; treat empty frames as "layout not settled" (wait), never as
-        // a scroll-direction signal.
-        _ = element.waitForExistence(timeout: 6)
         var win = CGRect.null
         let windowCount = app.windows.count
         for index in 0..<max(windowCount, 0) {
@@ -114,38 +111,42 @@ final class Journeys: XCTestCase {
             if af.width > 1, af.height > 1 { win = af }
         }
         guard !win.isNull else {
-            return "no-usable-window;exists=\(element.exists);elemFrame=\(element.frame);appFrame=\(app.frame);windows=\(windowCount)"
+            return "no-usable-window;windows=\(windowCount);appFrame=\(app.frame)"
         }
         var swipes = 0
-        while swipes < 14 {
-            if element.exists {
-                let f = element.frame
+        while swipes < 16 {
+            let current = locate(app)
+            if current.exists {
+                let f = current.frame
                 if f.height > 0 {
                     if f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 { break }
                     if f.maxY < win.midY { app.swipeDown() } else { app.swipeUp() }
-                } else {
-                    _ = element.waitForExistence(timeout: 1)
                 }
+                // Degenerate frame: the cell exists but has not been laid
+                // out yet; re-snapshot after a beat.
             } else {
                 app.swipeUp()
-                _ = element.waitForExistence(timeout: 2)
             }
             swipes += 1
+            _ = locate(app).waitForExistence(timeout: 1)
         }
-        guard element.exists else { return "never-existed-after-\(swipes)-swipes" }
-        let f = element.frame
+        let el = locate(app)
+        guard el.exists else {
+            return "never-existed-after-\(swipes)-swipes"
+        }
+        let f = el.frame
         guard f.height > 0, f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 else {
-            return "offscreen;frame=\(f);win=\(win);swipes=\(swipes)"
+            return "offscreen;frame=\(f);win=\(win);swipes=\(swipes);tree=\(treeDiagnostics(app))"
         }
         guard tap else { return "" }
         let enabled = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isEnabled == true"),
-            object: element
+            object: el
         )
         guard XCTWaiter.wait(for: [enabled], timeout: timeout) == .completed else {
             return "never-enabled;frame=\(f);win=\(win)"
         }
-        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        el.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         return ""
     }
 
@@ -325,7 +326,7 @@ final class Journeys: XCTestCase {
         var toggledToSaved = false
         var sawActionLabel = false
         for _ in 0..<3 {
-            let saveTrace = interact(app, save, tap: true)
+            let saveTrace = interact(app, locate: { $0.buttons["save-toggle"].firstMatch }, tap: true)
             XCTAssertTrue(saveTrace.isEmpty, "save action must be revealed [\(saveTrace)]")
             if save.label == "Save video" { sawActionLabel = true }
             let savedLabel = NSPredicate(format: "label == %@", "Remove from saved")
@@ -339,12 +340,12 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(toggledToSaved, "save toggle must reflect saved state; label was '\(save.label)'")
 
         let download = app.buttons["download-button"]
-        let dlTrace = interact(app, download, tap: false)
+        let dlTrace = interact(app, locate: { $0.buttons["download-button"].firstMatch }, tap: false)
         XCTAssertTrue(dlTrace.isEmpty, "download control must be revealed [\(dlTrace)]")
         XCTAssertTrue(download.isEnabled, "picker must offer qualities resolved by the extractor")
 
         let comment = app.staticTexts["Fixture comment alpha"]
-        let commentTrace = interact(app, comment, tap: false)
+        let commentTrace = interact(app, locate: { $0.staticTexts["Fixture comment alpha"].firstMatch }, tap: false)
         XCTAssertTrue(commentTrace.isEmpty, "fixture comment must render once scrolled into view [\(commentTrace)]")
 
         app.buttons["Close"].tap()
@@ -394,7 +395,7 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
 
         let download = app.buttons["download-button"]
-        let dlTrace = interact(app, download, tap: true)
+        let dlTrace = interact(app, locate: { $0.buttons["download-button"].firstMatch }, tap: true)
         XCTAssertTrue(
             dlTrace.isEmpty,
             "download action must appear once qualities resolve [\(trace);\(dlTrace)]"
@@ -438,7 +439,7 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
 
         let download = app.buttons["download-button"]
-        let dlTrace = interact(app, download, tap: true)
+        let dlTrace = interact(app, locate: { $0.buttons["download-button"].firstMatch }, tap: true)
         XCTAssertTrue(
             dlTrace.isEmpty,
             "download action must appear once qualities resolve [\(trace);\(dlTrace)]"
