@@ -417,6 +417,11 @@ private struct HomeFeedView: View {
             }
         }
         .navigationTitle("Home")
+        .refreshable {
+            // Explicit user action: a deliberate page-one reload is
+            // quota-appropriate, unlike automatic refetches on tab switches.
+            await store.load()
+        }
         .task {
             // Auto-load ONLY a still-empty feed: tab switches must not re-fetch
             // the whole subscription aggregate (quota churn) or clobber scroll
