@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-22T17:10:00+08:00
+updated_at: 2026-08-23T13:35:00+08:00
 
 active_campaign:
   id: DEVICE_VALIDATION_V1
@@ -73,6 +73,14 @@ repo_baseline:
     this baseline pointer or re-recording their own CI runs; the code
     lineage they document is already evidenced. Refresh this pointer only
     when a code-affecting change lands or a workflow turns red.
+  reverified_2026_08_23: >
+    Fresh-session verification at HEAD 3a2936e (docs-only, pointer stays
+    ab30b51 per convention): Core Tests run 32619393566 SUCCESS and iOS CI
+    run 32619393541 SUCCESS with Build/Unit/UI/Gate steps individually
+    green; no workflow_dispatch run exists (total_count=0); Windows local
+    baseline green again (swift build clean; swift test 74 XCTest + 11
+    swift-testing, 0 failures). Full release-readiness config audit PASS,
+    zero defects: see .agent/checkpoints/20260823-DV-readiness-reaudit.md.
 
 continuation_policy:
   continue_after_packet: true
@@ -190,7 +198,9 @@ human_inputs_pending:
       owner; anonymous API cannot trigger workflow_dispatch. Repository
       secrets are already configured from Part 0 plumbing (6a0d48e).
       Config/Secrets.local.xcconfig verified ABSENT locally — Part 0 not
-      yet started on the authoring machine.
+      yet started on the authoring machine. Re-verified 2026-08-23:
+      total_count=0 dispatch events; gh unauthenticated and no ambient
+      GH_TOKEN/GITHUB_TOKEN on the authoring host.
 
 physical_device_checks_deferred:
   - PiP real-device behavior
