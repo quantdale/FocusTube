@@ -1,19 +1,28 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-23T14:20:00+08:00
+updated_at: 2026-08-23T18:40:00+08:00
 
 active_campaign:
   id: DEVICE_VALIDATION_V1
   status: active
   kind: physical-device/account release validation (owner-evidence driven)
-  baseline: 2c7646d
+  baseline: 42f761a
   exit_gate: DV-EXIT (Batch A A1-A14 pass + one live-smoke dispatch recorded)
   note: >
-    Restored on HARDENING_V2 exit. All agent-actionable engineering is done;
-    remaining items require the owner's physical iPhone and Google/Apple
-    account setup, plus an authenticated gh CLI (or manual UI click) to fire
-    the opt-in live_smoke workflow_dispatch.
+    FINAL_COMPLETION_V1 (2026-08-23) re-established repository truth before
+    owner validation: iOS CI had silently failed on every push since the
+    fixture-journey expansion, despite durable-state claims. Root causes were
+    found and fixed as product defects (see
+    .agent/checkpoints/20260823-FINAL-COMPLETION.md): modal sheet presentation
+    of AVKit content never reached the accessibility hierarchy on iOS 26
+    (video page is now a pushed route), LibraryStore was not observable
+    (frontmost lists never live-updated), player overlays could inflate their
+    List row, and fixture download admission depended on host-disk capacity.
+    Full matrix green again at 42f761a. All agent-actionable engineering is
+    complete; remaining items require the owner's physical iPhone and
+    Google/Apple account setup plus an authenticated gh CLI (or manual UI
+    click) for the opt-in live_smoke dispatch.
 
 previous_campaigns:
   - id: HARDENING_V2
@@ -35,7 +44,7 @@ previous_campaigns:
     evidence_commit: 03ce6f6
     docs_commit: 47e1126
 
-status: device_validation_in_progress
+status: engineering_complete_device_validation_required
 current_milestone: DEVICE_VALIDATION_V1
 current_gate: DV-BATCH-A (owner device evidence)
 current_work_packet: DV-A1-A14 (owner) / DV-8 diagnose-repair loop (agent)
@@ -55,19 +64,17 @@ current_waypoint:
     - live smoke run result (one manual dispatch)
     - no Critical/High defect open at close
 
-resume_token: DEVICE_VALIDATION_V1:2c7646d
+resume_token: DEVICE_VALIDATION_V1:42f761a
 repo_baseline:
   branch: main
-  commit: ab30b51
+  commit: 42f761a
   note: >
-    HARDENING_V2 recovery complete on 2c7646d with both workflows green:
-    Core Tests run 32584881846; iOS CI run 32584881870 (job 97059652867).
-    Every subsequent commit carries its own observed green push-triggered
-    runs: c318ae7 -> Core 32585836440 / iOS CI 32585836433; b224098 -> Core
-    32592587334 / iOS CI 32592587296 (unit 75/0/4 skipped, UI 1/0);
-    ab30b51 (current tip) -> Core 32607499216 / iOS CI 32607499244. Windows
-    local baseline also green: swift build clean; swift test "Executed 74
-    tests, with 0 failures" repeated runs (Swift 6.3.3).
+    FINAL_COMPLETION_V1 closed the red-iOS-CI regression introduced with the
+    fixture-journey expansion and left the full deterministic matrix green:
+    Core Tests run 32666070090 SUCCESS; iOS CI run 32666070146 SUCCESS
+    (Build Debug + Build Release + Unit tests 94/0/4-skipped + UI journeys +
+    Gate) at code SHA 42f761a. Windows local baseline green: swift build
+    clean; swift test 74/74 zero failures.
   pointer_convention: >
     Docs-only commits (STATE/checkpoints/README) do NOT require refreshing
     this baseline pointer or re-recording their own CI runs; the code
@@ -227,13 +234,14 @@ deferred_debt:
 
 last_checkpoint:
   kind: campaign-transition
-  file: .agent/checkpoints/20260822-H2-recovery.md
-  commit: 2c7646d
+  file: .agent/checkpoints/20260823-FINAL-COMPLETION.md
+  commit: 42f761a
   note: >
-    HARDENING_V2 recovery closed with observed evidence: Core Tests run
-    32584881846 green; iOS CI run 32584881870 green (Build/unit 75-0/UI 1-0/
-    Gate all success); Windows swift test 74-0 x3. Both red-gate root causes
-    documented with fixes and regression coverage.
+    FINAL_COMPLETION_V1: two High product defects (unreachable video page on
+    iOS 26 modal presentation; non-observable LibraryStore), two Medium
+    defects (inflatable player overlay rows; host-disk-dependent fixture
+    admission), plus the docs/07 pull-to-refresh commitment, fixed and
+    validated with both workflows green at 42f761a.
 
 next_transition:
   when: owner returns Batch A evidence and one live-smoke result

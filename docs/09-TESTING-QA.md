@@ -49,6 +49,21 @@ Automate real UI flows against deterministic fixture providers:
 
 Every important control receives a stable accessibility identifier.
 
+## iOS 26 simulator notes (learned 2026-08-23, run #115–#120)
+
+- Modal `.sheet` presentation of AVKit-hosting content never exposed its
+  content to the accessibility hierarchy on current iOS 26 runtimes; the
+  video page is therefore a **pushed** `navigationDestination` route, which
+  exposes correctly and is also better navigation semantics.
+- SwiftUI `List` lazily materializes rows near the viewport only —
+  below-the-fold controls do not exist for XCUITest until scrolled into
+  view. Journeys scroll elements into the lazy hierarchy before asserting.
+- Alert message copy may live outside the alert's `staticTexts` subtree;
+  assert typed failure copy app-wide.
+- Player overlay states must be hard-bounded inside List rows: flexible
+  `maxHeight` frames inflate the row and push later sections below the lazy
+  fold.
+
 ### Tier 3 — live YouTubeKit smoke
 
 Small network-dependent suite, separate from deterministic merge gate:

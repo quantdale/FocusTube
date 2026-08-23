@@ -257,3 +257,29 @@ On pass under INTEGRATION_COMPLETION_V1: record evidence, then continue directly
 - [ ] lock-screen/headset/Bluetooth command behavior verified as applicable.
 - [ ] storage/delete/relaunch behavior spot-checked on device.
 - [ ] known limitations/recovery steps documented.
+## FINAL-COMPLETION_V1 evidence addendum (2026-08-23, code HEAD 42f761a)
+
+A final ship-readiness pass found and fixed real product defects that had kept
+iOS CI red since the fixture-journey expansion (runs #113–#115), then restored
+the full deterministic matrix:
+
+- Core Tests run **32666070090 SUCCESS**; iOS CI run **32666070146 SUCCESS**
+  (Build Debug, Build Release, Unit tests 94 executed / 0 failures / 4
+  opt-in-skipped, complete UI journey set, Gate) on commit `42f761a`.
+- G0 tabs: LaunchTests + shell journey green at `42f761a`.
+- G4/G5: Home feed/load-more/error/empty and Search submit/keyboard/empty/
+  error journeys green; the seeded short-form result never renders.
+- G6: video page (pushed route) shows title/channel/save-toggle/download
+  picker/comments and closes back to the feed (video-page journey).
+- G2/G7: scripted download completes → registers → deletes with confirmation;
+  Continue Watching opens with resume intent across relaunch (downloads +
+  library journeys).
+- Defects fixed this pass are catalogued in
+  `.agent/checkpoints/20260823-FINAL-COMPLETION.md`; notably, the video page
+  is now a pushed navigation route because modal presentation of
+  AVKit-hosting content never reached the accessibility hierarchy on current
+  iOS 26 runtimes.
+
+The G9 hardening checkboxes were satisfied by the HARDENING_V1/V2 campaigns;
+their evidence lives in `.agent/checkpoints/`. G10 remains owner-executed
+(`DEVICE_VALIDATION_BATCH_A.md`).

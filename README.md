@@ -4,7 +4,7 @@ FocusTube is a personal-use, native iOS YouTube client designed around intention
 
 The V1 product focuses on subscriptions/Home, deliberate search, native video playback, comments/account actions, downloads, and a local offline library. Shorts, the vertical swipe player, creator tools, shopping, and recommendation-driven rabbit holes are intentionally absent.
 
-> **Status:** `device_validation_in_progress` — implementation, HARDENING_V1 backlog closure, and the HARDENING_V2 adversarial pass are all complete with green CI on commit `2c7646d` (Core Tests run 32584881846; iOS CI run 32584881870: Build success, unit tests 75 executed / 0 failures, UI tests 1 / 0 failures, Gate success). Remaining work is consolidated owner-side device/account validation in [DEVICE_VALIDATION_BATCH_A.md](DEVICE_VALIDATION_BATCH_A.md). Live progress pointer: [`.agent/STATE.yaml`](.agent/STATE.yaml). Fresh coding agents start with [`START_HERE.md`](START_HERE.md).
+> **Status:** `engineering_complete_device_validation_required` — implementation, HARDENING_V1/V2 hardening, and the 2026-08-23 FINAL_COMPLETION_V1 ship-readiness pass are complete with both workflows green on commit `42f761a` (Core Tests run 32666070090; iOS CI run 32666070146: Debug build, Release build, unit tests 94 executed / 0 failures / 4 opt-in-skipped, full deterministic UI journey set, Gate success). Remaining work is consolidated owner-side device/account validation in [DEVICE_VALIDATION_BATCH_A.md](DEVICE_VALIDATION_BATCH_A.md). Live progress pointer: [`.agent/STATE.yaml`](.agent/STATE.yaml). Fresh coding agents start with [`START_HERE.md`](START_HERE.md).
 
 ## Autonomous development mode
 
@@ -19,7 +19,7 @@ This repository contains a durable control plane so an AI coding agent can execu
 - [`.agent/checkpoints/`](.agent/checkpoints/) — durable gate/milestone evidence.
 - [`.agent/HARDENING_BACKLOG.md`](.agent/HARDENING_BACKLOG.md) — nonblocking debt intentionally deferred during implementation.
 
-The active campaign is **DEVICE_VALIDATION_V1**: INTEGRATION_COMPLETION_V1 and the HARDENING_V1/V2 passes are complete (H2-EXIT evidence on `2c7646d`); what remains is owner-executed physical-device validation plus one opt-in live-smoke dispatch. Agents keep CI green and diagnose/repair any device-reported failures.
+The active campaign is **DEVICE_VALIDATION_V1**: INTEGRATION_COMPLETION_V1, HARDENING_V1/V2, and FINAL_COMPLETION_V1 are complete (final green evidence on `42f761a`); what remains is owner-executed physical-device validation plus one opt-in live-smoke dispatch. Agents keep CI green and diagnose/repair any device-reported failures.
 
 ## Locked product/technical decisions
 

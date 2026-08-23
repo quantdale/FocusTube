@@ -24,6 +24,24 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 
 ## Backlog
 
+### HB-013 — DownloadsView re-fetches all records on every progress render
+- Severity: Low
+- Discovered in: FINAL-COMPLETION_V1 audit (2026-08-23)
+- Area: App/RootView.swift (DownloadsView), App/Download/DownloadManager.swift (`records`)
+- Evidence/reproduction: `records` is a computed SwiftData fetch over all `DownloadRecord`s; `liveTasks` updates on every transport event, so an active transfer re-runs the fetch per render.
+- Impact: bounded overhead (personal-scale record counts); no correctness effect.
+- Suggested hardening action: cache a filtered failed-tasks projection updated from event application.
+- Blocks implementation: no
+
+### HB-014 — Fixture video pages intentionally show the bounded "Playback failed" overlay
+- Severity: Low
+- Discovered in: FINAL-COMPLETION_V1 campaign (run #118 diagnostics)
+- Area: FocusTubeUITests fixtures; App/Playback/PlayerView.swift
+- Evidence/reproduction: fixture stream URLs are non-resolvable hosts, so AVPlayerItem legitimately reaches `.failed`; journeys assert around the overlay.
+- Impact: none for production; future journeys that need a *playing* state need a local file:// fixture stream.
+- Suggested hardening action: add a tiny bundled media asset to the fixture harness if playback-state journeys become necessary.
+- Blocks implementation: no
+
 ### HB-001 — VideoPageView registers onProgress after loadAndPlay
 - Severity: Low
 - Discovered in: INTEGRATION_COMPLETION_V1 audit (cba7e67 era)

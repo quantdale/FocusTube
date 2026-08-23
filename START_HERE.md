@@ -11,9 +11,9 @@ The implementation campaign is continuous. **Do not stop after one task or one w
 ## Current campaign
 
 - Campaign: `DEVICE_VALIDATION_V1` (active; restored after HARDENING_V2 exit)
-- Scope: owner-executed physical-device/account validation (Batch A items A1–A14, Part 0 setup) plus one opt-in live-smoke dispatch. All agent-actionable engineering — implementation M0–M8, HARDENING_V1 backlog closure, and the HARDENING_V2 adversarial pass — is complete with green CI on `2c7646d` (Core Tests run 32584881846; iOS CI run 32584881870).
+- Scope: owner-executed physical-device/account validation (Batch A items A1–A14, Part 0 setup) plus one opt-in live-smoke dispatch. All agent-actionable engineering — implementation M0–M8, HARDENING_V1 backlog closure, the HARDENING_V2 adversarial pass, and the 2026-08-23 FINAL_COMPLETION_V1 ship-readiness pass (which found and fixed real product defects behind a silently red iOS CI: unreachable video page under iOS 26 modal presentation, non-observable LibraryStore, inflatable player overlay rows, host-disk-dependent fixture admission) — is complete with both workflows green on `42f761a` (Core Tests run 32666070090; iOS CI run 32666070146).
 - Agent role while waiting: keep CI green, diagnose/repair any owner-reported device failures (DV-8), record evidence.
-- Nonblocking Medium/Low cleanup still goes to `.agent/HARDENING_BACKLOG.md` (currently zero open items); Critical/High is fixed immediately.
+- Nonblocking Medium/Low cleanup still goes to `.agent/HARDENING_BACKLOG.md` (currently HB-013, HB-014); Critical/High is fixed immediately.
 
 ## Mandatory reading order
 
