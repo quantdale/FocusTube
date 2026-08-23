@@ -96,9 +96,9 @@ final class Journeys: XCTestCase {
         tap: Bool,
         timeout: TimeInterval = 12
     ) -> String {
-        guard element.waitForExistence(timeout: timeout) else {
-            return "never-existed"
-        }
+        // NOTE: no up-front existence wait — below-the-fold List rows do not
+        // exist AT ALL until the list scrolls near them, so waiting first
+        // simply times out. Swipe-and-recheck from the start.
         var win = CGRect.null
         let windowCount = app.windows.count
         for index in 0..<max(windowCount, 0) {
@@ -124,7 +124,7 @@ final class Journeys: XCTestCase {
             swipes += 1
             _ = element.waitForExistence(timeout: 2)
         }
-        guard element.exists else { return "lost-after-scroll" }
+        guard element.exists else { return "never-existed-after-\(swipes)-swipes" }
         let f = element.frame
         guard f.height > 0, f.minY >= win.minY - 1, f.maxY <= win.maxY + 1 else {
             return "offscreen;frame=\(f);win=\(win);swipes=\(swipes)"
