@@ -189,6 +189,20 @@ struct FixtureYouTubeAPI: YouTubeAPI {
         .like
     }
 
+    // DDV2-08 bounded-playlist fakes.
+
+    func fetchMyPlaylists(accessToken: String) async throws -> [PlaylistSummary] {
+        [PlaylistSummary(id: "PL-fixture", title: "Fixture Playlist", privacyStatus: "private", itemCount: 2)]
+    }
+
+    func fetchPlaylistItems(playlistID: String, accessToken: String) async throws -> [PlaylistItemSummary] {
+        [PlaylistItemSummary(playlistItemID: "PI-1", videoID: "fix-home-1", title: "Fixture Documentary One", channelTitle: "Fixture Channel")]
+    }
+
+    func addToPlaylist(playlistID: String, videoID: String, accessToken: String) async throws {}
+
+    func removeFromPlaylist(playlistItemID: String, accessToken: String) async throws {}
+
     func subscribe(channelID: String, accessToken: String) async throws {}
 
     func unsubscribe(subscriptionID: String, accessToken: String) async throws {}

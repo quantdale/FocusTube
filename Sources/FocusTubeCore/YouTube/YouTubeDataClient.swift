@@ -223,6 +223,59 @@ public struct YouTubeDataClient: YouTubeAPI {
         return decoded.items.first.flatMap { VideoRatingState(rawValue: $0.rating) } ?? .unspecified
     }
 
+    // MARK: - Supported playlists (DDV2-08, bounded subset)
+
+    /// First page of the user's own playlists (max 50 — personal scale).
+    public func fetchMyPlaylists(accessToken: String) async throws -> [PlaylistSummary] {
+        let request = try Self.buildRequest(baseURL: baseURL, path: "playlists", accessToken: accessToken, query: [
+            "part": "snippet,contentDetails",
+            "mine": "true",
+            "maxResults": "50"
+        ])
+        let data = try await perform(request)
+        let decoded = try Self.decode(MyPlaylistsResponse.self, from: data)
+        return decoded.items.map {
+            PlaylistSummary(id: $0.id, title: $0.snippet.title, privacyStatus: $0.status?.privacyStatus, itemCount: $0.contentDetails.itemCount ?? 0)
+        }
+    }
+
+    /// Items of one playlist with the resource ids needed for removal.
+    public func fetchPlaylistItems(playlistID: String, accessToken: String) async throws -> [PlaylistItemSummary] {
+        let request = try Self.buildRequest(baseURL: baseURL, path: "playlistItems", accessToken: accessToken, query: [
+            "part": "snippet,contentDetails",
+            "playlistId": playlistID,
+            "maxResults": "50"
+        ])
+        let data = try await perform(request)
+        let decoded = try Self.decode(PlaylistItemsDetailResponse.self, from: data)
+        return decoded.items.map {
+            PlaylistItemSummary(
+                playlistItemID: $0.id,
+                videoID: $0.contentDetails.videoId,
+                title: $0.snippet.title,
+                channelTitle: $0.snippet.videoOwnerChannelTitle ?? $0.snippet.channelTitle
+            )
+        }
+    }
+
+    /// Appends a video to a user-owned playlist (playlistItems.insert).
+    public func addToPlaylist(playlistID: String, videoID: String, accessToken: String) async throws {
+        var request = try Self.buildRequest(baseURL: baseURL, path: "playlistItems", accessToken: accessToken, query: ["part": "snippet"])
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(PlaylistItemInsertBody(
+            snippet: .init(playlistId: playlistID, resourceId: .init(kind: "youtube#video", videoId: videoID))
+        ))
+        _ = try await perform(request)
+    }
+
+    /// Removes an item by its playlistItem resource id.
+    public func removeFromPlaylist(playlistItemID: String, accessToken: String) async throws {
+        var request = try Self.buildRequest(baseURL: baseURL, path: "playlistItems", accessToken: accessToken, query: ["id": playlistItemID])
+        request.httpMethod = "DELETE"
+        _ = try await perform(request)
+    }
+
     /// Shared comment-text validation: non-empty after trimming, bounded to
     /// YouTube's documented 10,000-character `textOriginal` limit. Returns the
     /// trimmed text to submit.
@@ -464,5 +517,56 @@ private struct VideoRatingResponse: Decodable {
     struct Item: Decodable {
         let videoId: String
         let rating: String
+    }
+}
+
+/// Response of `playlists.list` filtered to mine.
+private struct MyPlaylistsResponse: Decodable {
+    let items: [Item]
+    struct Item: Decodable {
+        let id: String
+        let snippet: Snippet
+        let status: Status?
+        let contentDetails: ContentDetails
+        struct Snippet: Decodable {
+            let title: String
+        }
+        struct Status: Decodable {
+            let privacyStatus: String?
+        }
+        struct ContentDetails: Decodable {
+            let itemCount: Int?
+        }
+    }
+}
+
+/// Detailed `playlistItems.list` response including snippet titles.
+private struct PlaylistItemsDetailResponse: Decodable {
+    let items: [Item]
+    struct Item: Decodable {
+        let id: String
+        let snippet: Snippet
+        let contentDetails: ContentDetails
+        struct Snippet: Decodable {
+            let title: String
+            let channelTitle: String
+            let videoOwnerChannelTitle: String?
+        }
+        struct ContentDetails: Decodable {
+            let videoId: String
+        }
+    }
+}
+
+/// Request body for `playlistItems.insert`.
+private struct PlaylistItemInsertBody: Encodable {
+    let snippet: Snippet
+    struct Snippet: Encodable {
+        let playlistId: String
+        let resourceId: ResourceID
+    }
+    struct ResourceID: Encodable {
+        let kind: String
+        let videoId: String
     }
 }

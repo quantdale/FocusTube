@@ -66,6 +66,14 @@ public protocol YouTubeAPI: Sendable {
     func findMySubscription(channelID: String, accessToken: String) async throws -> SubscriptionLookup?
     /// The authenticated user's current rating state for a video (getRating).
     func fetchMyVideoRating(videoID: String, accessToken: String) async throws -> VideoRatingState
+    /// The authenticated user's playlists (bounded first page, 50).
+    func fetchMyPlaylists(accessToken: String) async throws -> [PlaylistSummary]
+    /// Items of one playlist with their removable resource ids (first page).
+    func fetchPlaylistItems(playlistID: String, accessToken: String) async throws -> [PlaylistItemSummary]
+    /// Appends a video to one of the user's playlists.
+    func addToPlaylist(playlistID: String, videoID: String, accessToken: String) async throws
+    /// Removes an item by its playlistItem resource id.
+    func removeFromPlaylist(playlistItemID: String, accessToken: String) async throws
 }
 
 /// Result of looking up the user's subscription to a channel. Carries the
@@ -133,6 +141,22 @@ extension YouTubeAPI {
     }
 
     public func fetchMyVideoRating(videoID: String, accessToken: String) async throws -> VideoRatingState {
+        throw YouTubeAPIError.unknown(status: -1)
+    }
+
+    public func fetchMyPlaylists(accessToken: String) async throws -> [PlaylistSummary] {
+        throw YouTubeAPIError.unknown(status: -1)
+    }
+
+    public func fetchPlaylistItems(playlistID: String, accessToken: String) async throws -> [PlaylistItemSummary] {
+        throw YouTubeAPIError.unknown(status: -1)
+    }
+
+    public func addToPlaylist(playlistID: String, videoID: String, accessToken: String) async throws {
+        throw YouTubeAPIError.unknown(status: -1)
+    }
+
+    public func removeFromPlaylist(playlistItemID: String, accessToken: String) async throws {
         throw YouTubeAPIError.unknown(status: -1)
     }
 
