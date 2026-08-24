@@ -5,10 +5,10 @@ coordinator_owns_status: true
 # Campaign note (2026-08-22): INTEGRATION_COMPLETION_V1 and HARDENING_V2 are
 # complete (IC-EXIT on 16ad839; H2-EXIT evidence on 2c7646d, see
 # .agent/checkpoints/20260822-H2-recovery.md). The waypoints below remain the
-# historical implementation map. The active campaign is DEVICE_VALIDATION_V1
-# (owner physical-device Batch A); it is tracked in .agent/STATE.yaml, which is
-# authoritative for current reality.
-campaign: DEVICE_VALIDATION_V1 (active; implementation campaigns complete)
+# historical implementation map. The active campaign is SPEC_CLOSURE_DAILY_DRIVER_V2
+# (owner directive 2026-08-24); its waypoints are appended at the end of this file.
+# .agent/STATE.yaml remains authoritative for current reality.
+campaign: SPEC_CLOSURE_DAILY_DRIVER_V2 (active)
 
 waypoints:
   - id: WP-000-BOOTSTRAP
@@ -194,3 +194,130 @@ out_of_campaign:
     milestone: M9_HARDENING_M10_PERSONAL_RELEASE
     status: deferred
     reason: Broad hardening/release is intentionally a later campaign triggered after IMPLEMENTATION_V1 or explicit user direction.
+
+# --- SPEC_CLOSURE_DAILY_DRIVER_V2 (opened 2026-08-24, owner directive) ---
+# Narrative scope lives in .agent/work-packets/DDV2-CAMPAIGN.md. DEVICE_VALIDATION_V1
+# stays downstream: after DDV2 product changes the device-validation baseline must be
+# refreshed (42f761a is NOT reused).
+
+  - id: DDV2-00-TRUTH-RESET
+    order: 100
+    gate: DDV2
+    status: complete
+    depends_on: []
+    objective: Audit every recorded spec/acceptance claim against current code and register findings durably.
+    exit_evidence:
+      - findings recorded in STATE.yaml ddv2_findings_ddv2_00
+      - campaign packets file created
+    next: DDV2-01-DURABLE-QUEUE
+
+  - id: DDV2-01-DURABLE-QUEUE
+    order: 101
+    gate: DDV2
+    status: in_progress
+    depends_on: [DDV2-00-TRUTH-RESET]
+    objective: Durable queued-download lifecycle — queued jobs survive process death with FIFO promotion reconstructed from persisted records; no signed-URL persistence; queued cancel deletes records; corrupt rows degrade to typed recoverable failure.
+    exit_evidence:
+      - DurableQueueTests (app target) covering all 10 required scenarios
+      - Core queue-policy tests green locally
+      - iOS CI green on packet commit
+      - docs/03 durable-queue section added
+    next: DDV2-02-DOWNLOAD-COMPLETION
+
+  - id: DDV2-02-DOWNLOAD-COMPLETION
+    order: 102
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-01-DURABLE-QUEUE]
+    objective: Downloads daily-use completion — queue controls, offline sorting/size/channel grouping, total storage usage, human-readable phases, retry-policy reconciliation (docs vs code).
+    exit_evidence: []
+    next: DDV2-03-API-EXPANSION
+
+  - id: DDV2-03-API-EXPANSION
+    order: 103
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-00-TRUTH-RESET]
+    objective: Typed account/comment API expansion — commentThreads.insert/comments.insert, subscription resource-id retrieval, rating models, deterministic tests.
+    exit_evidence: []
+    next: DDV2-04-VIDEO-ACTIONS-UI
+
+  - id: DDV2-04-VIDEO-ACTIONS-UI
+    order: 104
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-03-API-EXPANSION]
+    objective: Video page action row + comment composer with rich metadata, optimistic-state discipline, typed failure surfaces.
+    exit_evidence: []
+    next: DDV2-05-SETTINGS
+
+  - id: DDV2-05-SETTINGS
+    order: 105
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-00-TRUTH-RESET]
+    objective: Account/settings surface per product spec (profile control, sign in/out, storage link, privacy/version), safe sign-out semantics + tests.
+    exit_evidence: []
+    next: DDV2-06-HOME-CARDS
+
+  - id: DDV2-06-HOME-CARDS
+    order: 106
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-00-TRUTH-RESET]
+    objective: Shared rich video-card system + Home rebuild (thumbnail/title/channel/published/duration, accessibility, Dynamic Type, native caching).
+    exit_evidence: []
+    next: DDV2-07-SEARCH-RECENTS
+
+  - id: DDV2-07-SEARCH-RECENTS
+    order: 107
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-06-HOME-CARDS]
+    objective: Persisted deduped bounded recent queries with local suggestions (no remote calls while typing) + shared rich result cards.
+    exit_evidence: []
+    next: DDV2-08-LIBRARY
+
+  - id: DDV2-08-LIBRARY
+    order: 108
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-06-HOME-CARDS]
+    objective: Library continuity upgrades — continue-watching polish, richer additive SwiftData metadata with safe migrations, supported-playlists reconciliation, storage management link.
+    exit_evidence: []
+    next: DDV2-09-BACKLOG-CLOSURE
+
+  - id: DDV2-09-BACKLOG-CLOSURE
+    order: 109
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-02-DOWNLOAD-COMPLETION]
+    objective: Close HB-013 (projection architecture — partially landed in DDV2-01) and HB-014 (local playable test fixture) or record stronger explicit justification.
+    exit_evidence: []
+    next: DDV2-10-A11Y-VISUAL
+
+  - id: DDV2-10-A11Y-VISUAL
+    order: 110
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-04-VIDEO-ACTIONS-UI, DDV2-05-SETTINGS, DDV2-07-SEARCH-RECENTS, DDV2-08-LIBRARY]
+    objective: Coordinated accessibility/visual integration pass over all new surfaces without regressing iOS 26 XCUITest stability work.
+    exit_evidence: []
+    next: DDV2-11-REGRESSION
+
+  - id: DDV2-11-REGRESSION
+    order: 111
+    gate: DDV2
+    status: pending
+    depends_on: [DDV2-10-A11Y-VISUAL, DDV2-09-BACKLOG-CLOSURE]
+    objective: Full regression/release qualification — full suites green, both workflows green, secrets audit, focus-mode invariant audit, docs synchronized.
+    exit_evidence: []
+    next: DDV2-EXIT
+
+  - id: DDV2-EXIT
+    order: 112
+    gate: DDV2-EXIT
+    status: pending
+    depends_on: [DDV2-11-REGRESSION]
+    objective: Record final campaign evidence checkpoint and hand off to refreshed physical-device validation with a new code baseline.
+    exit_evidence: []

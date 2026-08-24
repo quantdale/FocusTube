@@ -1,15 +1,34 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-23T18:40:00+08:00
+updated_at: 2026-08-24T06:05:00+08:00
 
 active_campaign:
-  id: DEVICE_VALIDATION_V1
+  id: SPEC_CLOSURE_DAILY_DRIVER_V2
   status: active
-  kind: physical-device/account release validation (owner-evidence driven)
-  baseline: 42f761a
-  exit_gate: DV-EXIT (Batch A A1-A14 pass + one live-smoke dispatch recorded)
+  kind: spec-closure + daily-driver product completion (owner directive)
+  baseline: 934dc69 (docs tip at campaign open)
+  exit_gate: DDV2-EXIT
   note: >
+    Owner directive (2026-08-24): turn the technically hardened but narrow V1
+    into a coherent daily-usable client AND close discrepancies between specs,
+    acceptance claims, and implementation. P0 is the durable queued-download
+    recovery defect. DEVICE_VALIDATION_V1 remains downstream external owner
+    validation; the final device-validation baseline MUST be refreshed after
+    this campaign's product changes (42f761a is no longer the handoff SHA).
+    Packet narrative: .agent/work-packets/DDV2-CAMPAIGN.md.
+
+ddv2_findings_ddv2_00:
+  queued_download_durability: CONFIRMED_DEFECT — capacity-deferred requests were
+    persisted `.queued` while promotion state lived only in DownloadService's
+    process-memory `pendingRequests`; after relaunch the record had no promotion
+    path AND counted toward activeLogicalCount, so two stranded rows could
+    permanently deadlock all download admission. Fixed in DDV2-01.
+  comment_write_gap: CONFIRMED_ABSENT (audit pending in DDV2-03) — YouTubeDataClient
+    exposes commentThreads.list only; docs/04 and G6 claim insert paths.
+  hb013_hb014: OPEN in backlog while STATE previously claimed no open debt —
+    contradiction recorded; closure scheduled DDV2-09 or earlier en route.
+  historical_note: >
     FINAL_COMPLETION_V1 (2026-08-23) re-established repository truth before
     owner validation: iOS CI had silently failed on every push since the
     fixture-journey expansion, despite durable-state claims. Root causes were
@@ -25,6 +44,15 @@ active_campaign:
     click) for the opt-in live_smoke dispatch.
 
 previous_campaigns:
+  - id: DEVICE_VALIDATION_V1
+    terminal_state: superseded_by_SPEC_CLOSURE_DAILY_DRIVER_V2 (owner validation
+      still pending; will resume against the refreshed post-DDV2 baseline)
+    evidence_commit: 42f761a (code) / 934dc69 (docs tip)
+    summary: >
+      Owner-executed physical-device validation campaign opened after
+      FINAL_COMPLETION_V1; Batch A never started (Part 0 setup absent on the
+      authoring host, live-smoke dispatch blocked on authenticated gh).
+      Remains the downstream external gate once DDV2 lands.
   - id: HARDENING_V2
     terminal_state: hardening_v2_complete_device_validation_pending
     evidence_commit: 2c7646d
@@ -44,27 +72,31 @@ previous_campaigns:
     evidence_commit: 03ce6f6
     docs_commit: 47e1126
 
-status: engineering_complete_device_validation_required
-current_milestone: DEVICE_VALIDATION_V1
-current_gate: DV-BATCH-A (owner device evidence)
-current_work_packet: DV-A1-A14 (owner) / DV-8 diagnose-repair loop (agent)
-current_packet_status: waiting_on_owner
+status: spec_closure_daily_driver_v2_in_progress
+current_milestone: SPEC_CLOSURE_DAILY_DRIVER_V2
+current_gate: DDV2-01 (durable queued-download lifecycle)
+current_work_packet: DDV2-01
+current_packet_status: code_complete_local_green_awaiting_ios_ci
 current_waypoint:
-  id: DEVICE_VALIDATION_BATCH_A_PENDING
+  id: DDV2-01_DURABLE_QUEUE
   objective: >
-    Owner completes Part 0 setup (Apple team + Google Cloud iOS OAuth client +
-    YouTube Data API enablement + fill Config/Secrets.local.xcconfig), executes
-    DEVICE_VALIDATION_BATCH_A.md items A1-A14 on the physical iPhone, and
-    returns per-item evidence. Agent diagnoses any failures (DV-8), fixes,
-    re-runs CI, and re-tests affected items until gates pass; then triggers one
-    live_smoke workflow_dispatch for real extraction evidence and writes the
-    final validation report (DV-9).
+    Repair durable queued-download recovery: queued jobs survive process death;
+    queue reconstructed from persisted `.queued` records (FIFO by createdAt);
+    planning metadata persisted WITHOUT signed media URLs; promotion stays FIFO
+    and bounded (max 2); duplicate admission impossible; queued cancel deletes
+    the record; corrupt/legacy rows degrade to typed recoverable failure
+    (`queueStateCorrupted`); relaunch with actives+queued settles correctly.
+  acceptance_evidence:
+    - FocusTubeTests/DurableQueueTests.swift (8 tests) covering the 10 required scenarios
+    - Core DownloadQueuePolicyTests green locally on Windows (81 XCTest + 11 swift-testing)
+    - iOS CI (build Debug/Release + unit + UI journeys + gate) green on the packet commit
+    - docs/03 durable-queue section added; STATE/WAYPOINTS updated
   validation_required:
     - device evidence A1-A14 (owner)
     - live smoke run result (one manual dispatch)
     - no Critical/High defect open at close
 
-resume_token: DEVICE_VALIDATION_V1:42f761a
+resume_token: SPEC_CLOSURE_DAILY_DRIVER_V2:DDV2-01
 repo_baseline:
   branch: main
   commit: 42f761a
@@ -154,8 +186,10 @@ progress:
   hardening_v2_exit_passed: true
   note: >
     IC-EXIT passed on 16ad839; HARDENING_V1 backlog fully closed on 03ce6f6;
-    HARDENING_V2 exited on 2c7646d per .agent/checkpoints/20260822-H2-recovery.md.
-    No open debt remains in .agent/HARDENING_BACKLOG.md.
+    HARDENING_V2 exited on 2c7646d. CORRECTION (2026-08-24, DDV2-00): a prior
+    revision of this note claimed "No open debt remains" while HB-013 and
+    HB-014 were in fact open in .agent/HARDENING_BACKLOG.md — the contradiction
+    is acknowledged; closure is scheduled inside SPEC_CLOSURE_DAILY_DRIVER_V2.
 
 milestones:
   M0_BOOTSTRAP: complete
@@ -187,6 +221,8 @@ packets:
   WP-012-HARDEN-RELEASE: complete
   H2-HARDENING-V2: complete
   DV-BATCH-A: waiting_on_owner
+  DDV2-00: complete
+  DDV2-01: in_progress
 
 blockers:
   - id: owner-device-evidence
