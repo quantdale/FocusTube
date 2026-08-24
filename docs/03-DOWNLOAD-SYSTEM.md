@@ -122,6 +122,27 @@ A download is `completed` only when:
 - AVPlayer can create a playable item in integration tests;
 - SwiftData record points to the final relative path.
 
+## Durable queue (DDV2-01)
+
+Capacity-deferred downloads are a durable queue, not a process-memory detail:
+
+- At most two logical downloads are active. Additional requests persist as
+  `.queued` SwiftData records carrying planning metadata (`title`,
+  `channelTitle`, requested quality, duration) so promotion can be reconstructed
+  after process death.
+- Queued records never persist signed media URLs — components are empty. Every
+  promotion re-resolves fresh streams through `MediaExtracting` at the exact
+  originally requested quality.
+- Promotion is strictly FIFO by record creation time. New requests may never
+  overtake queued work; promoted heads bypass only the sibling-precedence rule,
+  never the concurrency bound.
+- `.queued` records do not occupy active slots: a stranded queue delays but can
+  never permanently deadlock admission.
+- Cancelling a queued job deletes its record outright.
+- A persisted queued row with an unusable identity/metadata payload degrades to
+  the typed `queueStateCorrupted` failure at launch reconciliation — visible,
+  actionable, and slot-free.
+
 ## Storage pressure
 
 Before starting a large download, estimate required free space with margin, especially adaptive streams where two components plus final output coexist temporarily. Refuse safely before consuming nearly all device storage.

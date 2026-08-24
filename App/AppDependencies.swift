@@ -176,12 +176,19 @@ final class AppDependencies {
 
         self.libraryStore = library
         self.downloadManager = manager
-        self.downloadService = DownloadService(
+        let service = DownloadService(
             extractor: extractor,
             downloadManager: manager,
             library: library,
             mediaDirectory: mediaDirectory
         )
+        self.downloadService = service
+        // Terminal settlements outside DownloadService's own run loops —
+        // reattached background transfers finishing after a relaunch, or
+        // manager-level cancels — must still promote durable queued work.
+        manager.onTaskSettled = { [weak service] _ in
+            service?.downloadQueueDidSettle()
+        }
         self.playerCoordinator = player
         self.backgroundMedia = media
         self.homeStore = HomeFeedStore(auth: auth, api: api)

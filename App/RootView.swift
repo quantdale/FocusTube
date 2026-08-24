@@ -73,6 +73,10 @@ struct RootView: View {
             backgroundMedia.registerRemoteCommands()
             backgroundMedia.registerInterruptionObservation()
             backgroundMedia.registerRouteChangeObservation()
+            // Durable queue reconstruction (DDV2-01): after launch
+            // reconciliation, persisted `.queued` downloads re-enter the FIFO
+            // promotion queue so they survive process death.
+            await downloadService.restorePersistedQueue()
         }
     }
 }
@@ -137,11 +141,52 @@ struct DownloadsView: View {
                 }
             }
 
+            Section("Waiting to download") {
+                // Durable queue projection (DDV2-01): persisted `.queued`
+                // records are user-visible and cancellable, never invisible
+                // slot consumers.
+                if downloadManager.queuedTasks.isEmpty {
+                    Text("Nothing waiting.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(downloadManager.queuedTasks) { task in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(
+                                downloadManager.presentationMetadata(taskID: task.id)?.title
+                                    ?? task.videoID
+                            )
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            Text("\(task.resolution)p · queued")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let quality = DownloadQuality(rawValue: task.resolution) {
+                            Button(role: .destructive) {
+                                Task {
+                                    await downloadService.cancel(
+                                        videoID: task.videoID,
+                                        quality: quality
+                                    )
+                                }
+                            } label: {
+                                Image(systemName: "stop.fill")
+                            }
+                            .accessibilityLabel("Cancel download")
+                        }
+                    }
+                }
+            }
+
             Section("Failed downloads") {
                 // Failed/interrupted records stay listed so the promised retry
                 // is actionable: Retry re-invokes the service, which re-resolves
-                // fresh signed URLs instead of replaying expired ones.
-                let failed = downloadManager.records.filter { $0.state.status == .failed }
+                // fresh signed URLs instead of replaying expired ones. Served
+                // from the cached failure projection (HB-013), not a per-render
+                // SwiftData refetch.
+                let failed = downloadManager.failedTasks
                 if failed.isEmpty {
                     Text("No failed downloads.")
                         .foregroundStyle(.secondary)

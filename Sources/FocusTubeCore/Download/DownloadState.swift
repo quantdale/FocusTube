@@ -25,6 +25,11 @@ public enum DownloadError: String, Error, Equatable, Sendable {
     case cancelled
     case interrupted
     case storageRefused
+    /// A persisted `.queued` record whose identity/planning payload is unusable
+    /// (invalid video id, unparseable quality, or undecodable metadata). The
+    /// record degrades to this typed failure instead of deadlocking queue
+    /// admission; the user can retry it, which restarts a clean pipeline.
+    case queueStateCorrupted
     case unknown
 }
 

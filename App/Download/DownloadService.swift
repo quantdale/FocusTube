@@ -36,6 +36,8 @@ public struct DownloadFailure: Identifiable, Equatable, Sendable {
             return "The download was canceled."
         case .interrupted:
             return "The download was interrupted before it finished. You can retry it from Downloads."
+        case .queueStateCorrupted:
+            return "This queued download couldn't be restored after the app restarted. Start it again."
         case .unknown:
             return "The download failed for an unknown reason. Try again."
         }
@@ -69,8 +71,11 @@ final class DownloadService {
     }
 
     /// Request parked because all logical download slots were taken
-    /// (docs/03: at most two concurrent); promoted oldest-first.
+    /// (docs/03: at most two concurrent); promoted oldest-first. The same
+    /// payload is persisted on the `.queued` record (`QueuedDownloadMetadata`)
+    /// so the queue is reconstructable after process death.
     private struct PendingDownload {
+        let taskID: String
         let videoID: String
         let title: String
         let channelTitle: String
@@ -79,10 +84,24 @@ final class DownloadService {
     }
 
     private var pendingRequests: [PendingDownload] = []
+    /// Promotions already spawned but not yet settled. Keeps the bounded
+    /// promotion loop from overshooting the concurrency budget while a
+    /// promoted job's persisted record still reads `.queued`.
+    private var promotingIDs: Set<String> = []
+
+    /// Where a download invocation came from. Queue promotions bypass the
+    /// FIFO-precedence rule at enqueue (they ARE the queue's head; sibling
+    /// queued records sit behind them), keeping only the concurrency bound.
+    enum Origin: Sendable {
+        case userRequest
+        case queuePromotion
+    }
 
     private let extractor: MediaExtracting
-    private let downloadManager: DownloadManager
-    private let library: LibraryStore
+    /// Internal for app-target deterministic tests (@testable).
+    let downloadManager: DownloadManager
+    /// Internal for app-target deterministic tests (@testable).
+    let library: LibraryStore
     private let picker = DownloadQualityPicker()
     private let fileManager: FileManaging
     private let mediaDirectory: URL
@@ -107,7 +126,8 @@ final class DownloadService {
         title: String,
         channelTitle: String,
         quality: DownloadQuality,
-        durationSeconds: TimeInterval = 0
+        durationSeconds: TimeInterval = 0,
+        origin: Origin = .userRequest
     ) async {
         // Synchronous duplicate admission: a second start for the same
         // video+quality would reset the coordinator's in-flight task to
@@ -125,6 +145,12 @@ final class DownloadService {
             return
         }
 
+        // A stale `.queued` record for this exact id (e.g. one being promoted,
+        // or a legacy row the user re-requested) is replaced by the fresh
+        // pipeline run. Deleting it up front means an extraction/planning
+        // failure below can never strand an orphaned queued row behind.
+        downloadManager.clearStaleQueuedRecord("\(videoID)-\(quality.rawValue)")
+
         let media: ResolvedMedia
         do {
             media = try await extractor.resolve(videoID: videoID)
@@ -140,13 +166,13 @@ final class DownloadService {
             await run(
                 videoID: videoID, title: title, channelTitle: channelTitle,
                 quality: quality, resolution: resolution, components: [component],
-                durationSeconds: durationSeconds
+                durationSeconds: durationSeconds, origin: origin
             )
         case let .adaptive(video, audio, resolution):
             await run(
                 videoID: videoID, title: title, channelTitle: channelTitle,
                 quality: quality, resolution: resolution, components: [video, audio],
-                durationSeconds: durationSeconds
+                durationSeconds: durationSeconds, origin: origin
             )
         case let .unavailable(reason):
             // The quality picker only offers qualities the planner can satisfy,
@@ -178,11 +204,14 @@ final class DownloadService {
     /// Cancels the live transfer for this video+quality via its canonical task
     /// id. Validating/muxing/finalizing phases are intentionally non-cancellable:
     /// the coordinator rejects cancel transitions out of those phases, so a
-    /// final file can never be corrupted mid-write. Cancelling frees a logical
-    /// download slot, so the oldest queued request is promoted.
+    /// final file can never be corrupted mid-write. Cancelling a QUEUED job
+    /// deletes its durable record (manager-side). Either way a logical slot or
+    /// queue position frees, so the oldest queued request is promoted.
     public func cancel(videoID: String, quality: DownloadQuality) async {
-        await downloadManager.cancel("\(videoID)-\(quality.rawValue)")
-        promoteNextPendingRequest()
+        let taskID = "\(videoID)-\(quality.rawValue)"
+        pendingRequests.removeAll { $0.taskID == taskID }
+        await downloadManager.cancel(taskID)
+        await promoteQueuedWork()
     }
 
     private func fail(videoID: String, title: String, quality: DownloadQuality, error: DownloadError) {
@@ -196,12 +225,13 @@ final class DownloadService {
         quality: DownloadQuality,
         resolution: Int,
         components: [DownloadComponent],
-        durationSeconds: TimeInterval
+        durationSeconds: TimeInterval,
+        origin: Origin
     ) async {
         var outcome = await runOnce(
             videoID: videoID, title: title, channelTitle: channelTitle,
             quality: quality, resolution: resolution, components: components,
-            durationSeconds: durationSeconds
+            durationSeconds: durationSeconds, origin: origin
         )
 
         // Signed media URLs expire; one bounded automatic retry re-resolves
@@ -210,8 +240,8 @@ final class DownloadService {
         // download's failure can never cross-trigger (or suppress) a retry.
         if case let .failed(error) = outcome, retryPolicy.isRetryable(error) {
             guard let retried = try? await extractor.resolve(videoID: videoID) else {
-                finish(outcome: .failed(.extractionFailed),
-                       videoID: videoID, title: title, channelTitle: channelTitle, quality: quality)
+                await finish(outcome: .failed(.extractionFailed),
+                             videoID: videoID, title: title, channelTitle: channelTitle, quality: quality)
                 return
             }
             switch DownloadPlanner.plan(for: retried, quality: quality) {
@@ -219,19 +249,19 @@ final class DownloadService {
                 outcome = await runOnce(
                     videoID: videoID, title: title, channelTitle: channelTitle,
                     quality: quality, resolution: resolution, components: [component],
-                    durationSeconds: durationSeconds
+                    durationSeconds: durationSeconds, origin: origin
                 )
             case let .adaptive(video, audio, resolution):
                 outcome = await runOnce(
                     videoID: videoID, title: title, channelTitle: channelTitle,
                     quality: quality, resolution: resolution, components: [video, audio],
-                    durationSeconds: durationSeconds
+                    durationSeconds: durationSeconds, origin: origin
                 )
             case .unavailable:
                 outcome = .failed(.requestedQualityUnavailable)
             }
         }
-        finish(outcome: outcome, videoID: videoID, title: title, channelTitle: channelTitle, quality: quality)
+        await finish(outcome: outcome, videoID: videoID, title: title, channelTitle: channelTitle, quality: quality)
     }
 
     /// Single presentation point for a finished run: registers finalized media
@@ -243,7 +273,10 @@ final class DownloadService {
         title: String,
         channelTitle: String,
         quality: DownloadQuality
-    ) {
+    ) async {
+        // Any settled run (including defer/abandon/timeout) releases its
+        // promotion reservation; real slots remain accounted by records.
+        promotingIDs.remove("\(videoID)-\(quality.rawValue)")
         switch outcome {
         case .completed:
             let destination = destination(videoID: videoID, quality: quality)
@@ -270,7 +303,7 @@ final class DownloadService {
         // must not promote itself (it is still parked in the queue).
         switch outcome {
         case .completed, .failed:
-            promoteNextPendingRequest()
+            await promoteQueuedWork()
         case .timedOut, .abandoned, .deferred:
             break
         }
@@ -283,7 +316,8 @@ final class DownloadService {
         quality: DownloadQuality,
         resolution: Int,
         components: [DownloadComponent],
-        durationSeconds: TimeInterval
+        durationSeconds: TimeInterval,
+        origin: Origin
     ) async -> RunOutcome {
         let id = "\(videoID)-\(quality.rawValue)"
         let request = DownloadRequest(
@@ -302,7 +336,16 @@ final class DownloadService {
             durationSeconds: durationSeconds,
             componentCount: components.count
         )
-        let enqueued = await downloadManager.enqueue(request, requiredBytes: requiredBytes)
+        let enqueued = await downloadManager.enqueue(
+            request,
+            requiredBytes: requiredBytes,
+            queuedMetadata: QueuedDownloadMetadata(
+                title: title,
+                channelTitle: channelTitle,
+                durationSeconds: durationSeconds
+            ),
+            bypassQueuePrecedence: origin == .queuePromotion
+        )
         if enqueued.state.status == .failed {
             return .failed(enqueued.state.error ?? .storageRefused)
         }
@@ -311,11 +354,14 @@ final class DownloadService {
         // across the automatic retry's re-enqueue of the same task id).
         downloadManager.setPresentationMetadata(taskID: id, title: title, channelTitle: channelTitle)
 
-        // Capacity-deferred by the manager: persisted as `.queued` with no
-        // coordinator task. Park it for FIFO promotion when a slot frees.
+        // Capacity-deferred by the manager: persisted as `.queued` with
+        // durable planning metadata and no coordinator task/URLs. Park it for
+        // FIFO promotion when a slot frees — in this process or, via record
+        // reconstruction, after a relaunch.
         if await downloadManager.coordinatorTask(id) == nil {
             downloadManager.releaseAdmission(id)
             pendingRequests.append(PendingDownload(
+                taskID: id,
                 videoID: videoID, title: title, channelTitle: channelTitle,
                 quality: quality, durationSeconds: durationSeconds
             ))
@@ -346,22 +392,65 @@ final class DownloadService {
         }
     }
 
-    /// Promotes the oldest capacity-deferred request FIFO. Promotion goes back
-    /// through `download`, which re-resolves fresh signed URLs — persisted
-    /// component URLs are guaranteed expired by then. A promotion that still
-    /// finds no free slot simply re-defers (no busy loop; runs per settle).
-    private func promoteNextPendingRequest() {
-        guard !pendingRequests.isEmpty else { return }
-        let next = pendingRequests.removeFirst()
-        Task { [weak self] in
-            await self?.download(
-                videoID: next.videoID,
-                title: next.title,
-                channelTitle: next.channelTitle,
-                quality: next.quality,
-                durationSeconds: next.durationSeconds
-            )
+    /// Promotes capacity-deferred requests FIFO. Promotion goes back through
+    /// `download`, which re-resolves fresh signed URLs — persisted component
+    /// URLs are never trusted (queued records persist none at all). The loop
+    /// admits while the concurrency budget has room, counting both persisted
+    /// active slots and in-flight promotions; a promotion that finds no room
+    /// simply stays parked (re-defers onto the queue). Bounded by budget and
+    /// queue length — never a busy loop.
+    private func promoteQueuedWork() async {
+        let maxConcurrent = DownloadManager.maxConcurrentDownloads
+        while !pendingRequests.isEmpty {
+            let counts = downloadManager.activeLogicalCounts()
+            guard counts.active + promotingIDs.count < maxConcurrent else { break }
+            let next = pendingRequests.removeFirst()
+            promotingIDs.insert(next.taskID)
+            Task { [weak self] in
+                await self?.download(
+                    videoID: next.videoID,
+                    title: next.title,
+                    channelTitle: next.channelTitle,
+                    quality: next.quality,
+                    durationSeconds: next.durationSeconds,
+                    origin: .queuePromotion
+                )
+                self?.promotingIDs.remove(next.taskID)
+            }
         }
+    }
+
+    /// Reconstructs the durable queue from persisted `.queued` records after a
+    /// process relaunch (DDV2-01). Runs AFTER launch reconciliation so degraded
+    /// corrupt rows are already settled out of the queue. Restored jobs are
+    /// appended behind any session pendings only if not already present
+    /// (dedupe by canonical task id), then promotion drains immediately when
+    /// the budget has room — a relaunched app must not wait for an unrelated
+    /// settle event to resume its own queued work.
+    public func restorePersistedQueue() async {
+        await downloadManager.reconcileOnLaunch()
+        let known = Set(pendingRequests.map(\.taskID))
+        for job in downloadManager.persistedQueuedJobs() where !known.contains(job.taskID) {
+            guard let quality = DownloadQuality(rawValue: job.qualityRawValue) else { continue }
+            pendingRequests.append(PendingDownload(
+                taskID: job.taskID,
+                videoID: job.videoID,
+                title: job.title,
+                channelTitle: job.channelTitle,
+                quality: quality,
+                durationSeconds: job.durationSeconds
+            ))
+        }
+        await promoteQueuedWork()
+    }
+
+    /// Promotion trigger wired to `DownloadManager.onTaskSettled`: covers
+    /// transfers whose run loop died with a previous process (reattached
+    /// background settlement) as well as explicit cancels routed outside this
+    /// service. Idempotent — duplicate triggers only re-attempt bounded
+    /// promotion.
+    public func downloadQueueDidSettle() {
+        Task { await promoteQueuedWork() }
     }
 
     private func destination(videoID: String, quality: DownloadQuality) -> URL {

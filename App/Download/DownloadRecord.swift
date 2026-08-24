@@ -25,6 +25,12 @@ final class DownloadRecord {
     /// (lightweight migration), and nil falls back to `videoID` at lookup.
     var title: String?
     var channelTitle: String?
+    /// Durable queue payload (DDV2-01): planning metadata for a
+    /// capacity-deferred `.queued` record so promotion can be reconstructed
+    /// after process death. Additive optional — legacy rows decode as nil and
+    /// are synthesized from the row's own fields at restore. Deliberately
+    /// carries no media URLs; queued rows persist empty components.
+    var queuedMetadataData: Data?
 
     init(task: DownloadTask) {
         self.id = task.id
@@ -80,6 +86,25 @@ final class DownloadRecord {
     func applyPresentationMetadata(title: String, channelTitle: String) {
         self.title = title
         self.channelTitle = channelTitle
+    }
+
+
+
+    /// Decodes the durable queue payload; nil when absent (legacy row) or
+    /// undecodable (schema drift). The failure is logged, never fatal — the
+    /// restore path synthesizes an equivalent payload from the row fields.
+    var queuedMetadata: QueuedDownloadMetadata? {
+        guard let data = queuedMetadataData else { return nil }
+        do {
+            return try JSONDecoder().decode(QueuedDownloadMetadata.self, from: data)
+        } catch {
+            Self.logger.error("Queued metadata decode failed (\(error.localizedDescription)); treating as legacy")
+            return nil
+        }
+    }
+
+    func applyQueuedMetadata(_ metadata: QueuedDownloadMetadata) {
+        self.queuedMetadataData = try? JSONEncoder().encode(metadata)
     }
 
     private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "download-record")

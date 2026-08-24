@@ -4,6 +4,19 @@ import os
 import FocusTubeCore
 import AVFoundation
 
+/// One durable queued job reconstructed from persisted state for FIFO
+/// promotion after process death. Carries planning/presentation data only —
+/// never media URLs, which are always re-resolved at promotion time.
+public struct RestoredQueuedJob: Sendable {
+    public let taskID: String
+    public let videoID: String
+    public let qualityRawValue: Int
+    public let title: String
+    public let channelTitle: String
+    public let durationSeconds: TimeInterval
+    public let createdAt: Date
+}
+
 /// App-layer durable download manager. Owns the deterministic `DownloadCoordinator`
 /// and persists `DownloadRecord` metadata in SwiftData, reconciles on relaunch,
 /// refuses downloads when storage is insufficient, and cleans up on
@@ -30,6 +43,19 @@ public final class DownloadManager {
     /// the reattached-background path. RootView wires this to library
     /// registration so offline media finished outside the app is not orphaned.
     public var onMediaFinalized: (@MainActor (DownloadTask) -> Void)?
+    /// Invoked on the main actor whenever a task reaches ANY terminal status
+    /// (completed/failed) through any path — live begin-loop events, cancel,
+    /// or reattached background settlement. DownloadService wires this to its
+    /// FIFO promotion trigger so a durable queued job is promoted even when
+    /// the settling transfer belongs to a previous process lifetime (its own
+    /// run loop died with it). Firing twice for one settle is harmless: the
+    /// trigger only attempts bounded promotion.
+    public var onTaskSettled: (@MainActor (DownloadTask) -> Void)?
+    /// Cached UI projection of persisted `.queued` records, maintained at
+    /// mutation points instead of refetching all records per render (HB-013).
+    public private(set) var queuedTasks: [DownloadTask] = []
+    /// Cached UI projection of persisted `.failed` records (HB-013).
+    public private(set) var failedTasks: [DownloadTask] = []
 
     private let coordinator: DownloadCoordinator
     private let context: ModelContext
@@ -215,7 +241,21 @@ public final class DownloadManager {
                 releaseAdmission(record.id)
             }
         }
+        // Durable-queue hygiene (DDV2-01): a persisted `.queued` record whose
+        // identity or planning payload is unusable can never be promoted.
+        // Degradation to a typed recoverable failure keeps it visible/actionable
+        // instead of silently occupying the queue forever.
+        let queuedStatus = DownloadStatus.queued.rawValue
+        for record in records where record.statusRaw == queuedStatus {
+            let usable = DownloadRequest.isValidVideoID(record.videoID)
+                && DownloadQuality(rawValue: record.resolution) != nil
+                && (record.queuedMetadataData == nil || record.queuedMetadata != nil)
+            if !usable {
+                degradeCorruptQueuedRecord(record)
+            }
+        }
         saveContext()
+        refreshProjections()
 
         for record in records {
             guard let info = recoveredByID[record.id] else { continue }
@@ -316,6 +356,33 @@ public final class DownloadManager {
 
     // MARK: - Control
 
+    /// Upserts the DURABLE QUEUED state for a capacity-deferred request
+    /// (DDV2-01): status `.queued`, no transfer components (never persists
+    /// signed media URLs), and the planning payload promotion needs after
+    /// process death. Re-deferrals of a previously admitted id are normalized
+    /// too — a stale component list from an earlier attempt can never linger.
+    private func persistQueuedState(_ task: DownloadTask, metadata: QueuedDownloadMetadata?) {
+        do {
+            let emptyComponents = Data("[]".utf8)
+            if let existing = try fetchRecordsOrThrow().first(where: { $0.id == task.id }) {
+                existing.apply(task)
+                existing.componentsData = emptyComponents
+                existing.bytesDownloaded = 0
+                existing.totalBytes = 0
+                existing.errorRaw = nil
+                if let metadata { existing.applyQueuedMetadata(metadata) }
+            } else {
+                let record = DownloadRecord(task: task)
+                record.componentsData = emptyComponents
+                context.insert(record)
+                if let metadata { record.applyQueuedMetadata(metadata) }
+            }
+            saveContext()
+        } catch {
+            Self.logger.fault("Record fetch failed during queued persistence (\(error.localizedDescription)); skipping")
+        }
+    }
+
     /// Synchronous admission check for a download request. Returns false when
     /// a transfer for this task id is already admitted and not yet settled —
     /// including the window between `enqueue` acceptance and the first live
@@ -332,24 +399,31 @@ public final class DownloadManager {
         startingIDs.remove(taskID)
     }
 
-    /// Number of persisted records in a non-terminal status; used for the
-    /// logical-concurrency admission limit.
-    private func activeLogicalCount() -> Int {
-        do {
-            let terminal: Set<String> = [
-                DownloadStatus.completed.rawValue,
-                DownloadStatus.failed.rawValue,
-                DownloadStatus.idle.rawValue
-            ]
-            return try fetchRecordsOrThrow().filter { !terminal.contains($0.statusRaw) }.count
-        } catch {
-            // Availability over stall: an unreadable index must not silently
-            // wedge all future downloads; duplicates are still prevented by
-            // `reserveAdmission`. Logged loudly for diagnosis.
-            Self.logger.fault("Record fetch failed during capacity check (\(error.localizedDescription)); admitting")
-            return 0
+    /// Snapshot of slot occupancy for admission/promotion decisions: how many
+    /// records hold active slots and how many queued jobs precede new work.
+    /// `.queued` records are deliberately EXCLUDED from `active`: they are
+    /// parked intentions with no transfer, so a stranded queue delays
+    /// promotion via the FIFO precedence rule but can never permanently
+    /// consume the concurrency budget (DDV2-01).
+    public func activeLogicalCounts() -> (active: Int, queued: Int) {
+        let queuedStatus = DownloadStatus.queued.rawValue
+        var active = 0
+        var queued = 0
+        for record in fetchRecords() {
+            if record.statusRaw == queuedStatus {
+                queued += 1
+            } else if !Self.terminalStatuses.contains(record.statusRaw) {
+                active += 1
+            }
         }
+        return (active, queued)
     }
+
+    private static let terminalStatuses: Set<String> = [
+        DownloadStatus.completed.rawValue,
+        DownloadStatus.failed.rawValue,
+        DownloadStatus.idle.rawValue
+    ]
 
     /// Upserts the record for `task`; retries/re-resolutions reuse the same
     /// request id, and duplicate SwiftData records would corrupt
@@ -369,7 +443,12 @@ public final class DownloadManager {
     }
 
     @discardableResult
-    public func enqueue(_ request: DownloadRequest, requiredBytes: Int64 = 0) async -> DownloadTask {
+    public func enqueue(
+        _ request: DownloadRequest,
+        requiredBytes: Int64 = 0,
+        queuedMetadata: QueuedDownloadMetadata? = nil,
+        bypassQueuePrecedence: Bool = false
+    ) async -> DownloadTask {
         startingIDs.insert(request.id)
 
         func refused(_ error: DownloadError) -> DownloadTask {
@@ -391,20 +470,35 @@ public final class DownloadManager {
         }
 
         // Logical concurrency admission (docs/03: at most two concurrent
-        // logical downloads). At the limit the request persists as `.queued`
-        // without contacting the coordinator; DownloadService promotes it FIFO
-        // when a job settles or is cancelled.
-        if activeLogicalCount() >= Self.maxConcurrentDownloads {
+        // logical downloads) with strict FIFO precedence: any already-queued
+        // job forces deferral so later requests can never overtake it. At the
+        // limit (or behind queued work) the request persists as `.queued`
+        // WITH durable planning metadata and NO transfer; DownloadService
+        // promotes it FIFO when a job settles or is cancelled — including
+        // after a process relaunch, by reconstructing from these records.
+        let counts = activeLogicalCounts()
+        let deferred = bypassQueuePrecedence
+            ? DownloadQueuePolicy.exceedsBudget(activeCount: counts.active, maxConcurrent: Self.maxConcurrentDownloads)
+            : DownloadQueuePolicy.shouldDefer(
+                activeCount: counts.active,
+                queuedCount: counts.queued,
+                maxConcurrent: Self.maxConcurrentDownloads
+            )
+        if deferred {
+            // Signed component URLs are ephemeral and would be guaranteed-
+            // expired by promotion time; queued rows persist NO URLs. The
+            // promotion path re-resolves fresh streams through the extractor.
             let task = DownloadTask(
                 id: request.id,
                 videoID: request.videoID,
                 resolution: request.resolution,
                 destinationURL: request.destinationURL,
-                components: request.components,
+                components: [],
                 state: DownloadState(status: .queued)
             )
-            upsertRecord(task)
+            persistQueuedState(task, metadata: queuedMetadata)
             releaseAdmission(request.id)
+            refreshProjections()
             return task
         }
 
@@ -422,11 +516,27 @@ public final class DownloadManager {
         await syncRecord(taskID)
     }
 
+    /// Cancels a queued or live job. A QUEUED record has no transfer: it is
+    /// deleted outright so a cancelled intention can neither promote later nor
+    /// linger invisibly. Live transfers settle through the coordinator's
+    /// typed cancelled failure, as before.
     public func cancel(_ taskID: String) async {
-        await coordinator.cancel(taskID)
-        await syncRecord(taskID)
+        if await coordinator.task(taskID) != nil {
+            await coordinator.cancel(taskID)
+            await syncRecord(taskID)
+            if let settled = await coordinator.task(taskID),
+               settled.state.status == .completed || settled.state.status == .failed {
+                onTaskSettled?(settled)
+            }
+        } else if let record = try? fetchRecordsOrThrow().first(where: { $0.id == taskID }),
+                  record.statusRaw == DownloadStatus.queued.rawValue {
+            context.delete(record)
+            saveContext()
+            Self.logger.info("Cancelled queued download \(taskID, privacy: .public); record deleted")
+        }
         removeLive(taskID)
         releaseAdmission(taskID)
+        refreshProjections()
     }
 
     public var records: [DownloadTask] {
@@ -482,7 +592,48 @@ public final class DownloadManager {
         if task.state.status == .completed || task.state.status == .failed {
             removeLive(task.id)
             releaseAdmission(task.id)
+            replaceProjection(task)
+            onTaskSettled?(task)
+        } else {
+            replaceProjection(task)
         }
+    }
+
+    /// Maintains the cached queued/failed UI projections (HB-013)
+    /// incrementally — no record fetches on per-event progress ticks.
+    private func replaceProjection(_ task: DownloadTask) {
+        removeFromProjections(task.id)
+        switch task.state.status {
+        case .queued:
+            upsertIntoProjection(&queuedTasks, task)
+        case .failed:
+            upsertIntoProjection(&failedTasks, task)
+        default:
+            break
+        }
+    }
+
+    private func upsertIntoProjection(_ projection: inout [DownloadTask], _ task: DownloadTask) {
+        if let idx = projection.firstIndex(where: { $0.id == task.id }) {
+            projection[idx] = task
+        } else {
+            projection.append(task)
+        }
+    }
+
+    private func removeFromProjections(_ id: String) {
+        queuedTasks.removeAll { $0.id == id }
+        failedTasks.removeAll { $0.id == id }
+    }
+
+    /// Rebuilds both projections from persisted records in one fetch. Used at
+    /// batch boundaries (reconciliation end, deletes), never per progress tick.
+    public func refreshProjections() {
+        let all = records
+        let queuedStatus = DownloadStatus.queued.rawValue
+        let failedStatus = DownloadStatus.failed.rawValue
+        queuedTasks = all.filter { $0.state.status.rawValue == queuedStatus }
+        failedTasks = all.filter { $0.state.status.rawValue == failedStatus }
     }
 
     private func removeLive(_ taskID: String) {
@@ -527,6 +678,63 @@ public final class DownloadManager {
         }
     }
 
+    /// Reconstructs the durable FIFO queue from persisted `.queued` records,
+    /// oldest first. Legacy rows without a queue payload are synthesized from
+    /// their own fields (video id/resolution persisted; presentation strings
+    /// fall back to the video id; duration unknown → 0, which only relaxes
+    /// the storage pre-check). Unusable rows are skipped here — launch
+    /// reconciliation degrades them to a typed failure.
+    public func persistedQueuedJobs() -> [RestoredQueuedJob] {
+        let queuedStatus = DownloadStatus.queued.rawValue
+        let jobs: [RestoredQueuedJob] = fetchRecords().compactMap { record in
+            guard record.statusRaw == queuedStatus else { return nil }
+            guard DownloadRequest.isValidVideoID(record.videoID),
+                  DownloadQuality(rawValue: record.resolution) != nil else { return nil }
+            let metadata = record.queuedMetadata
+            return RestoredQueuedJob(
+                taskID: record.id,
+                videoID: record.videoID,
+                qualityRawValue: record.resolution,
+                title: metadata?.title ?? record.title ?? record.videoID,
+                channelTitle: metadata?.channelTitle ?? record.channelTitle ?? "",
+                durationSeconds: metadata?.durationSeconds ?? 0,
+                createdAt: record.createdAt
+            )
+        }
+        return jobs.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// Deletes any stale `.queued` record for `taskID` before a fresh
+    /// pipeline run (promotion or retry) replaces its state. Without this, a
+    /// promoted job whose extraction/planning fails would leave an orphaned
+    /// queued row behind forever. Synchronous on the main actor; called with
+    /// the admission slot already held, so no concurrent writer can exist.
+    public func clearStaleQueuedRecord(_ taskID: String) {
+        guard let record = try? fetchRecordsOrThrow().first(where: { $0.id == taskID }),
+              record.statusRaw == DownloadStatus.queued.rawValue else { return }
+        context.delete(record)
+        saveContext()
+        refreshProjections()
+    }
+
+    private func degradeCorruptQueuedRecord(_ record: DownloadRecord) {
+        var state = DownloadState(status: .failed)
+        state.error = .queueStateCorrupted
+        let degraded = DownloadTask(
+            id: record.id,
+            videoID: record.videoID,
+            resolution: record.resolution,
+            destinationURL: record.destinationURL,
+            components: [],
+            state: state
+        )
+        record.apply(degraded)
+        releaseAdmission(record.id)
+        Self.logger.fault(
+            "Persisted queued download \(record.id, privacy: .public) has unusable identity/metadata; degraded to recoverable failure"
+        )
+    }
+
     /// Lookup of stored presentation metadata; nil when the record is unknown.
     /// `title` itself may be nil for legacy rows created before the additive
     /// fields existed — callers fall back to the videoID.
@@ -566,6 +774,7 @@ public final class DownloadManager {
             releaseAdmission(taskID)
         }
         saveContext()
+        replaceProjection(task)
     }
 
     /// Projects a coordinator event's resulting task into the UI and persists
