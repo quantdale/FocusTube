@@ -36,6 +36,7 @@ struct RootView: View {
             NavigationStack {
                 SearchView(
                     store: searchStore,
+                    recentSearches: dependencies.recentSearches,
                     playerCoordinator: playerCoordinator,
                     auth: auth,
                     api: api,
@@ -316,7 +317,7 @@ struct LibraryView: View {
         }
         playlistsState = .loading
         do {
-            playlistsState = .loaded(try await accountActions.api.fetchMyPlaylists(accessToken: token))
+            playlistsState = .loaded(try await accountActions.playlists(accessToken: token))
         } catch let error as YouTubeAPIError {
             playlistsState = .failed(Self.playlistsErrorLabel(error))
         } catch {

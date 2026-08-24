@@ -349,7 +349,7 @@ struct VideoPageView: View {
             return
         }
         do {
-            playlistsForPicker = try await accountActions.api.fetchMyPlaylists(accessToken: token)
+            playlistsForPicker = try await accountActions.playlists(accessToken: token)
         } catch {
             playlistsForPickerError = "Couldn't load playlists."
             playlistsForPicker = []
@@ -362,7 +362,7 @@ struct VideoPageView: View {
             return
         }
         do {
-            try await accountActions.api.addToPlaylist(playlistID: playlist.id, videoID: video.id, accessToken: token)
+            try await accountActions.addToPlaylist(playlistID: playlist.id, videoID: video.id, accessToken: token)
             playlistPickStatus = "Added to \(playlist.title)."
         } catch let error as YouTubeAPIError {
             accountActionError = error
@@ -670,6 +670,7 @@ struct VideoPageView: View {
         switch error {
         case .unauthorized: return "Sign in to use this action."
         case .quotaExceeded: return "YouTube API quota exceeded. Try again later."
+        case .commentsDisabled: return "Comments are unavailable for this action."
         case .notFound: return "The item no longer exists."
         case .invalidInput: return "That input can't be submitted. Check it and try again."
         case .network: return "A network problem interrupted the action. Try again."
