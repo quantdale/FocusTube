@@ -197,6 +197,7 @@ struct VideoPageView: View {
                 likeButton
                 subscribeButton
                 shareButton
+                moreMenu
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
@@ -280,6 +281,94 @@ struct VideoPageView: View {
         }
         .buttonStyle(.bordered)
         .accessibilityIdentifier("share-button")
+    }
+
+    @State private var showPlaylistPicker = false
+    @State private var playlistsForPicker: [PlaylistSummary]?
+    @State private var playlistsForPickerError: String?
+    @State private var playlistPickStatus: String?
+
+    /// Bounded extra actions: explicit save-to-playlist (quota-costing writes
+    /// only run on an explicit user choice of target playlist).
+    private var moreMenu: some View {
+        Menu {
+            Button {
+                playlistPickStatus = nil
+                playlistsForPickerError = nil
+                showPlaylistPicker = true
+                if playlistsForPicker == nil {
+                    Task { await loadPlaylistsForPicker() }
+                }
+            } label: {
+                Label("Save to playlist…", systemImage: "plus.rectangle.on.folder")
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis.circle")
+                .labelStyle(.titleAndIcon)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("more-actions-button")
+        .sheet(isPresented: $showPlaylistPicker) {
+            NavigationStack {
+                List {
+                    if let status = playlistPickStatus {
+                        Text(status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    switch playlistsForPicker {
+                    case .none:
+                        ProgressView()
+                    case .some(let playlists):
+                        ForEach(playlists, id: \.id) { playlist in
+                            Button(playlist.title) {
+                                Task { await addTo(playlist) }
+                            }
+                            .accessibilityIdentifier("playlist-pick-\(playlist.id)")
+                        }
+                    }
+                    if let error = playlistsForPickerError {
+                        Text(error).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .navigationTitle("Save to playlist")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { showPlaylistPicker = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
+    private func loadPlaylistsForPicker() async {
+        guard let token = await auth.accessToken() else {
+            playlistsForPickerError = "Sign in to use your playlists."
+            playlistsForPicker = []
+            return
+        }
+        do {
+            playlistsForPicker = try await accountActions.api.fetchMyPlaylists(accessToken: token)
+        } catch {
+            playlistsForPickerError = "Couldn't load playlists."
+            playlistsForPicker = []
+        }
+    }
+
+    private func addTo(_ playlist: PlaylistSummary) async {
+        guard let token = await auth.accessToken() else {
+            accountActionError = .unauthorized
+            return
+        }
+        do {
+            try await accountActions.api.addToPlaylist(playlistID: playlist.id, videoID: video.id, accessToken: token)
+            playlistPickStatus = "Added to \(playlist.title)."
+        } catch let error as YouTubeAPIError {
+            accountActionError = error
+        } catch {
+            accountActionError = .network
+        }
     }
 
     // MARK: - Download
