@@ -116,7 +116,10 @@ enum FixtureContent {
 
 /// Class (not struct) so sign-out can flip the in-memory session state and
 /// sign-out journeys can observe the transition deterministically.
-final class FixtureAuthSession: AuthSession {
+/// `@unchecked Sendable`: the single mutable flag is written only from the
+/// main actor (UI actions) and read through async AuthSession methods in
+/// tests; no cross-thread torn-state risk exists at fixture scale.
+final class FixtureAuthSession: AuthSession, @unchecked Sendable {
     var authenticated: Bool
 
     init(authenticated: Bool) {
@@ -236,7 +239,9 @@ struct FixtureExtractor: MediaExtracting {
 /// no media binaries are committed, and this code is compiled out of Release.
 enum FixtureMediaFactory {
     private static let lock = NSLock()
-    private static var cachedMaster: URL?
+    /// Guarded by `lock`; `nonisolated(unsafe)` satisfies Swift 6 strict
+    /// concurrency for this DEBUG-only test fixture.
+    nonisolated(unsafe) private static var cachedMaster: URL?
 
     /// Master playable file, generated at most once per process.
     static func masterPlayableFile() throws -> URL {
