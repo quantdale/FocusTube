@@ -32,6 +32,8 @@ struct VideoPageView: View {
     @State private var composerText = ""
     @State private var replyTarget: Comment?
     @State private var isSubmittingComment = false
+    @State private var isDescriptionExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var commentsService: CommentsService { CommentsService(api: api) }
     private var accountActions: AccountActionsService { AccountActionsService(api: api) }
@@ -173,8 +175,12 @@ struct VideoPageView: View {
                 .lineLimit(isDescriptionExpanded ? nil : 2)
                 .padding(.top, 2)
             Button(isDescriptionExpanded ? "Less" : "More") {
-                withAnimation(.easeInOut(duration: 0.15)) {
+                if reduceMotion {
                     isDescriptionExpanded.toggle()
+                } else {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isDescriptionExpanded.toggle()
+                    }
                 }
             }
             .font(.caption.weight(.medium))
