@@ -239,7 +239,7 @@ final class Journeys: XCTestCase {
 
         XCTAssertTrue(
             app.staticTexts["Fixture Search Result Alpha"].waitForExistence(timeout: 5),
-            "hydrated long-form result must render after explicit submit"
+            "hydrated long-form result must render after explicit submit;\(treeDiagnostics(app))"
         )
         XCTAssertFalse(
             app.staticTexts["Fixture Sneaky Short"].exists,
@@ -435,9 +435,10 @@ final class Journeys: XCTestCase {
         // SwiftUI Buttons merge their label children, so the row is addressed
         // by its own identifier; the merged label carries the real title.
         let completedRow = app.buttons.matching(identifier: "downloaded-row").firstMatch
+        let downloadedRowCount = app.buttons.matching(identifier: "downloaded-row").count
         XCTAssertTrue(
             completedRow.waitForExistence(timeout: 10),
-            "the scripted transfer must finalize, validate, and register offline media"
+            "the scripted transfer must finalize, validate, and register offline media; rows=\(downloadedRowCount);\(treeDiagnostics(app))"
         )
         XCTAssertTrue(
             completedRow.label.contains("Fixture Documentary One"),
@@ -612,7 +613,12 @@ final class Journeys: XCTestCase {
         let composerField = app.textViews["comment-composer-field"].firstMatch
         let composerFieldFallback = app.textFields["comment-composer-field"].firstMatch
         let target = composerField.waitForExistence(timeout: 10) ? composerField : composerFieldFallback
-        XCTAssertTrue(target.waitForExistence(timeout: 5), "comment composer must exist on the video page")
+        let composerCount = app.textViews.count
+        let fieldCount = app.textFields.count
+        XCTAssertTrue(
+            target.waitForExistence(timeout: 5),
+            "comment composer must exist; textViews=\(composerCount) fields=\(fieldCount);\(treeDiagnostics(app))"
+        )
 
         target.tap()
         target.typeText("Fixture journey comment")
