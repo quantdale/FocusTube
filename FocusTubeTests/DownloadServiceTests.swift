@@ -359,6 +359,84 @@ final class DownloadServiceTests: XCTestCase {
         XCTAssertEqual(downloaded.count, 1)
     }
 
+    /// Fails the first `failuresBeforeSuccess` begins with an expired signed
+    /// URL, then completes. Counts begins so retry-bound tests can assert the
+    /// exact number of transfer attempts.
+    private final class FlakyThenCompletingTransport: DownloadTransport, @unchecked Sendable {
+        let tempLocation: URL
+        let failuresBeforeSuccess: Int
+        private let lock = NSLock()
+        private(set) var beginCount = 0
+
+        init(tempLocation: URL, failuresBeforeSuccess: Int) {
+            self.tempLocation = tempLocation
+            self.failuresBeforeSuccess = failuresBeforeSuccess
+        }
+
+        func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {
+            lock.withLock { beginCount += 1 }
+            if beginCount <= failuresBeforeSuccess {
+                onEvent(.failed(.expiredMediaURL))
+                return
+            }
+            onEvent(.completed(tempLocation: tempLocation, component: 0))
+        }
+
+        func cancel(taskID: String) async {}
+    }
+
+    /// DDV2-02 retry reconciliation: two transient failures still succeed
+    /// within the documented three-attempt bound.
+    func testTwoTransientFailuresRecoverOnThirdAttempt() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let mediaDirectory = root.appendingPathComponent("Media")
+        let destination = mediaDirectory
+            .appendingPathComponent("v26")
+            .appendingPathComponent("720")
+            .appendingPathComponent("media.mp4")
+        let temp = root.appendingPathComponent("component-\(UUID().uuidString).mp4")
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([0x01, 0x02]).write(to: temp)
+
+        let flaky = FlakyThenCompletingTransport(tempLocation: temp, failuresBeforeSuccess: 2)
+        let library = try await makeLibrary()
+        let service = await DownloadService(
+            extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v26", resolution: 720))),
+            downloadManager: DownloadManager(transport: flaky, context: ModelContext(try makeContainer()), validate: nil),
+            library: library,
+            mediaDirectory: mediaDirectory
+        )
+        await service.download(videoID: "v26", title: "T", channelTitle: "C", quality: .p720)
+
+        XCTAssertNil(await service.lastFailure)
+        XCTAssertEqual(flaky.beginCount, 3, "initial attempt + two retries")
+        let downloaded = await library.downloaded
+        XCTAssertEqual(downloaded.count, 1)
+    }
+
+    /// The retry loop is structurally finite: a persistently transient
+    /// failure stops at exactly three attempts and surfaces the typed error.
+    func testPersistentTransientFailureStopsAtExactlyThreeAttempts() async throws {
+        let failing = FailingTransport()
+        let manager = DownloadManager(transport: failing, context: ModelContext(try makeContainer()), validate: nil)
+        let service = await DownloadService(
+            extractor: FakeExtractor(result: .success(combinedMedia(videoID: "v27", resolution: 720))),
+            downloadManager: manager,
+            library: try await makeLibrary()
+        )
+        await service.download(videoID: "v27", title: "T", channelTitle: "C", quality: .p720)
+
+        let failure = await service.lastFailure
+        XCTAssertEqual(failure?.error, .transportFailed)
+        XCTAssertEqual(failing.beginCount, 1 + DownloadRetryPolicy.maxAutomaticRetries)
+    }
+
     func testConcurrentDuplicateDownloadDoesNotResetInFlightTask() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
@@ -494,10 +572,11 @@ final class DownloadServiceTests: XCTestCase {
             mediaDirectory: mediaDirectory
         )
 
-        // Seed a same-video failure at 360p: it fails, legitimately auto-retries
-        // (same video+quality), and fails again, leaving its failure on record.
+        // Seed a same-video failure at 360p: it fails, legitimately exhausts
+        // its bounded auto-retries (same video+quality), leaving its typed
+        // failure on record.
         await service.download(videoID: "v9", title: "T", channelTitle: "C", quality: .p360)
-        XCTAssertEqual(switchable.beginCount, 2)
+        XCTAssertEqual(switchable.beginCount, 1 + DownloadRetryPolicy.maxAutomaticRetries)
         var failure = await service.lastFailure
         XCTAssertEqual(failure?.quality, .p360)
         XCTAssertEqual(failure?.error, .transportFailed)
@@ -506,7 +585,7 @@ final class DownloadServiceTests: XCTestCase {
         // failure must not cross-trigger another attempt for this quality.
         switchable.completeSubsequentTransfers()
         await service.download(videoID: "v9", title: "T", channelTitle: "C", quality: .p720)
-        XCTAssertEqual(switchable.beginCount, 3)
+        XCTAssertEqual(switchable.beginCount, 2 + DownloadRetryPolicy.maxAutomaticRetries)
 
         failure = await service.lastFailure
         XCTAssertEqual(failure?.quality, .p360)
@@ -517,8 +596,9 @@ final class DownloadServiceTests: XCTestCase {
 
     func testConcurrentFailuresDoNotCrossContaminateRetries() async throws {
         // Two downloads fail at once. Each retry decision must consume its own
-        // local outcome: exactly one automatic retry per download (2 begins
-        // each), and neither failure suppresses nor duplicates the other's.
+        // local outcome: exactly the documented three attempts per download
+        // (3 begins each), and neither failure suppresses nor duplicates the
+        // other's retries.
         let failing = FailingTransport()
         let extractor = PerVideoExtractor(mediaByID: [
             "va": combinedMedia(videoID: "va", resolution: 720),
@@ -538,9 +618,9 @@ final class DownloadServiceTests: XCTestCase {
         async let b: Void = service.download(videoID: "vb", title: "B", channelTitle: "C", quality: .p480)
         _ = await (a, b)
 
-        XCTAssertEqual(failing.beginCount, 4)
-        XCTAssertEqual(extractor.resolveCount(for: "va"), 2)
-        XCTAssertEqual(extractor.resolveCount(for: "vb"), 2)
+        XCTAssertEqual(failing.beginCount, 6)
+        XCTAssertEqual(extractor.resolveCount(for: "va"), 3)
+        XCTAssertEqual(extractor.resolveCount(for: "vb"), 3)
     }
 
     func testRapidDuplicateDownloadStartsExactlyOneTransfer() async throws {
@@ -724,9 +804,9 @@ final class DownloadServiceTests: XCTestCase {
         )
         failure = await service.lastFailure
         XCTAssertNil(failure)
-        // Initial attempt + its one automatic retry + this manual retry: every
+        // Initial attempt + two automatic retries + this manual retry: every
         // path re-resolved fresh URLs.
-        XCTAssertEqual(extractor.resolveCount(for: "v25"), 3)
+        XCTAssertEqual(extractor.resolveCount(for: "v25"), 4)
         let downloaded = await library.downloaded
         XCTAssertEqual(downloaded.first?.title, "Real Title")
     }

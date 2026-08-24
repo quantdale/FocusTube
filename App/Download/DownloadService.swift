@@ -234,15 +234,18 @@ final class DownloadService {
             durationSeconds: durationSeconds, origin: origin
         )
 
-        // Signed media URLs expire; one bounded automatic retry re-resolves
-        // fresh stream URLs through the extractor before surfacing failure.
-        // The decision consumes this run's LOCAL outcome, so a concurrent
-        // download's failure can never cross-trigger (or suppress) a retry.
-        if case let .failed(error) = outcome, retryPolicy.isRetryable(error) {
+        // Signed media URLs expire; bounded automatic retries re-resolve
+        // fresh stream URLs through the extractor before surfacing failure
+        // (docs/03: up to three attempts total). The decision consumes this
+        // run's LOCAL outcome, so a concurrent download's failure can never
+        // cross-trigger (or suppress) a retry. The counter guarantees the
+        // loop is structurally finite.
+        var retriesRemaining = retryPolicy.maxAutomaticRetries
+        while case let .failed(error) = outcome, retriesRemaining > 0, retryPolicy.isRetryable(error) {
+            retriesRemaining -= 1
             guard let retried = try? await extractor.resolve(videoID: videoID) else {
-                await finish(outcome: .failed(.extractionFailed),
-                             videoID: videoID, title: title, channelTitle: channelTitle, quality: quality)
-                return
+                outcome = .failed(.extractionFailed)
+                break
             }
             switch DownloadPlanner.plan(for: retried, quality: quality) {
             case let .combined(component, resolution):

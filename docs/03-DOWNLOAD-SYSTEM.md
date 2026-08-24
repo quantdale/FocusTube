@@ -57,7 +57,7 @@ Recommended initial settings:
 
 - max concurrent logical downloads: 2;
 - cellular downloads: off by default;
-- automatic retry for transient failures: max 3 attempts;
+- automatic retry for transient failures: up to three attempts total (the initial transfer plus two bounded re-resolution retries — implemented exactly this way by `DownloadRetryPolicy`); every retry re-resolves fresh stream URLs, never replays old ones;
 - explicit handling of constrained/expensive networks;
 - persist sufficient task metadata to reconcile URLSession tasks after relaunch.
 

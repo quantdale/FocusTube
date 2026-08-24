@@ -1,17 +1,21 @@
 import Foundation
 
-/// Single source of truth for the download auto-retry policy. Documents the
-/// CURRENT shipped semantics: exactly one bounded automatic retry re-resolves
-/// fresh stream URLs for retryable transport-class failures before surfacing
-/// failure to the user. NOTE: docs/03 describes up to 3 attempts; that delta
-/// is a recorded spec question pending owner decision — do not change the
-/// attempt count here without an accepted decision.
+/// Single source of truth for the download auto-retry policy.
+///
+/// Shipped semantics (reconciled with docs/03 in DDV2-02): up to THREE
+/// transfer attempts total — the initial attempt plus `maxAutomaticRetries`
+/// bounded re-attempts. Every retry re-resolves fresh stream URLs through
+/// `MediaExtracting`; persisted/previous URLs are never replayed. Only the
+/// retryable failure classes below trigger an automatic retry; everything
+/// else surfaces immediately as a typed user-facing failure. The bound is
+/// structural: the retry loop consumes a decreasing counter and can never
+/// spin unboundedly.
 public struct DownloadRetryPolicy: Sendable {
     /// Automatic re-attempts performed by `DownloadService` after the initial
-    /// transfer attempt (so one retry == 2 attempts total today).
-    public static let maxAutomaticRetries = 1
+    /// transfer attempt (so maxAutomaticRetries == 2 means 3 attempts total).
+    public static let maxAutomaticRetries = 2
 
-    /// Failure classes worth one automatic retry: signed media URLs expire by
+    /// Failure classes worth automatic retries: signed media URLs expire by
     /// design, and plain transport faults are frequently transient.
     public static let retryableErrors: [DownloadError] = [.expiredMediaURL, .transportFailed]
 
