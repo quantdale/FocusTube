@@ -40,8 +40,8 @@
 
 Two clear sections:
 
-- Active: queue/progress/retry/pause/cancel;
-- Offline: completed videos sortable by date/size/channel.
+- Active: queue/progress/retry/cancel (pause is intentionally absent — background URLSession transfers cannot resume reliably; see docs/03);
+- Offline: completed videos sortable by date/size/channel, with total offline-storage usage and human-readable sizes.
 
 Each completed item can play with no network.
 

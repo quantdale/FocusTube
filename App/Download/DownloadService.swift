@@ -240,7 +240,7 @@ final class DownloadService {
         // run's LOCAL outcome, so a concurrent download's failure can never
         // cross-trigger (or suppress) a retry. The counter guarantees the
         // loop is structurally finite.
-        var retriesRemaining = retryPolicy.maxAutomaticRetries
+        var retriesRemaining = DownloadRetryPolicy.maxAutomaticRetries
         while case let .failed(error) = outcome, retriesRemaining > 0, retryPolicy.isRetryable(error) {
             retriesRemaining -= 1
             guard let retried = try? await extractor.resolve(videoID: videoID) else {

@@ -56,6 +56,9 @@ public final class DownloadManager {
     public private(set) var queuedTasks: [DownloadTask] = []
     /// Cached UI projection of persisted `.failed` records (HB-013).
     public private(set) var failedTasks: [DownloadTask] = []
+    /// Memoized presentation metadata (HB-013): populated lazily, updated by
+    /// writes; never re-fetches SwiftData during row renders.
+    private var metadataCache: [String: (title: String?, channelTitle: String?)] = [:]
 
     private let coordinator: DownloadCoordinator
     private let context: ModelContext
@@ -672,6 +675,7 @@ public final class DownloadManager {
         do {
             guard let record = try fetchRecordsOrThrow().first(where: { $0.id == taskID }) else { return }
             record.applyPresentationMetadata(title: title, channelTitle: channelTitle)
+            metadataCache[taskID] = (title, channelTitle)
             saveContext()
         } catch {
             Self.logger.fault("Record fetch failed while storing presentation metadata (\(error.localizedDescription))")

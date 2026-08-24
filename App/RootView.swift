@@ -81,203 +81,6 @@ struct RootView: View {
     }
 }
 
-struct DownloadsView: View {
-    let store: LibraryStore
-    @Bindable var downloadManager: DownloadManager
-    let downloadService: DownloadService
-    let playerCoordinator: PlayerCoordinator
-
-    @State private var pendingDelete: DownloadedMedia?
-
-    /// Phases the coordinator's state machine allows cancelling. Validating/
-    /// muxing/finalizing are intentionally non-cancellable — the coordinator
-    /// rejects cancel transitions out of those phases so a final file is never
-    /// corrupted mid-write — so the row button hides for them.
-    private static let cancellableStatuses: Set<DownloadStatus> = [
-        .queued, .downloading, .paused, .waitingForRetry, .reResolving
-    ]
-
-    var body: some View {
-        List {
-            Section("Downloads in progress") {
-                if downloadManager.liveTasks.isEmpty {
-                    Text("No active downloads.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(downloadManager.liveTasks) { task in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(
-                                downloadManager.presentationMetadata(taskID: task.id)?.title
-                                    ?? task.videoID
-                            )
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            Text("\(task.resolution)p · \(task.state.status.rawValue)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if task.state.totalBytes > 0 {
-                                ProgressView(value: Double(task.state.bytesDownloaded), total: Double(task.state.totalBytes))
-                            } else {
-                                ProgressView()
-                            }
-                        }
-                        Spacer()
-                        if Self.cancellableStatuses.contains(task.state.status),
-                           let quality = DownloadQuality(rawValue: task.resolution) {
-                            Button(role: .destructive) {
-                                Task {
-                                    await downloadService.cancel(
-                                        videoID: task.videoID,
-                                        quality: quality
-                                    )
-                                }
-                            } label: {
-                                Image(systemName: "stop.fill")
-                            }
-                            .accessibilityLabel("Cancel download")
-                        }
-                    }
-                }
-            }
-
-            Section("Waiting to download") {
-                // Durable queue projection (DDV2-01): persisted `.queued`
-                // records are user-visible and cancellable, never invisible
-                // slot consumers.
-                if downloadManager.queuedTasks.isEmpty {
-                    Text("Nothing waiting.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(downloadManager.queuedTasks) { task in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(
-                                downloadManager.presentationMetadata(taskID: task.id)?.title
-                                    ?? task.videoID
-                            )
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            Text("\(task.resolution)p · queued")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if let quality = DownloadQuality(rawValue: task.resolution) {
-                            Button(role: .destructive) {
-                                Task {
-                                    await downloadService.cancel(
-                                        videoID: task.videoID,
-                                        quality: quality
-                                    )
-                                }
-                            } label: {
-                                Image(systemName: "stop.fill")
-                            }
-                            .accessibilityLabel("Cancel download")
-                        }
-                    }
-                }
-            }
-
-            Section("Failed downloads") {
-                // Failed/interrupted records stay listed so the promised retry
-                // is actionable: Retry re-invokes the service, which re-resolves
-                // fresh signed URLs instead of replaying expired ones. Served
-                // from the cached failure projection (HB-013), not a per-render
-                // SwiftData refetch.
-                let failed = downloadManager.failedTasks
-                if failed.isEmpty {
-                    Text("No failed downloads.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(failed) { task in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(downloadManager.presentationMetadata(taskID: task.id)?.title ?? task.videoID)
-                                .lineLimit(2)
-                            Text("\(task.resolution)p · \(task.state.error?.rawValue ?? task.state.status.rawValue)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if let quality = DownloadQuality(rawValue: task.resolution) {
-                            let metadata = downloadManager.presentationMetadata(taskID: task.id)
-                            Button("Retry") {
-                                Task {
-                                    await downloadService.download(
-                                        videoID: task.videoID,
-                                        title: metadata?.title ?? task.videoID,
-                                        channelTitle: metadata?.channelTitle ?? "",
-                                        quality: quality
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Section("Downloaded") {
-                ForEach(store.downloaded, id: \.id) { item in
-                    HStack {
-                        Button {
-                            // Local playback must not tick the online video
-                            // page's history handler; route progress away and
-                            // set local Now Playing metadata explicitly.
-                            playerCoordinator.onProgress = nil
-                            playerCoordinator.playLocalFile(
-                                item.fileURL,
-                                title: item.title,
-                                artist: nil
-                            )
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title).lineLimit(2)
-                                    .accessibilityIdentifier("downloaded-row-title")
-                                Text("\(item.resolution)p · \(item.sizeBytes) bytes").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        .accessibilityIdentifier("downloaded-row")
-                        Spacer()
-                        Button(role: .destructive) {
-                            pendingDelete = item
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                        .accessibilityLabel("Delete download")
-                    }
-                }
-                if store.downloaded.isEmpty {
-                    Text("No downloaded videos yet.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .navigationTitle("Downloads")
-        .confirmationDialog(
-            "Delete downloaded video?",
-            isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: pendingDelete
-        ) { media in
-            Button("Delete", role: .destructive) {
-                store.deleteDownloadedMedia(id: media.id)
-                pendingDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                pendingDelete = nil
-            }
-        } message: { _ in
-            Text("The downloaded file will be removed from this device.")
-        }
-        .task { store.reconcileDownloads() }
-    }
-}
-
 struct LibraryView: View {
     let store: LibraryStore
     let playerCoordinator: PlayerCoordinator
@@ -404,6 +207,7 @@ private struct HomeFeedView: View {
     let library: LibraryStore
 
     @State private var selectedVideo: VideoSummary?
+    @State private var showSettings = false
 
     var body: some View {
         List {
@@ -445,11 +249,12 @@ private struct HomeFeedView: View {
                 Button {
                     selectedVideo = video
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(video.title).lineLimit(2)
-                        Text(video.channelTitle).font(.caption).foregroundStyle(.secondary)
-                    }
+                    VideoCard(
+                        video: video,
+                        progressFraction: Self.resumeFraction(videoID: video.id, history: library.history)
+                    )
                 }
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("feed-video-row")
             }
             if store.nextPageToken != nil {
@@ -462,6 +267,20 @@ private struct HomeFeedView: View {
             }
         }
         .navigationTitle("Home")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "person.crop.circle")
+                }
+                .accessibilityLabel("Account and settings")
+                .accessibilityIdentifier("settings-button")
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            AccountSettingsView(store: store, auth: auth, library: library)
+        }
         .refreshable {
             // Explicit user action: a deliberate page-one reload is
             // quota-appropriate, unlike automatic refetches on tab switches.
@@ -503,5 +322,13 @@ private struct HomeFeedView: View {
         case .unknown: return "Couldn't load your subscriptions."
         default: return "Subscriptions unavailable."
         }
+    }
+
+    /// Local continue-watching indicator: the resume fraction from persisted
+    /// history, only for genuinely in-progress entries. Purely local — no API.
+    static func resumeFraction(videoID: String, history: [WatchHistoryEntry]) -> Double? {
+        guard let entry = history.first(where: { $0.videoID == videoID }), !entry.completed else { return nil }
+        guard let duration = entry.durationSeconds, duration > 0 else { return nil }
+        return min(max(entry.lastPositionSeconds / Double(duration), 0), 1)
     }
 }

@@ -143,6 +143,14 @@ Capacity-deferred downloads are a durable queue, not a process-memory detail:
   the typed `queueStateCorrupted` failure at launch reconciliation — visible,
   actionable, and slot-free.
 
+## Pause/resume limitation
+
+True durable pause/resume is NOT provided. Background `URLSession` download
+tasks do not reliably expose resume data across process death, and a pause
+control that silently restarts from zero would be dishonest UX. The correct
+alternatives shipped instead: cancel (queued or active) and retry, where retry
+re-resolves fresh URLs and restarts the affected components cleanly.
+
 ## Storage pressure
 
 Before starting a large download, estimate required free space with margin, especially adaptive streams where two components plus final output coexist temporarily. Refuse safely before consuming nearly all device storage.
