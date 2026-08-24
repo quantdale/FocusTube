@@ -27,9 +27,8 @@ struct VideoCard: View {
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.accessibilityLabel(for: video))
-        .accessibilityHint("Opens the video page")
+        // Natural child elements stay exposed: journeys and VoiceOver read
+        // the real title/channel texts. No accessibilityElement override.
     }
 
     private var thumbnail: some View {

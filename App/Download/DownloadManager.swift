@@ -506,7 +506,16 @@ public final class DownloadManager {
         }
 
         let task = await coordinator.enqueue(request)
-        upsertRecord(task)
+        // Admitted ⇒ slot-consuming: persist the record as `.resolving`
+        // immediately instead of the coordinator's pre-transfer `.queued`, so
+        // capacity accounting reflects reality during the transfer (the
+        // record otherwise lags until the first settle/event sync).
+        var admitted = task
+        if admitted.state.status == .queued {
+            admitted.apply(DownloadState(status: .resolving))
+        }
+        upsertRecord(admitted)
+        refreshProjections()
         return task
     }
 

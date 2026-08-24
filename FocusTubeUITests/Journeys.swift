@@ -213,9 +213,13 @@ final class Journeys: XCTestCase {
         let firstRow = app.buttons["feed-video-row"].firstMatch
         XCTAssertTrue(waitExists(firstRow), "fixture feed rows must render")
 
-        let loadMore = app.buttons["load-more-button"]
-        XCTAssertTrue(waitExists(loadMore), "page one advertises continuation")
-        loadMore.tap()
+        // Rich cards are taller than the old text rows, so Load more may sit
+        // below the fold: reveal via geometry before tapping.
+        let loadTrace = interact(app, locate: { $0.buttons["load-more-button"].firstMatch }, tap: true)
+        XCTAssertTrue(
+            loadTrace.isEmpty,
+            "page one must advertise continuation and be tappable [\(loadTrace)]"
+        )
 
         let appended = app.buttons.matching(identifier: "feed-video-row").element(boundBy: 3)
         XCTAssertTrue(appended.waitForExistence(timeout: 5), "explicit Load more must append page two")
