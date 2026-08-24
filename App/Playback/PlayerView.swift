@@ -60,7 +60,16 @@ public struct PlayerView: View {
                 .background(.black.opacity(0.6))
                 .foregroundStyle(.white)
             default:
-                EmptyView()
+                // Deterministic marker for UI journeys (HB-014): present only
+                // when the player genuinely reached a playing state.
+                if coordinator.state.status == .playing {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.001))
+                        .frame(width: 1, height: 1)
+                        .accessibilityIdentifier("player-playing")
+                } else {
+                    EmptyView()
+                }
             }
         }
         // Hard internal bound: overlay states propose unbounded flexible

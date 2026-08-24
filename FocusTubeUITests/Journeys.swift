@@ -479,4 +479,187 @@ final class Journeys: XCTestCase {
             "failure alert must be actionable"
         )
     }
+
+    // MARK: - Journey H: settings/account (DDV2-05)
+
+    func testSettingsSheetShowsAccountStateAndSignOutFlips() {
+        let app = launch("home-loaded")
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load first")
+
+        let settingsButton = app.buttons["settings-button"]
+        XCTAssertTrue(waitExists(settingsButton), "profile control must exist on Home")
+        settingsButton.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["settings-signed-in"].firstMatch.waitForExistence(timeout: 10),
+            "settings must show authenticated state"
+        )
+        let signOut = app.buttons["settings-sign-out"]
+        XCTAssertTrue(signOut.waitForExistence(timeout: 5), "sign-out control must exist when signed in")
+        signOut.tap()
+        XCTAssertTrue(
+            app.staticTexts["Signed out"].waitForExistence(timeout: 5),
+            "signing out must flip the visible account state"
+        )
+    }
+
+    func testSettingsSheetShowsSignedOutStateWithoutSignOut() {
+        let app = launch("signed-out")
+        XCTAssertTrue(waitExists(app.buttons["settings-button"]))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.staticTexts["Signed out"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["settings-sign-in"].waitForExistence(timeout: 5))
+        XCTAssertFalse(
+            app.buttons["settings-sign-out"].exists,
+            "no sign-out control may appear while signed out"
+        )
+    }
+
+    // MARK: - Journey I: search recents (DDV2-07)
+
+    private func clearTextField(_ field: XCUIElement) {
+        field.tap()
+        for _ in 0..<30 {
+            field.typeText(XCUIKeyboardKey.delete.rawValue)
+        }
+    }
+
+    func testSearchRecentsRecordSuggestAndClearLocally() {
+        let app = launch("search-ready")
+        app.tabBars.buttons["Search"].tap()
+        let field = app.textFields["search-field"]
+        XCTAssertTrue(waitExists(field))
+
+        // Explicit submit records the query.
+        field.tap()
+        field.typeText("documentary")
+        app.buttons["search-submit-button"].tap()
+        XCTAssertTrue(
+            app.staticTexts["Fixture Search Result Alpha"].waitForExistence(timeout: 5),
+            "first submit must produce results"
+        )
+
+        // Clearing the typed text reveals the persisted recents list.
+        clearTextField(field)
+        let recent = app.buttons.matching(identifier: "recent-search-row").firstMatch
+        XCTAssertTrue(recent.waitForExistence(timeout: 5), "recorded query must appear under Recent searches")
+
+        // Typing a fragment shows a LOCAL suggestion; tapping it re-submits.
+        field.tap()
+        field.typeText("doc")
+        let suggestion = app.buttons.matching(identifier: "search-suggestion-row").firstMatch
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 5), "local suggestion must appear from the recorded query")
+        suggestion.tap()
+        XCTAssertTrue(
+            app.staticTexts["Fixture Search Result Alpha"].waitForExistence(timeout: 5),
+            "choosing a local suggestion submits that query"
+        )
+
+        // Clear history removes every recent row.
+        clearTextField(field)
+        let clear = app.buttons["clear-search-history"]
+        if clear.waitForExistence(timeout: 3) {
+            clear.tap()
+            XCTAssertFalse(
+                app.buttons.matching(identifier: "recent-search-row").firstMatch.exists,
+                "clear must remove all recent queries"
+            )
+        } else {
+            XCTFail("clear-history control missing while recents are shown")
+        }
+    }
+
+    // MARK: - Journey J: video actions (DDV2-04)
+
+    func testVideoActionsShowServerBackedStateAndToggleLike() {
+        let app = launch("video-page")
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
+        let page = app.staticTexts["video-title"]
+        let trace = openVideoPageFromFeed(app, expecting: page)
+        XCTAssertTrue(page.exists, "video page must open [\(trace)]")
+
+        // The fixture reports an existing like: the initial label must be the
+        // truth, not a neutral default.
+        let likeToggle = app.buttons["like-toggle"]
+        XCTAssertTrue(likeToggle.waitForExistence(timeout: 10), "like action must exist")
+        XCTAssertEqual(likeToggle.label, "Liked", "initial state comes from getRating")
+        likeToggle.tap()
+        XCTAssertEqual(likeToggle.label, "Like", "tapping a liked video removes the rating")
+
+        let subscribeToggle = app.buttons["subscribe-toggle"]
+        XCTAssertTrue(subscribeToggle.waitForExistence(timeout: 10))
+        XCTAssertTrue(subscribeToggle.label.contains("Subscribed"), "subscription state is authoritative")
+        subscribeToggle.tap()
+        XCTAssertFalse(subscribeToggle.label.contains("Subscribed"), "unsubscribe flips the label")
+
+        // Share and more actions render as part of the row.
+        XCTAssertTrue(app.buttons["share-button"].exists)
+        XCTAssertTrue(app.buttons["more-actions-button"].exists)
+    }
+
+    // MARK: - Journey K: comment composer (DDV2-04)
+
+    func testCommentComposerPostsTopLevelAndReplyWithoutDuplicates() {
+        let app = launch("video-page")
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch))
+        let page = app.staticTexts["video-title"]
+        openVideoPageFromFeed(app, expecting: page)
+
+        let composerField = app.textViews["comment-composer-field"].firstMatch
+        let composerFieldFallback = app.textFields["comment-composer-field"].firstMatch
+        let target = composerField.waitForExistence(timeout: 10) ? composerField : composerFieldFallback
+        XCTAssertTrue(target.waitForExistence(timeout: 5), "comment composer must exist on the video page")
+
+        target.tap()
+        target.typeText("Fixture journey comment")
+        app.buttons["comment-submit"].tap()
+        XCTAssertTrue(
+            app.staticTexts["Fixture journey comment"].waitForExistence(timeout: 5),
+            "posted top-level comment appears in the tree"
+        )
+
+        // Reply to the first fixture comment thread.
+        let replyButton = app.buttons["reply-button-fc1"]
+        XCTAssertTrue(replyButton.waitForExistence(timeout: 5))
+        replyButton.tap()
+        target.tap()
+        target.typeText("Fixture journey reply")
+        app.buttons["comment-submit"].tap()
+        let postedReply = app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS %@", "Fixture journey reply")
+        ).firstMatch
+        XCTAssertTrue(postedReply.waitForExistence(timeout: 5), "posted reply renders under its parent")
+    }
+
+    // MARK: - Journey L: offline playback reaches playing (HB-014)
+
+    func testOfflinePlaybackReachesPlayingStateWithFixtureMedia() {
+        let app = launch("download-flow")
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch))
+        let trace = openVideoPageFromFeed(app, expecting: app.staticTexts["video-title"])
+        let dlTrace = interact(app, locate: { $0.buttons["download-button"].firstMatch }, tap: true)
+        XCTAssertTrue(dlTrace.isEmpty, "download control must reveal [\(dlTrace)];\(trace)")
+
+        app.tabBars.buttons["Downloads"].tap()
+        let completedRow = app.buttons.matching(identifier: "downloaded-row").firstMatch
+        XCTAssertTrue(completedRow.waitForExistence(timeout: 10))
+        completedRow.tap()
+
+        // The fixture transfer finalized REAL playable media: the player must
+        // reach a genuine playing state, never the failed overlay.
+        let playingMarker = app.otherElements["player-playing"]
+        let playingMarkerAnyType = app.descendants(matching: .any)["player-playing"].firstMatch
+        XCTAssertTrue(
+            playingMarker.waitForExistence(timeout: 15) || playingMarkerAnyType.exists,
+            "offline playback must reach .playing with playable fixture media"
+        )
+        XCTAssertFalse(
+            app.staticTexts["Playback failed"].exists,
+            "playable fixture media must not surface a failure overlay"
+        )
+        let done = app.buttons["local-player-done"]
+        if done.waitForExistence(timeout: 3) {
+            done.tap()
+        }
+    }
 }

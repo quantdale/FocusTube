@@ -114,8 +114,10 @@ enum FixtureContent {
 
 // MARK: - Auth
 
-struct FixtureAuthSession: AuthSession {
-    let authenticated: Bool
+/// Class (not struct) so sign-out can flip the in-memory session state and
+/// sign-out journeys can observe the transition deterministically.
+final class FixtureAuthSession: AuthSession {
+    var authenticated: Bool
 
     init(authenticated: Bool) {
         self.authenticated = authenticated
@@ -124,7 +126,7 @@ struct FixtureAuthSession: AuthSession {
     var isAuthenticated: Bool { get async { authenticated } }
     func restore() async -> Bool { authenticated }
     func accessToken() async -> String? { authenticated ? "fixture-token" : nil }
-    func signOut() async {}
+    func signOut() async { authenticated = false }
 }
 
 // MARK: - API

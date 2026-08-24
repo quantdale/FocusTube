@@ -3,7 +3,7 @@ import Foundation
 /// Neutral summary of one completed offline download. Mirrors the app-layer
 /// persisted media entry so sorting/grouping/formatting policy stays
 /// deterministic and Windows-testable.
-public struct OfflineMediaSummary: Sendable, Hashable {
+public struct OfflineMediaSummary: Sendable, Hashable, Identifiable {
     public let id: String
     public let title: String
     public let channelTitle: String

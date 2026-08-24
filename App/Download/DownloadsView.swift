@@ -15,6 +15,7 @@ struct DownloadsView: View {
 
     @State private var pendingDelete: DownloadedMedia?
     @State private var sortOrder: OfflineLibraryPolicy.SortOrder = .newestFirst
+    @State private var playingLocal: OfflineMediaSummary?
 
     /// Phases the coordinator's state machine allows cancelling. Validating/
     /// muxing/finalizing are intentionally non-cancellable — the coordinator
@@ -33,6 +34,11 @@ struct DownloadsView: View {
             offlineContentSections
         }
         .navigationTitle("Downloads")
+        .sheet(item: $playingLocal) { media in
+            LocalPlayerSheet(playerCoordinator: playerCoordinator, media: media) {
+                playingLocal = nil
+            }
+        }
         .confirmationDialog(
             "Delete downloaded video?",
             isPresented: Binding(
@@ -246,13 +252,17 @@ struct DownloadsView: View {
             Button {
                 // Local playback must not tick the online video page's
                 // history handler; route progress away and set local Now
-                // Playing metadata explicitly.
+                // Playing metadata explicitly. A visible local player surface
+                // (HB-014) lets journeys assert a genuine playing state.
                 playerCoordinator.onProgress = nil
-                playerCoordinator.playLocalFile(
-                    store.downloaded.first(where: { $0.id == item.id })?.fileURL ?? URL(fileURLWithPath: "/"),
-                    title: item.title,
-                    artist: nil
-                )
+                if let stored = store.downloaded.first(where: { $0.id == item.id }) {
+                    playerCoordinator.playLocalFile(
+                        stored.fileURL,
+                        title: item.title,
+                        artist: nil
+                    )
+                    playingLocal = item
+                }
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
@@ -298,5 +308,38 @@ struct DownloadsView: View {
         guard state.totalBytes > 0 else { return "" }
         let fraction = min(1, Double(state.bytesDownloaded) / Double(state.totalBytes))
         return "\(Int((fraction * 100).rounded()))%"
+    }
+}
+
+/// Full-screen local player for offline media. Stopping on dismiss prevents
+/// background audio continuing invisibly after the surface is gone.
+struct LocalPlayerSheet: View {
+    let playerCoordinator: PlayerCoordinator
+    let media: OfflineMediaSummary
+    let onDone: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.black.ignoresSafeArea()
+            PlayerView(coordinator: playerCoordinator)
+                .padding(.top, 48)
+            VStack {
+                HStack {
+                    Text(media.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("Done") {
+                        playerCoordinator.stop()
+                        onDone()
+                    }
+                    .accessibilityIdentifier("local-player-done")
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+                Spacer()
+            }
+        }
     }
 }
