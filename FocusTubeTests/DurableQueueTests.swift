@@ -246,7 +246,8 @@ final class DurableQueueTests: XCTestCase {
         // Ephemeral signed URLs must NOT be persisted as an authoritative
         // retry source: queued rows carry no components at all.
         XCTAssertTrue(queuedRow.components.isEmpty)
-        XCTAssertNil(await service.downloadManager.coordinatorTask("v3-480"))
+        let coordinatorTask = await service.downloadManager.coordinatorTask("v3-480")
+        XCTAssertNil(coordinatorTask)
         XCTAssertEqual(transport.beginCount(for: "v3-480"), 0)
         XCTAssertEqual(service.downloadManager.queuedTasks.map(\.id), ["v3-480"])
     }

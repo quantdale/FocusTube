@@ -159,6 +159,80 @@ public struct YouTubeDataClient: YouTubeAPI {
         _ = try await perform(r)
     }
 
+    // MARK: - Comment mutation (DDV2-03)
+
+    /// Creates a top-level comment via `commentThreads.insert` and returns the
+    /// created comment as stored by YouTube. Text is validated before any
+    /// network work; the request body carries `textOriginal` only.
+    public func postTopLevelComment(videoID: String, text: String, accessToken: String) async throws -> Comment {
+        guard let trimmed = Self.validatedCommentText(text) else { throw YouTubeAPIError.invalidInput }
+        var request = try Self.buildRequest(baseURL: baseURL, path: "commentThreads", accessToken: accessToken, query: ["part": "snippet"])
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(CommentThreadInsertBody(
+            snippet: .init(
+                videoId: videoID,
+                topLevelComment: .init(snippet: .init(textOriginal: trimmed))
+            )
+        ))
+        let data = try await perform(request)
+        let decoded = try Self.decode(InsertedThreadResponse.self, from: data)
+        return decoded.snippet.topLevelComment.normalizedComment
+    }
+
+    /// Creates a reply via `comments.insert`. `parentCommentID` must be an
+    /// existing comment resource id; replying to a reply requires its TOP-LEVEL
+    /// ancestor id per API semantics, which callers normalize before calling.
+    public func postReply(parentCommentID: String, text: String, accessToken: String) async throws -> Comment {
+        guard let trimmed = Self.validatedCommentText(text) else { throw YouTubeAPIError.invalidInput }
+        guard !parentCommentID.isEmpty else { throw YouTubeAPIError.invalidInput }
+        var request = try Self.buildRequest(baseURL: baseURL, path: "comments", accessToken: accessToken, query: ["part": "snippet"])
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(CommentInsertBody(
+            snippet: .init(parentId: parentCommentID, textOriginal: trimmed)
+        ))
+        let data = try await perform(request)
+        let decoded = try Self.decode(InsertedCommentResource.self, from: data)
+        return decoded.normalizedComment
+    }
+
+    /// Looks up whether the authenticated user subscribes to `channelID` via a
+    /// filtered `subscriptions.list` (`mine=true&forChannelId=`). Returns nil
+    /// when the user is not subscribed.
+    public func findMySubscription(channelID: String, accessToken: String) async throws -> SubscriptionLookup? {
+        let request = try Self.buildRequest(baseURL: baseURL, path: "subscriptions", accessToken: accessToken, query: [
+            "part": "id,snippet",
+            "mine": "true",
+            "forChannelId": channelID,
+            "maxResults": "1"
+        ])
+        let data = try await perform(request)
+        let decoded = try Self.decode(MySubscriptionsResponse.self, from: data)
+        return decoded.items.first.map {
+            SubscriptionLookup(subscriptionID: $0.id, channelTitle: $0.snippet.title)
+        }
+    }
+
+    /// Reads the authenticated user's current rating for a video.
+    public func fetchMyVideoRating(videoID: String, accessToken: String) async throws -> VideoRatingState {
+        let request = try Self.buildRequest(baseURL: baseURL, path: "videos/getRating", accessToken: accessToken, query: ["id": videoID])
+        let data = try await perform(request)
+        let decoded = try Self.decode(VideoRatingResponse.self, from: data)
+        return decoded.items.first.flatMap { VideoRatingState(rawValue: $0.rating) } ?? .unspecified
+    }
+
+    /// Shared comment-text validation: non-empty after trimming, bounded to
+    /// YouTube's documented 10,000-character `textOriginal` limit. Returns the
+    /// trimmed text to submit.
+    static func validatedCommentText(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maxCommentTextLength else { return nil }
+        return trimmed
+    }
+
+    static let maxCommentTextLength = 10_000
+
     // MARK: - Execution / mapping
 
     private func perform(_ request: URLRequest) async throws -> Data {
@@ -308,5 +382,85 @@ private struct CommentThreadsResponse: Decodable {
         let textDisplay: String
         let likeCount: Int?
         let publishedAt: String
+    }
+}
+
+// MARK: - Mutation models (DDV2-03)
+
+/// Request body for `commentThreads.insert` (top-level comment creation).
+private struct CommentThreadInsertBody: Encodable {
+    let snippet: Snippet
+    struct Snippet: Encodable {
+        let videoId: String
+        let topLevelComment: TopLevel
+        struct TopLevel: Encodable {
+            let snippet: Text
+            struct Text: Encodable { let textOriginal: String }
+        }
+    }
+}
+
+/// Request body for `comments.insert` (reply creation).
+private struct CommentInsertBody: Encodable {
+    let snippet: Snippet
+    struct Snippet: Encodable {
+        let parentId: String
+        let textOriginal: String
+    }
+}
+
+/// A freshly stored comment resource returned by either insert endpoint.
+/// Fields Google may omit are optional with safe fallbacks; normalization
+/// never fails on a well-formed-but-sparse resource.
+private struct InsertedCommentResource: Decodable {
+    let id: String
+    let snippet: Snippet
+    struct Snippet: Decodable {
+        let authorDisplayName: String?
+        let textDisplay: String?
+        let textOriginal: String?
+        let likeCount: Int?
+        let publishedAt: String?
+    }
+
+    var normalizedComment: Comment {
+        Comment(
+            id: id,
+            author: snippet.authorDisplayName ?? "",
+            text: snippet.textDisplay ?? snippet.textOriginal ?? "",
+            likeCount: snippet.likeCount ?? 0,
+            publishedAt: snippet.publishedAt.flatMap { ISO8601DateFormatter().date(from: $0) },
+            replyCount: 0
+        )
+    }
+}
+
+/// Response of `commentThreads.insert`: a thread whose top-level comment is
+/// the newly created one.
+private struct InsertedThreadResponse: Decodable {
+    let snippet: Snippet
+    struct Snippet: Decodable {
+        let topLevelComment: InsertedCommentResource
+    }
+}
+
+/// Response of `subscriptions.list` filtered by mine+forChannelId.
+private struct MySubscriptionsResponse: Decodable {
+    let items: [Item]
+    struct Item: Decodable {
+        let id: String
+        let snippet: Snippet
+        struct Snippet: Decodable {
+            let title: String?
+        }
+    }
+}
+
+/// Response of `videos.getRating`.
+private struct VideoRatingResponse: Decodable {
+    let items: [Item]
+    struct Item: Decodable {
+        let videoId: String
+        let rating: String
     }
 }

@@ -20,4 +20,31 @@ public struct AccountActionsService: Sendable {
     public func rate(videoID: String, rating: VideoRating, accessToken: String) async throws {
         try await api.rateVideo(videoID: videoID, rating: rating, accessToken: accessToken)
     }
+
+    /// Removes any existing rating (like/dislike) from a video.
+    public func removeRating(videoID: String, accessToken: String) async throws {
+        try await api.rateVideo(videoID: videoID, rating: .none, accessToken: accessToken)
+    }
+
+    /// The user's current subscription state for a channel, carrying the
+    /// resource id required for a truthful unsubscribe. nil = not subscribed.
+    /// Callers must never infer state from prior button taps — this is the
+    /// only authoritative lookup.
+    public func subscriptionState(channelID: String, accessToken: String) async throws -> SubscriptionLookup? {
+        try await api.findMySubscription(channelID: channelID, accessToken: accessToken)
+    }
+
+    /// Unsubscribes using the channel id by first resolving the subscription
+    /// resource id; throws notFound when the user is not subscribed.
+    public func unsubscribe(channelID: String, accessToken: String) async throws {
+        guard let lookup = try await subscriptionState(channelID: channelID, accessToken: accessToken) else {
+            throw YouTubeAPIError.notFound
+        }
+        try await unsubscribe(subscriptionID: lookup.subscriptionID, accessToken: accessToken)
+    }
+
+    /// The user's current rating state for a video (authoritative read).
+    public func ratingState(videoID: String, accessToken: String) async throws -> VideoRatingState {
+        try await api.fetchMyVideoRating(videoID: videoID, accessToken: accessToken)
+    }
 }

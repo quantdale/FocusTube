@@ -11,6 +11,9 @@ public enum YouTubeAPIError: Error, Equatable, Sendable {
     case notFound
     case network
     case decode
+    /// Caller-supplied input failed validation (e.g. empty comment text).
+    /// Never surfaced from transport/decoding paths.
+    case invalidInput
     case unknown(status: Int)
 }
 
@@ -53,6 +56,38 @@ public protocol YouTubeAPI: Sendable {
     /// One page of the subscription feed as hydrated video summaries, with an
     /// opaque continuation token for explicit load-more.
     func fetchSubscriptionFeed(accessToken: String, pageToken: String?) async throws -> SubscriptionFeedPage
+    /// Creates a top-level comment on a video (commentThreads.insert).
+    func postTopLevelComment(videoID: String, text: String, accessToken: String) async throws -> Comment
+    /// Creates a reply under an existing comment (comments.insert).
+    /// `parentCommentID` is the parent comment's resource id.
+    func postReply(parentCommentID: String, text: String, accessToken: String) async throws -> Comment
+    /// Looks up the authenticated user's subscription to one channel and returns
+    /// the subscription RESOURCE ID required for unsubscribe; nil when absent.
+    func findMySubscription(channelID: String, accessToken: String) async throws -> SubscriptionLookup?
+    /// The authenticated user's current rating state for a video (getRating).
+    func fetchMyVideoRating(videoID: String, accessToken: String) async throws -> VideoRatingState
+}
+
+/// Result of looking up the user's subscription to a channel. Carries the
+/// resource id required by `subscriptions.delete` — an unsubscribe can never be
+/// issued against a bare channel id.
+public struct SubscriptionLookup: Sendable, Hashable {
+    public let subscriptionID: String
+    public let channelTitle: String?
+
+    public init(subscriptionID: String, channelTitle: String?) {
+        self.subscriptionID = subscriptionID
+        self.channelTitle = channelTitle
+    }
+}
+
+/// The authenticated user's rating state for a video, as reported by
+/// `videos.getRating` (superset of the writable `VideoRating` actions).
+public enum VideoRatingState: String, Sendable {
+    case like
+    case dislike
+    case none
+    case unspecified
 }
 
 /// One aggregated page of the subscription feed. `nextPageToken` is an opaque
@@ -78,6 +113,27 @@ extension YouTubeAPI {
     /// Convenience overload fetching the first feed page.
     public func fetchSubscriptionFeed(accessToken: String) async throws -> SubscriptionFeedPage {
         try await fetchSubscriptionFeed(accessToken: accessToken, pageToken: nil)
+    }
+
+    // DDV2-03 mutation/lookup endpoints ship with loud defaults so read-path
+    // fakes stay minimal; anything that accidentally CALLS them in tests gets
+    // the distinctive unknown(status: -1) failure instead of silence.
+    // YouTubeDataClient implements all of them for real.
+
+    public func postTopLevelComment(videoID: String, text: String, accessToken: String) async throws -> Comment {
+        throw YouTubeAPIError.unknown(status: -1)
+    }
+
+    public func postReply(parentCommentID: String, text: String, accessToken: String) async throws -> Comment {
+        throw YouTubeAPIError.unknown(status: -1)
+    }
+
+    public func findMySubscription(channelID: String, accessToken: String) async throws -> SubscriptionLookup? {
+        throw YouTubeAPIError.unknown(status: -1)
+    }
+
+    public func fetchMyVideoRating(videoID: String, accessToken: String) async throws -> VideoRatingState {
+        throw YouTubeAPIError.unknown(status: -1)
     }
 
     /// Aggregates the subscriptions' uploads playlists into one hydrated feed
