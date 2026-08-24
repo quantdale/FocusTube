@@ -119,11 +119,8 @@ public final class DownloadManager {
             mux: Self.makeMux(),
             validate: validate
         )
-        // Reconciliation awaits transport reattachment, so it runs as a task;
-        // `reconcileOnLaunch()` is single-flight and may also be awaited
-        // directly — overlapping callers coalesce into the active pass.
-        // The mailbox consumer must exist before reconciliation can deliver,
-        // and drains strictly sequentially so event order survives the hop.
+        // Reattachment event delivery drains strictly sequentially so order
+        // survives the hop.
         let (stream, continuation) = AsyncStream.makeStream(of: (requestID: String, event: DownloadEvent).self)
         self.reattachMailbox = stream
         self.reattachMailboxContinuation = continuation
@@ -132,7 +129,11 @@ public final class DownloadManager {
                 await self?.routeReattachedEvent(event, requestID: requestID)
             }
         }
-        Task { await reconcileOnLaunch() }
+        // NOTE: launch reconciliation is deliberately NOT spawned here. It is
+        // awaited explicitly (RootView → DownloadService.restorePersistedQueue,
+        // tests). An init-spawned pass would race rapid early enqueues —
+        // freshly persisted `.resolving` rows can be mis-marked interrupted by
+        // a late-running launch pass, corrupting admission accounting.
     }
 
     // MARK: - Durable paths

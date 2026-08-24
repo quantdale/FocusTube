@@ -73,7 +73,7 @@ final class DownloadManagerTests: XCTestCase {
         try context.save()
     }
 
-    func testEnqueuePersistsQueuedRecord() async throws {
+    func testEnqueuePersistsAdmittedRecordAsResolving() async throws {
         let manager = await DownloadManager(
             transport: NoopTransport(),
             context: ModelContext(try makeContainer())
@@ -81,7 +81,9 @@ final class DownloadManagerTests: XCTestCase {
         _ = await manager.enqueue(makeRequest(id: "a"))
         let records = await manager.records
         XCTAssertEqual(records.count, 1)
-        XCTAssertEqual(records.first?.state.status, .queued)
+        // Admitted ⇒ slot-consuming: the record reads .resolving immediately
+        // so capacity accounting is truthful during the transfer window.
+        XCTAssertEqual(records.first?.state.status, .resolving)
     }
 
     func testReEnqueueSameIDUpsertsInsteadOfDuplicating() async throws {

@@ -161,6 +161,31 @@ final class Journeys: XCTestCase {
 
     // MARK: - Journey A: shell
 
+    /// Scrolls until `id` exists, then taps it with a window-clamped
+    /// coordinate. Robust against tall cards pushing controls below the fold
+    /// and against partially-visible elements whose center lies offscreen.
+    @discardableResult
+    private func revealAndTap(_ app: XCUIApplication, _ id: String, maxSwipes: Int = 14) -> String {
+        for _ in 0..<maxSwipes {
+            let el = app.descendants(matching: .any)[id].firstMatch
+            if el.exists {
+                let f = el.frame
+                let win = app.frame
+                if f.width > 1, f.height > 1,
+                   f.maxY <= win.maxY - 8, f.minY >= win.minY {
+                    let cx = min(max(f.midX, win.minX + 4), win.maxX - 4)
+                    let cy = min(max(f.midY, win.minY + 4), win.maxY - 4)
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                        .withOffset(CGVector(dx: cx, dy: cy))
+                        .tap()
+                    return ""
+                }
+            }
+            app.swipeUp()
+        }
+        return "not-revealed-after-\(maxSwipes)-swipes"
+    }
+
     func testShellTabsExistAndSwitchWithoutCorruption() {
         let app = launch("signed-out")
 
@@ -246,9 +271,8 @@ final class Journeys: XCTestCase {
             "short-form results are filtered before render, always"
         )
 
-        let loadMore = app.buttons["load-more-button"]
-        XCTAssertTrue(loadMore.waitForExistence(timeout: 5))
-        loadMore.tap()
+        let lmTrace = revealAndTap(app, "load-more-button")
+        XCTAssertTrue(lmTrace.isEmpty, "load more must be reachable [\(lmTrace);\(treeDiagnostics(app))]")
         XCTAssertTrue(
             app.staticTexts["Fixture Search Result Gamma"].waitForExistence(timeout: 5),
             "Load more must append the second result page"
@@ -629,9 +653,8 @@ final class Journeys: XCTestCase {
         )
 
         // Reply to the first fixture comment thread.
-        let replyButton = app.buttons["reply-button-fc1"]
-        XCTAssertTrue(replyButton.waitForExistence(timeout: 5))
-        replyButton.tap()
+        let replyTrace = interact(app, locate: { $0.buttons["reply-button-fc1"].firstMatch }, tap: true)
+        XCTAssertTrue(replyTrace.isEmpty, "reply control must be reachable [\(replyTrace);\(treeDiagnostics(app))]")
         target.tap()
         target.typeText("Fixture journey reply")
         app.buttons["comment-submit"].tap()
@@ -657,11 +680,12 @@ final class Journeys: XCTestCase {
 
         // The fixture transfer finalized REAL playable media: the player must
         // reach a genuine playing state, never the failed overlay.
-        let playingMarker = app.otherElements["player-playing"]
-        let playingMarkerAnyType = app.descendants(matching: .any)["player-playing"].firstMatch
+        let playingMarker = app.descendants(matching: .any)["player-playing"].firstMatch
+        let doneVisible = app.buttons["local-player-done"].exists
+        let failedVisible = app.staticTexts["Playback failed"].exists
         XCTAssertTrue(
-            playingMarker.waitForExistence(timeout: 15) || playingMarkerAnyType.exists,
-            "offline playback must reach .playing with playable fixture media"
+            playingMarker.waitForExistence(timeout: 15),
+            "offline playback must reach .playing; sheet=\(doneVisible) failed=\(failedVisible);\(treeDiagnostics(app))"
         )
         XCTAssertFalse(
             app.staticTexts["Playback failed"].exists,

@@ -243,12 +243,26 @@ enum FixtureMediaFactory {
     /// concurrency for this DEBUG-only test fixture.
     nonisolated(unsafe) private static var cachedMaster: URL?
 
-    /// Master playable file, generated at most once per process.
     static func masterPlayableFile() throws -> URL {
         lock.lock()
-        defer { lock.unlock() }
-        if let cachedMaster { return cachedMaster }
+        if let cachedMaster {
+            lock.unlock()
+            return cachedMaster
+        }
+        lock.unlock()
 
+        // Generation runs OUTSIDE the lock: it is slow (encoder startup) and
+        // a held lock would serialize every transfer's tempCopy behind it.
+        let url = try generateMasterFile()
+
+        lock.lock()
+        // Last-writer-wins on the rare race; both products are valid media.
+        cachedMaster = url
+        lock.unlock()
+        return url
+    }
+
+    private static func generateMasterFile() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("focustube-fixture-media-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
@@ -274,7 +288,12 @@ enum FixtureMediaFactory {
         writer.startSession(atSourceTime: .zero)
 
         for frame in 0..<frames {
+            // BOUNDED readiness wait: a wedged encoder must degrade to a
+            // thrown error (callers fall back), never hang a thread forever.
+            var waited = 0
             while !input.isReadyForMoreMediaData {
+                waited += 1
+                if waited > 1500 { throw NSError(domain: "FixtureMedia", code: 5) }
                 Thread.sleep(forTimeInterval: 0.002)
             }
             var pixelBuffer: CVPixelBuffer?
@@ -301,13 +320,15 @@ enum FixtureMediaFactory {
         }
         input.markAsFinished()
 
-        let done = DispatchSemaphore(value: 0)
-        writer.finishWriting { done.signal() }
-        done.wait()
+        // BOUNDED completion wait — never an unbounded semaphore block.
+        var waitedMs = 0
+        while writer.status == .writing && waitedMs < 5_000 {
+            Thread.sleep(forTimeInterval: 0.01)
+            waitedMs += 10
+        }
         guard writer.status == .completed else {
             throw writer.error ?? NSError(domain: "FixtureMedia", code: 4)
         }
-        cachedMaster = url
         return url
     }
 
