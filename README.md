@@ -4,7 +4,9 @@ FocusTube is a personal-use, native iOS YouTube client designed around intention
 
 The V1 product focuses on subscriptions/Home, deliberate search, native video playback, comments/account actions, downloads, and a local offline library. Shorts, the vertical swipe player, creator tools, shopping, and recommendation-driven rabbit holes are intentionally absent.
 
-> **Status:** `engineering_complete_device_validation_required` — implementation, HARDENING_V1/V2 hardening, and the 2026-08-23 FINAL_COMPLETION_V1 ship-readiness pass are complete with both workflows green on commit `42f761a` (Core Tests run 32666070090; iOS CI run 32666070146: Debug build, Release build, unit tests 94 executed / 0 failures / 4 opt-in-skipped, full deterministic UI journey set, Gate success). Remaining work is consolidated owner-side device/account validation in [DEVICE_VALIDATION_BATCH_A.md](DEVICE_VALIDATION_BATCH_A.md). Live progress pointer: [`.agent/STATE.yaml`](.agent/STATE.yaml). Fresh coding agents start with [`START_HERE.md`](START_HERE.md).
+> **Status:** `spec_closure_daily_driver_v2_in_progress` — the 2026-08-24 owner directive opened **SPEC_CLOSURE_DAILY_DRIVER_V2**: close spec/acceptance discrepancies and turn the hardened-but-narrow V1 into a genuinely daily-usable client. The P0 durable queued-download relaunch defect is fixed; comment posting/replies, account/settings surface, rich video cards, search recents, downloads management, library/playlists upgrades, and HB-013/HB-014 closure have landed with deterministic tests. Live progress pointer: [`.agent/STATE.yaml`](.agent/STATE.yaml). Fresh coding agents start with [`START_HERE.md`](START_HERE.md).
+>
+> Historical: `engineering_complete_device_validation_required` at `42f761a` (FINAL_COMPLETION_V1). DEVICE_VALIDATION_V1 remains downstream owner validation and will resume against a REFRESHED baseline after this campaign (the old `42f761a` handoff SHA is superseded by substantial product changes).
 
 ## Autonomous development mode
 
@@ -19,7 +21,7 @@ This repository contains a durable control plane so an AI coding agent can execu
 - [`.agent/checkpoints/`](.agent/checkpoints/) — durable gate/milestone evidence.
 - [`.agent/HARDENING_BACKLOG.md`](.agent/HARDENING_BACKLOG.md) — nonblocking debt intentionally deferred during implementation.
 
-The active campaign is **DEVICE_VALIDATION_V1**: INTEGRATION_COMPLETION_V1, HARDENING_V1/V2, and FINAL_COMPLETION_V1 are complete (final green evidence on `42f761a`); what remains is owner-executed physical-device validation plus one opt-in live-smoke dispatch. Agents keep CI green and diagnose/repair any device-reported failures.
+The active campaign is **SPEC_CLOSURE_DAILY_DRIVER_V2** (see `.agent/work-packets/DDV2-CAMPAIGN.md`): spec-truth reset plus daily-driver product completion. DEVICE_VALIDATION_V1 stays downstream owner-executed physical-device validation plus one opt-in live-smoke dispatch.
 
 ## Locked product/technical decisions
 
@@ -68,7 +70,7 @@ FocusTube/
 The short version is:
 
 ```text
-Read START_HERE.md and follow the repository's durable state. Keep DEVICE_VALIDATION_V1 moving: CI green, diagnose/repair any owner-reported device failures, record evidence/checkpoints, and never claim unobserved evidence.
+Read START_HERE.md and follow the repository's durable state. Advance SPEC_CLOSURE_DAILY_DRIVER_V2 packet by packet: implement, validate locally, keep both workflows green, record evidence/checkpoints, and never claim unobserved evidence.
 ```
 
 For the exact reusable prompt, use [`.agent/BOOT_PROMPT.md`](.agent/BOOT_PROMPT.md).

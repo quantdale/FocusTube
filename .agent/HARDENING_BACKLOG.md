@@ -32,6 +32,11 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: bounded overhead (personal-scale record counts); no correctness effect.
 - Suggested hardening action: cache a filtered failed-tasks projection updated from event application.
 - Blocks implementation: no
+- Resolved 2026-08-24 (SPEC_CLOSURE_DAILY_DRIVER_V2): DownloadManager now
+  maintains cached projections (`queuedTasks`, `failedTasks`) updated at
+  mutation points (applyLive/syncRecord/cancel/reconcile/delete) instead of
+  per-render fetches; presentation-metadata lookups are memoized in a
+  metadataCache; DownloadsView renders from the projections.
 
 ### HB-014 — Fixture video pages intentionally show the bounded "Playback failed" overlay
 - Severity: Low
@@ -41,6 +46,12 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: none for production; future journeys that need a *playing* state need a local file:// fixture stream.
 - Suggested hardening action: add a tiny bundled media asset to the fixture harness if playback-state journeys become necessary.
 - Blocks implementation: no
+- Resolved 2026-08-24 (SPEC_CLOSURE_DAILY_DRIVER_V2): FixtureMediaFactory
+  generates a tiny genuinely decodable H.264 MP4 at runtime inside the DEBUG
+  fixture harness (no committed binaries); ScriptedDownloadTransport finalizes
+  real playable media, DownloadsView presents a visible local player sheet,
+  PlayerView exposes a `.playing`-only marker, and journey L asserts genuine
+  offline playing state.
 
 ### HB-001 — VideoPageView registers onProgress after loadAndPlay
 - Severity: Low
