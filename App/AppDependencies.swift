@@ -22,6 +22,7 @@ final class AppDependencies {
     let downloadService: DownloadService
     let homeStore: HomeFeedStore
     let searchStore: SearchStore
+    let recentSearches: RecentSearchStore
     let auth: AuthSession
     let api: YouTubeAPI
 
@@ -38,7 +39,7 @@ final class AppDependencies {
     // MARK: - Production
 
     private static func production() -> AppDependencies {
-        let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self, DownloadRecord.self])
+        let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self, DownloadRecord.self, RecentSearchEntry.self])
         // Resilience over durability: a corrupted/unopenable store must not crash
         // the app at launch, so fall back to an in-memory container (personal-use
         // tradeoff: library metadata then lasts only this session). In-memory
@@ -74,7 +75,7 @@ final class AppDependencies {
     // MARK: - UI-test fixture mode
 
     private static func fixture(_ scenario: UITestScenario) -> AppDependencies {
-        let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self, DownloadRecord.self])
+        let schema = Schema([WatchHistoryEntry.self, SavedItem.self, DownloadedMedia.self, DownloadRecord.self, RecentSearchEntry.self])
         // The seeded-relaunch journey needs state that survives process exit;
         // every other scenario stays fully in-memory for isolation.
         let container: ModelContainer
@@ -193,6 +194,7 @@ final class AppDependencies {
         self.backgroundMedia = media
         self.homeStore = HomeFeedStore(auth: auth, api: api)
         self.searchStore = SearchStore(auth: auth, api: api)
+        self.recentSearches = RecentSearchStore(context: ModelContext(container))
 
         #if DEBUG
         if UITestScenario.fromArguments(ProcessInfo.processInfo.arguments) == .librarySeeded {

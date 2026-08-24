@@ -74,8 +74,8 @@ previous_campaigns:
 
 status: spec_closure_daily_driver_v2_in_progress
 current_milestone: SPEC_CLOSURE_DAILY_DRIVER_V2
-current_gate: DDV2-01 (durable queued-download lifecycle)
-current_work_packet: DDV2-01
+current_gate: DDV2-04 (video actions/comment composer)
+current_work_packet: DDV2-02/03/05/07 batch landing
 current_packet_status: code_complete_local_green_awaiting_ios_ci
 current_waypoint:
   id: DDV2-01_DURABLE_QUEUE
@@ -96,7 +96,7 @@ current_waypoint:
     - live smoke run result (one manual dispatch)
     - no Critical/High defect open at close
 
-resume_token: SPEC_CLOSURE_DAILY_DRIVER_V2:DDV2-01
+resume_token: SPEC_CLOSURE_DAILY_DRIVER_V2:DDV2-04
 repo_baseline:
   branch: main
   commit: 42f761a

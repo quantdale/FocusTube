@@ -123,4 +123,12 @@ struct VideoCard: View {
         }
         return parts.compactMap { $0.isEmpty ? nil : $0 }.joined(separator: ", ")
     }
+
+    /// Local continue-watching indicator: the resume fraction from persisted
+    /// history, only for genuinely in-progress entries. Purely local — no API.
+    static func resumeFraction(videoID: String, history: [WatchHistoryEntry]) -> Double? {
+        guard let entry = history.first(where: { $0.videoID == videoID }), !entry.completed else { return nil }
+        guard let duration = entry.durationSeconds, duration > 0 else { return nil }
+        return min(max(entry.lastPositionSeconds / Double(duration), 0), 1)
+    }
 }

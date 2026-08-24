@@ -251,7 +251,7 @@ private struct HomeFeedView: View {
                 } label: {
                     VideoCard(
                         video: video,
-                        progressFraction: Self.resumeFraction(videoID: video.id, history: library.history)
+                        progressFraction: VideoCard.resumeFraction(videoID: video.id, history: library.history)
                     )
                 }
                 .buttonStyle(.plain)
@@ -322,13 +322,5 @@ private struct HomeFeedView: View {
         case .unknown: return "Couldn't load your subscriptions."
         default: return "Subscriptions unavailable."
         }
-    }
-
-    /// Local continue-watching indicator: the resume fraction from persisted
-    /// history, only for genuinely in-progress entries. Purely local — no API.
-    static func resumeFraction(videoID: String, history: [WatchHistoryEntry]) -> Double? {
-        guard let entry = history.first(where: { $0.videoID == videoID }), !entry.completed else { return nil }
-        guard let duration = entry.durationSeconds, duration > 0 else { return nil }
-        return min(max(entry.lastPositionSeconds / Double(duration), 0), 1)
     }
 }

@@ -58,7 +58,8 @@ public struct YouTubeDataClient: YouTubeAPI {
                 durationSeconds: VideoSummary.duration(from: item.contentDetails.duration),
                 publishedAt: ISO8601DateFormatter().date(from: item.snippet.publishedAt),
                 thumbnailURL: item.snippet.thumbnails.medium?.url,
-                description: item.snippet.description
+                description: item.snippet.description,
+                channelID: item.snippet.channelId
             )
         }
     }
@@ -317,6 +318,7 @@ private struct VideosResponse: Decodable {
         struct Snippet: Decodable {
             let title: String
             let channelTitle: String
+            let channelId: String?
             let publishedAt: String
             let description: String
             let thumbnails: Thumbnails

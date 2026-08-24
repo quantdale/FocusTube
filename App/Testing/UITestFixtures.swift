@@ -1,4 +1,6 @@
 import Foundation
+import AVFoundation
+import CoreVideo
 import FocusTubeCore
 
 #if DEBUG
@@ -47,7 +49,8 @@ enum FixtureContent {
             durationSeconds: seconds,
             publishedAt: nil,
             thumbnailURL: nil,
-            description: nil
+            description: "Fixture description for \(title). Long-form content used by deterministic journeys.",
+            channelID: "UCfixture"
         )
     }
 
@@ -168,6 +171,24 @@ struct FixtureYouTubeAPI: YouTubeAPI {
         CommentPage(comments: FixtureContent.comments, nextPageToken: nil, commentsDisabled: false)
     }
 
+    // DDV2-04 mutation/lookup fakes: deterministic, no network, no tokens.
+
+    func postTopLevelComment(videoID: String, text: String, accessToken: String) async throws -> Comment {
+        Comment(id: "fc-posted", author: "Fixture You", text: text, likeCount: 0, publishedAt: Date(), replyCount: 0)
+    }
+
+    func postReply(parentCommentID: String, text: String, accessToken: String) async throws -> Comment {
+        Comment(id: "fc-reply-posted", author: "Fixture You", text: text, likeCount: 0, publishedAt: Date(), replyCount: 0)
+    }
+
+    func findMySubscription(channelID: String, accessToken: String) async throws -> SubscriptionLookup? {
+        SubscriptionLookup(subscriptionID: "SUB-fixture", channelTitle: "Fixture Channel")
+    }
+
+    func fetchMyVideoRating(videoID: String, accessToken: String) async throws -> VideoRatingState {
+        .like
+    }
+
     func subscribe(channelID: String, accessToken: String) async throws {}
 
     func unsubscribe(subscriptionID: String, accessToken: String) async throws {}
@@ -191,6 +212,95 @@ struct FixtureExtractor: MediaExtracting {
     }
 }
 
+// MARK: - Playable fixture media (HB-014)
+
+/// Generates a tiny but GENUINELY decodable H.264 MP4 so UI journeys can drive
+/// the player to a real `.playing` state instead of asserting around a fake
+/// "Playback failed" overlay. Generated at runtime inside the test harness —
+/// no media binaries are committed, and this code is compiled out of Release.
+enum FixtureMediaFactory {
+    private static let lock = NSLock()
+    private static var cachedMaster: URL?
+
+    /// Master playable file, generated at most once per process.
+    static func masterPlayableFile() throws -> URL {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cachedMaster { return cachedMaster }
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("focustube-fixture-media-\(UUID().uuidString).mp4")
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let width = 64, height = 64, fps = 10, frames = 15
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height
+        ])
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: input,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height
+            ]
+        )
+        writer.add(input)
+        guard writer.startWriting() else {
+            throw writer.error ?? NSError(domain: "FixtureMedia", code: 1)
+        }
+        writer.startSession(atSourceTime: .zero)
+
+        for frame in 0..<frames {
+            while !input.isReadyForMoreMediaData {
+                Thread.sleep(forTimeInterval: 0.002)
+            }
+            var pixelBuffer: CVPixelBuffer?
+            if let pool = adaptor.pixelBufferPool {
+                CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
+            }
+            if pixelBuffer == nil {
+                CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, nil, &pixelBuffer)
+            }
+            guard let buffer = pixelBuffer else {
+                throw NSError(domain: "FixtureMedia", code: 2)
+            }
+            CVPixelBufferLockBaseAddress(buffer, [])
+            if let base = CVPixelBufferGetBaseAddress(buffer) {
+                // Alternating dark/light frames give visible playback motion.
+                let gray: UInt8 = frame.isMultiple(of: 2) ? 40 : 200
+                memset(base, Int32(gray), CVPixelBufferGetDataSize(buffer))
+            }
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+            let time = CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(fps))
+            guard adaptor.append(buffer, withPresentationTime: time) else {
+                throw writer.error ?? NSError(domain: "FixtureMedia", code: 3)
+            }
+        }
+        input.markAsFinished()
+
+        let done = DispatchSemaphore(value: 0)
+        writer.finishWriting { done.signal() }
+        done.wait()
+        guard writer.status == .completed else {
+            throw writer.error ?? NSError(domain: "FixtureMedia", code: 4)
+        }
+        cachedMaster = url
+        return url
+    }
+
+    /// A unique temp COPY per transfer: finalization MOVES temp files into
+    /// place, so every completed event needs its own consumable path.
+    static func tempCopy(for requestID: String, component: Int) throws -> URL {
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fixture-\(requestID)#\(component).mp4")
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.copyItem(at: masterPlayableFile(), to: destination)
+        return destination
+    }
+}
+
 // MARK: - Scripted download transport
 
 /// Deterministic admission: fixtures must never depend on host-disk free
@@ -202,6 +312,8 @@ struct FixtureStorage: StorageProviding {
 
 /// Drives the REAL coordinator/manager/service state machine with deterministic
 /// byte events. `failsAfterProgress` switches the script to a transport failure.
+/// Completed transfers finalize from a genuinely playable fixture MP4 (HB-014)
+/// so offline playback reaches a real `.playing` state.
 final class ScriptedDownloadTransport: DownloadTransport, @unchecked Sendable {
     let failsAfterProgress: Bool
 
@@ -220,11 +332,19 @@ final class ScriptedDownloadTransport: DownloadTransport, @unchecked Sendable {
                 return
             }
             // The coordinator finalizes by moving the temp file into place, so
-            // the completed event must point at real bytes.
-            let temp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("fixture-\(request.id)#\(component).bin")
-            try? Data([0xFF, 0xFF, 0xFF, 0xFF]).write(to: temp)
-            onEvent(.completed(tempLocation: temp, component: component))
+            // the completed event must point at real bytes — now real PLAYABLE
+            // media, not opaque filler.
+            do {
+                let temp = try FixtureMediaFactory.tempCopy(for: request.id, component: component)
+                onEvent(.completed(tempLocation: temp, component: component))
+            } catch {
+                // Generation failure degrades to the old filler-bytes behavior;
+                // the transfer still completes (validation seam is off).
+                let temp = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("fixture-\(request.id)#\(component).bin")
+                try? Data([0xFF, 0xFF, 0xFF, 0xFF]).write(to: temp)
+                onEvent(.completed(tempLocation: temp, component: component))
+            }
         }
     }
 

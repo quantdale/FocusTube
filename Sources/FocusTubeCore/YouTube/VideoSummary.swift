@@ -7,6 +7,10 @@ public struct VideoSummary: Identifiable, Codable, Sendable, Hashable {
     public let id: String
     public let title: String
     public let channelTitle: String
+    /// Owning channel's resource ID when known (videos.list snippet).
+    /// Additive optional: legacy persisted/decoded values degrade to nil and
+    /// subscribe-state features simply stay unavailable for those rows.
+    public let channelID: String?
     public let durationSeconds: Int?
     public let publishedAt: Date?
     public let thumbnailURL: URL?
@@ -19,11 +23,13 @@ public struct VideoSummary: Identifiable, Codable, Sendable, Hashable {
         durationSeconds: Int?,
         publishedAt: Date?,
         thumbnailURL: URL?,
-        description: String?
+        description: String?,
+        channelID: String? = nil
     ) {
         self.id = id
         self.title = title
         self.channelTitle = channelTitle
+        self.channelID = channelID
         self.durationSeconds = durationSeconds
         self.publishedAt = publishedAt
         self.thumbnailURL = thumbnailURL

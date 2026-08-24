@@ -414,7 +414,8 @@ final class DownloadServiceTests: XCTestCase {
         )
         await service.download(videoID: "v26", title: "T", channelTitle: "C", quality: .p720)
 
-        XCTAssertNil(await service.lastFailure)
+        let failureAfterRetries = await service.lastFailure
+        XCTAssertNil(failureAfterRetries)
         XCTAssertEqual(flaky.beginCount, 3, "initial attempt + two retries")
         let downloaded = await library.downloaded
         XCTAssertEqual(downloaded.count, 1)
