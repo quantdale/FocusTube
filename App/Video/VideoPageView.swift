@@ -238,12 +238,13 @@ struct VideoPageView: View {
 
     private func commentsErrorLabel(_ error: YouTubeAPIError) -> String {
         switch error {
-        case .unauthorized: return "Sign in to see comments."
+        case .unauthorized: return "Sign in to post or see comments."
         case .quotaExceeded: return "Comments quota exceeded. Try again later."
         case .commentsDisabled: return "Comments are disabled for this video."
         case .notFound: return "Comments are unavailable for this video."
         case .network: return "Network error loading comments."
         case .decode: return "Couldn't load comments."
+        case .invalidInput: return "That comment can't be sent. Check the text and try again."
         case .unknown: return "Couldn't load comments."
         }
     }
