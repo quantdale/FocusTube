@@ -89,6 +89,7 @@ struct DownloadsView: View {
                             }
                         } label: {
                             Image(systemName: "stop.fill")
+                                .frame(minWidth: 44, minHeight: 44)
                         }
                         .accessibilityLabel("Cancel download")
                     }
@@ -138,6 +139,7 @@ struct DownloadsView: View {
                             }
                         } label: {
                             Image(systemName: "stop.fill")
+                                .frame(minWidth: 44, minHeight: 44)
                         }
                         .accessibilityLabel("Cancel download")
                     }
@@ -279,6 +281,7 @@ struct DownloadsView: View {
                 pendingDelete = store.downloaded.first(where: { $0.id == item.id })
             } label: {
                 Image(systemName: "trash")
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityLabel("Delete download")
         }

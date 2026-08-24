@@ -149,6 +149,7 @@ struct SearchView: View {
                         } label: {
                             Image(systemName: "xmark")
                                 .font(.caption)
+                                .frame(minWidth: 44, minHeight: 44)
                         }
                         .accessibilityLabel("Remove \(entry.query) from recents")
                     }
