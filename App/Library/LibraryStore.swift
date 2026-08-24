@@ -32,7 +32,16 @@ final class LibraryStore {
 
     // MARK: - Watch history / resume
 
-    public func recordProgress(videoID: String, title: String, channelTitle: String, position: Double, duration: Int?, completed: Bool) {
+    public func recordProgress(
+        videoID: String,
+        title: String,
+        channelTitle: String,
+        position: Double,
+        duration: Int?,
+        completed: Bool,
+        publishedAt: Date? = nil,
+        thumbnailURL: String? = nil
+    ) {
         // A failed fetch must not silently insert a duplicate entry for a
         // video that may already have history — abort and log instead.
         let existing: WatchHistoryEntry?
@@ -46,9 +55,11 @@ final class LibraryStore {
             existing.title = title
             existing.channelTitle = channelTitle
             existing.lastPositionSeconds = position
-            existing.durationSeconds = duration
+            existing.durationSeconds = duration ?? existing.durationSeconds
             existing.completed = completed
             existing.updatedAt = Date()
+            if let publishedAt { existing.publishedAt = publishedAt }
+            if let thumbnailURL { existing.thumbnailURL = thumbnailURL }
         } else {
             context.insert(WatchHistoryEntry(
                 videoID: videoID,
@@ -57,7 +68,9 @@ final class LibraryStore {
                 lastPositionSeconds: position,
                 durationSeconds: duration,
                 updatedAt: Date(),
-                completed: completed
+                completed: completed,
+                publishedAt: publishedAt,
+                thumbnailURL: thumbnailURL
             ))
         }
         mutate()
@@ -97,7 +110,14 @@ final class LibraryStore {
 
     // MARK: - Saves
 
-    public func save(videoID: String, title: String, channelTitle: String) {
+    public func save(
+        videoID: String,
+        title: String,
+        channelTitle: String,
+        durationSeconds: Int? = nil,
+        publishedAt: Date? = nil,
+        thumbnailURL: String? = nil
+    ) {
         // A failed fetch must not silently insert a duplicate save — abort.
         let existing: SavedItem?
         do {
@@ -106,8 +126,22 @@ final class LibraryStore {
             Self.logger.fault("Saved-item fetch failed (\(error.localizedDescription)); aborting save")
             return
         }
-        if existing == nil {
-            context.insert(SavedItem(videoID: videoID, title: title, channelTitle: channelTitle, savedAt: Date()))
+        if let existing {
+            existing.durationSeconds = durationSeconds ?? existing.durationSeconds
+            if let publishedAt { existing.publishedAt = publishedAt }
+            if let thumbnailURL { existing.thumbnailURL = thumbnailURL }
+            mutate()
+            save()
+        } else {
+            context.insert(SavedItem(
+                videoID: videoID,
+                title: title,
+                channelTitle: channelTitle,
+                savedAt: Date(),
+                durationSeconds: durationSeconds,
+                publishedAt: publishedAt,
+                thumbnailURL: thumbnailURL
+            ))
             mutate()
             save()
         }

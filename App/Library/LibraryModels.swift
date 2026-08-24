@@ -12,8 +12,12 @@ final class WatchHistoryEntry {
     var durationSeconds: Int?
     var updatedAt: Date
     var completed: Bool
+    /// DDV2-08 additive presentation metadata (lightweight migration:
+    /// legacy rows decode as nil and fall back gracefully in UI).
+    var publishedAt: Date?
+    var thumbnailURL: String?
 
-    init(videoID: String, title: String, channelTitle: String, lastPositionSeconds: Double, durationSeconds: Int?, updatedAt: Date, completed: Bool) {
+    init(videoID: String, title: String, channelTitle: String, lastPositionSeconds: Double, durationSeconds: Int?, updatedAt: Date, completed: Bool, publishedAt: Date? = nil, thumbnailURL: String? = nil) {
         self.videoID = videoID
         self.title = title
         self.channelTitle = channelTitle
@@ -21,6 +25,8 @@ final class WatchHistoryEntry {
         self.durationSeconds = durationSeconds
         self.updatedAt = updatedAt
         self.completed = completed
+        self.publishedAt = publishedAt
+        self.thumbnailURL = thumbnailURL
     }
 }
 
@@ -31,12 +37,19 @@ final class SavedItem {
     var title: String
     var channelTitle: String
     var savedAt: Date
+    /// DDV2-08 additive presentation metadata.
+    var durationSeconds: Int?
+    var publishedAt: Date?
+    var thumbnailURL: String?
 
-    init(videoID: String, title: String, channelTitle: String, savedAt: Date) {
+    init(videoID: String, title: String, channelTitle: String, savedAt: Date, durationSeconds: Int? = nil, publishedAt: Date? = nil, thumbnailURL: String? = nil) {
         self.videoID = videoID
         self.title = title
         self.channelTitle = channelTitle
         self.savedAt = savedAt
+        self.durationSeconds = durationSeconds
+        self.publishedAt = publishedAt
+        self.thumbnailURL = thumbnailURL
     }
 }
 

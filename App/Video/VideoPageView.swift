@@ -107,7 +107,9 @@ struct VideoPageView: View {
                         channelTitle: video.channelTitle,
                         position: seconds,
                         duration: video.durationSeconds,
-                        completed: false
+                        completed: false,
+                        publishedAt: video.publishedAt,
+                        thumbnailURL: video.thumbnailURL?.absoluteString
                     )
                 }
             }
@@ -205,7 +207,10 @@ struct VideoPageView: View {
                 library.save(
                     videoID: video.id,
                     title: video.title,
-                    channelTitle: video.channelTitle
+                    channelTitle: video.channelTitle,
+                    durationSeconds: video.durationSeconds,
+                    publishedAt: video.publishedAt,
+                    thumbnailURL: video.thumbnailURL?.absoluteString
                 )
                 isSaved = true
             }
