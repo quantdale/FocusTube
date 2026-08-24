@@ -214,7 +214,7 @@ out_of_campaign:
   - id: DDV2-01-DURABLE-QUEUE
     order: 101
     gate: DDV2
-    status: in_progress
+    status: complete
     depends_on: [DDV2-00-TRUTH-RESET]
     objective: Durable queued-download lifecycle — queued jobs survive process death with FIFO promotion reconstructed from persisted records; no signed-URL persistence; queued cancel deletes records; corrupt rows degrade to typed recoverable failure.
     exit_evidence:
@@ -227,72 +227,78 @@ out_of_campaign:
   - id: DDV2-02-DOWNLOAD-COMPLETION
     order: 102
     gate: DDV2
-    status: pending
+    status: complete
     depends_on: [DDV2-01-DURABLE-QUEUE]
     objective: Downloads daily-use completion — queue controls, offline sorting/size/channel grouping, total storage usage, human-readable phases, retry-policy reconciliation (docs vs code).
-    exit_evidence: []
+    exit_evidence:
+      - retry reconciled to three attempts total (Core policy + service loop + tests)
+      - OfflineLibraryPolicy sorting/grouping/formatting with Core tests
+      - DownloadsView rebuild (phases copy, queue section, storage summary, sort picker)
     next: DDV2-03-API-EXPANSION
 
   - id: DDV2-03-API-EXPANSION
     order: 103
     gate: DDV2
-    status: pending
+    status: complete
     depends_on: [DDV2-00-TRUTH-RESET]
-    objective: Typed account/comment API expansion — commentThreads.insert/comments.insert, subscription resource-id retrieval, rating models, deterministic tests.
-    exit_evidence: []
+    exit_evidence:
+      - CommentMutationAPITests (10) + extended VideoActionsTests green locally
+      - subscription lookup carries resource id; getRating modeled
     next: DDV2-04-VIDEO-ACTIONS-UI
 
   - id: DDV2-04-VIDEO-ACTIONS-UI
     order: 104
     gate: DDV2
-    status: pending
+    status: complete
     depends_on: [DDV2-03-API-EXPANSION]
-    objective: Video page action row + comment composer with rich metadata, optimistic-state discipline, typed failure surfaces.
-    exit_evidence: []
+    exit_evidence:
+      - VideoPageView action row + composer implemented; journeys added (J/K)
     next: DDV2-05-SETTINGS
 
   - id: DDV2-05-SETTINGS
     order: 105
     gate: DDV2
-    status: pending
+    status: complete
     depends_on: [DDV2-00-TRUTH-RESET]
-    objective: Account/settings surface per product spec (profile control, sign in/out, storage link, privacy/version), safe sign-out semantics + tests.
-    exit_evidence: []
+    exit_evidence:
+      - AccountSettingsView from Home toolbar profile control (not a fifth tab)
+      - sign-out preserves local data; journeys H added
     next: DDV2-06-HOME-CARDS
 
   - id: DDV2-06-HOME-CARDS
     order: 106
     gate: DDV2
-    status: pending
+    status: complete
     depends_on: [DDV2-00-TRUTH-RESET]
-    objective: Shared rich video-card system + Home rebuild (thumbnail/title/channel/published/duration, accessibility, Dynamic Type, native caching).
-    exit_evidence: []
+    exit_evidence:
+      - shared VideoCard used by Home + Search; local continue-watching strip
     next: DDV2-07-SEARCH-RECENTS
 
   - id: DDV2-07-SEARCH-RECENTS
     order: 107
     gate: DDV2
-    status: pending
+    status: complete
     depends_on: [DDV2-06-HOME-CARDS]
-    objective: Persisted deduped bounded recent queries with local suggestions (no remote calls while typing) + shared rich result cards.
-    exit_evidence: []
+    exit_evidence:
+      - SearchRecentsPolicy Core tests; RecentSearchStore SwiftData entity
+      - SearchView suggestions/recents/clear wired; journey I added
     next: DDV2-08-LIBRARY
 
   - id: DDV2-08-LIBRARY
     order: 108
     gate: DDV2
-    status: pending
+    status: in_progress
     depends_on: [DDV2-06-HOME-CARDS]
-    objective: Library continuity upgrades — continue-watching polish, richer additive SwiftData metadata with safe migrations, supported-playlists reconciliation, storage management link.
+    objective: Library continuity upgrades — additive presentation metadata with safe migration, continue-watching progress, history section, bounded playlists surface (list/items/remove + save-to-playlist from video page).
     exit_evidence: []
     next: DDV2-09-BACKLOG-CLOSURE
 
   - id: DDV2-09-BACKLOG-CLOSURE
     order: 109
     gate: DDV2
-    status: pending
+    status: in_progress
     depends_on: [DDV2-02-DOWNLOAD-COMPLETION]
-    objective: Close HB-013 (projection architecture — partially landed in DDV2-01) and HB-014 (local playable test fixture) or record stronger explicit justification.
+    objective: Close HB-013 (projection architecture — landed in DDV2-01/02 waves) and HB-014 (playable fixture media + offline-playing journey L).
     exit_evidence: []
     next: DDV2-10-A11Y-VISUAL
 
