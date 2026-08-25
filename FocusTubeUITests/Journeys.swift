@@ -145,7 +145,22 @@ final class Journeys: XCTestCase {
     /// which is why the video page now keeps its primary actions inside the
     /// first viewport (product-side fix) instead of relying on mid-page
     /// scrolling.
+    /// While the keyboard is presented it owns the lower screen and swallows
+    /// gestures originating inside its glass (run 2eeaba6: target frame frozen
+    /// at y=1160 across every attempt) — such attempts drag from the safe band
+    /// near the top of the window instead.
     private func scrollOnce(_ app: XCUIApplication, direction: SwipeDirection, attempt: Int) {
+        if app.keyboards.firstMatch.exists {
+            let win = app.frame
+            guard win.height > 200 else { return }
+            let x = win.midX
+            let startY: CGFloat = direction == .up ? win.minY + 180 : win.midY
+            let endY: CGFloat = direction == .up ? win.midY : win.minY + 180
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: x, dy: startY))
+            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: x, dy: endY))
+            start.press(forDuration: 0.05, thenDragTo: end)
+            return
+        }
         let container = largestScrollContainer(app)
         if let container {
             if direction == .up { container.element.swipeUp(velocity: .fast) } else { container.element.swipeDown(velocity: .fast) }
@@ -874,17 +889,26 @@ final class Journeys: XCTestCase {
 
     /// Dismisses the keyboard by tapping a neutral chrome point (the navigation
     /// bar), then waits until it is actually gone so subsequent taps cannot be
-    /// swallowed by keyboard glass.
+    /// swallowed by keyboard glass. iOS 26 simulators swallow single injected
+    /// taps often enough that one attempt is not a verdict — retries are
+    /// bounded and each attempt verifies disappearance.
     private func dismissKeyboard(_ app: XCUIApplication) {
         guard app.keyboards.firstMatch.exists else { return }
-        let bar = app.navigationBars.firstMatch
-        if bar.exists, bar.isHittable {
-            bar.tap()
-        } else {
-            app.swipeDown()
-        }
         let gone = NSPredicate(format: "exists == false")
-        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: app.keyboards.firstMatch)], timeout: 5)
+        for _ in 0..<3 {
+            let bar = app.navigationBars.firstMatch
+            if bar.exists, bar.isHittable {
+                bar.tap()
+            } else {
+                app.swipeDown()
+            }
+            if XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: gone, object: app.keyboards.firstMatch)],
+                timeout: 3
+            ) == .completed {
+                return
+            }
+        }
     }
 
     // MARK: - Journey L: offline playback reaches playing (HB-014)
