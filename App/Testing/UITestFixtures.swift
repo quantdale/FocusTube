@@ -284,7 +284,7 @@ enum FixtureMediaFactory {
                 AVVideoExpectedSourceFrameRateKey: fps
             ]
         ])
-        input.expectsMediaDataInRealTime = false
+        input.expectsMediaDataInRealTime = true
         // H.264 encoders reliably accept 420v planar buffers; the earlier BGRA
         // configuration silently failed to encode on the CI runner (every
         // transfer degraded to the 4-byte filler fallback).
@@ -409,11 +409,16 @@ final class ScriptedDownloadTransport: DownloadTransport, @unchecked Sendable {
                 let temp = try FixtureMediaFactory.tempCopy(for: request.id, component: component)
                 onEvent(.completed(tempLocation: temp, component: component))
             } catch {
-                // Generation failure degrades to the old filler-bytes behavior;
-                // the transfer still completes (validation seam is off).
+                // Generation failure degrades to filler bytes — but the exact
+                // encoder error is EMBEDDED in the fallback bytes so it surfaces
+                // through the Downloads row size in journey diagnostics (the
+                // only telemetry channel readable without authenticated API
+                // access). A 4-byte row means "unknown"; anything larger names
+                // the failure.
+                let message = "ENCFAIL\(Foundation.Date().timeIntervalSince1970):\(error)"
                 let temp = FileManager.default.temporaryDirectory
                     .appendingPathComponent("fixture-\(request.id)#\(component).bin")
-                try? Data([0xFF, 0xFF, 0xFF, 0xFF]).write(to: temp)
+                try? Data(message.utf8).write(to: temp)
                 onEvent(.completed(tempLocation: temp, component: component))
             }
         }
