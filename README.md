@@ -4,24 +4,26 @@ FocusTube is a personal-use, native iOS YouTube client designed around intention
 
 The V1 product focuses on subscriptions/Home, deliberate search, native video playback, comments/account actions, downloads, and a local offline library. Shorts, the vertical swipe player, creator tools, shopping, and recommendation-driven rabbit holes are intentionally absent.
 
-> **Status:** `spec_closure_daily_driver_v2_in_progress` — the 2026-08-24 owner directive opened **SPEC_CLOSURE_DAILY_DRIVER_V2**: close spec/acceptance discrepancies and turn the hardened-but-narrow V1 into a genuinely daily-usable client. The P0 durable queued-download relaunch defect is fixed; comment posting/replies, account/settings surface, rich video cards, search recents, downloads management, library/playlists upgrades, and HB-013/HB-014 closure have landed with deterministic tests. Live progress pointer: [`.agent/STATE.yaml`](.agent/STATE.yaml). Fresh coding agents start with [`START_HERE.md`](START_HERE.md).
+> **Status:** `hardening_v3_complete_device_validation_pending` — implementation M0–M8, SPEC_CLOSURE_DAILY_DRIVER_V2, and HARDENING_V3 are complete. `H3-EXIT` passed on qualified code SHA `7a70943`; Core Tests run `32891558919` and iOS CI run `32891558884` were successful at that code SHA, including the fail-closed Gate and journeys 20/20. The later `main` commits through `f1dcca` are durable-state/docs evidence only; their latest Core Tests (`32898272247`) and iOS CI (`32898272210`) runs are also green.
 >
-> Historical: `engineering_complete_device_validation_required` at `42f761a` (FINAL_COMPLETION_V1). DEVICE_VALIDATION_V1 remains downstream owner validation and will resume against a REFRESHED baseline after this campaign (the old `42f761a` handoff SHA is superseded by substantial product changes).
+> The next required work is **owner-only** `DEVICE_VALIDATION_V1_REFRESHED`: physical-iPhone Batch A A1–A14 plus one authenticated opt-in live-smoke dispatch against `7a70943`. The 2026-08-26 planner audit found no legitimate next agent-side coding campaign: the hardening backlog is closed, H3-07 found no residual Critical/High defects, and there are no open GitHub issues/PRs. Do not manufacture another campaign without new evidence-backed defects or a new product directive.
 
 ## Autonomous development mode
 
-This repository contains a durable control plane so an AI coding agent can execute the V1 implementation with minimal supervision:
+This repository contains a durable control plane so an AI coding agent can recover state without relying on chat history:
 
 - [`START_HERE.md`](START_HERE.md) — recovery/entry point.
 - [`AGENTS.md`](AGENTS.md) — non-negotiable engineering/autonomy contract.
-- [`.agent/STATE.yaml`](.agent/STATE.yaml) — current status, active packet, exact next waypoint, evidence/blockers.
-- [`.agent/WAYPOINTS.yaml`](.agent/WAYPOINTS.yaml) — machine-readable packet dependencies/status.
+- [`.agent/PLANNER_HANDOFF.md`](.agent/PLANNER_HANDOFF.md) — planner/executor boundary.
+- [`.agent/EXECUTION_PROMPT.md`](.agent/EXECUTION_PROMPT.md) — current/most-recent campaign prompt and status.
+- [`.agent/STATE.yaml`](.agent/STATE.yaml) — current status, waypoint, evidence, and blockers.
+- [`.agent/WAYPOINTS.yaml`](.agent/WAYPOINTS.yaml) — machine-readable campaign history/status.
 - [`.agent/AUTONOMOUS_EXECUTION.md`](.agent/AUTONOMOUS_EXECUTION.md) — continuous execution algorithm.
 - [`.agent/BOOT_PROMPT.md`](.agent/BOOT_PROMPT.md) — minimal prompt for a fresh agent.
 - [`.agent/checkpoints/`](.agent/checkpoints/) — durable gate/milestone evidence.
-- [`.agent/HARDENING_BACKLOG.md`](.agent/HARDENING_BACKLOG.md) — nonblocking debt intentionally deferred during implementation.
+- [`.agent/HARDENING_BACKLOG.md`](.agent/HARDENING_BACKLOG.md) — hardening debt ledger; HB-015..HB-030 are resolved by H3.
 
-The active campaign is **SPEC_CLOSURE_DAILY_DRIVER_V2** (see `.agent/work-packets/DDV2-CAMPAIGN.md`): spec-truth reset plus daily-driver product completion. DEVICE_VALIDATION_V1 stays downstream owner-executed physical-device validation plus one opt-in live-smoke dispatch.
+There is currently **no active agent-actionable coding campaign**. The last execution prompt, `HARDENING_V3_SYSTEMIC_DEBT_CLOSURE`, is `Status: COMPLETE`. A fresh agent should reconcile repository truth, then stop if no new evidence-backed defect exists. The downstream gate is owner-executed device/account validation.
 
 ## Locked product/technical decisions
 
@@ -54,6 +56,8 @@ FocusTube/
 ├── FocusTubeUITests/
 ├── docs/
 ├── .agent/
+│   ├── PLANNER_HANDOFF.md
+│   ├── EXECUTION_PROMPT.md
 │   ├── STATE.yaml
 │   ├── WAYPOINTS.yaml
 │   ├── AUTONOMOUS_EXECUTION.md
@@ -70,14 +74,14 @@ FocusTube/
 The short version is:
 
 ```text
-Read START_HERE.md and follow the repository's durable state. Advance SPEC_CLOSURE_DAILY_DRIVER_V2 packet by packet: implement, validate locally, keep both workflows green, record evidence/checkpoints, and never claim unobserved evidence.
+Read START_HERE.md and the durable agent state. If EXECUTION_PROMPT is ACTIVE, reconcile and execute it. If it is COMPLETE and STATE says only owner validation remains, do not invent work; report the owner-only DEVICE_VALIDATION_V1_REFRESHED gate unless new evidence proves an agent-actionable regression.
 ```
 
 For the exact reusable prompt, use [`.agent/BOOT_PROMPT.md`](.agent/BOOT_PROMPT.md).
 
 ## Current external assumptions
 
-The bootstrap research baseline (2026-08-20) records YouTubeKit 0.4.8, GoogleSignIn 9.0.0 documentation, Swift-on-Windows support, and Xcode 26.6 as the targeted stable Apple toolchain. Reverify external assumptions when a packet actually depends on them; do not churn dependencies without evidence. See [`docs/reference/SOURCES.md`](docs/reference/SOURCES.md).
+The bootstrap research baseline records YouTubeKit 0.4.8, GoogleSignIn 9.0.0 documentation, Swift-on-Windows support, and Xcode 26.6 as the targeted stable Apple toolchain. Reverify external assumptions when work actually depends on them; do not churn dependencies without evidence. See [`docs/reference/SOURCES.md`](docs/reference/SOURCES.md).
 
 ## Policy note
 

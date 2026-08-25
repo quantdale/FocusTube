@@ -4,9 +4,9 @@ This contract applies to every AI coding agent, subagent, and fresh session oper
 
 ## Prime directive
 
-**Continue the implementation campaign autonomously until the repository reaches `implementation_complete_ready_for_hardening`, unless a true stop condition is recorded.** A completed work packet is a transition point, not a reason to stop.
+**Treat the repository's current durable state as authoritative.** If `.agent/EXECUTION_PROMPT.md` is `Status: ACTIVE`, reconcile it against current `main` and continue that campaign autonomously until its exit gate or a true stop condition. If the execution prompt is complete and `.agent/STATE.yaml` says no safe agent-actionable campaign remains, do not invent work merely to keep an agent busy.
 
-The repository is intentionally designed so the user does not need to supervise normal implementation decisions.
+As of 2026-08-26, `HARDENING_V3_SYSTEMIC_DEBT_CLOSURE` has passed `H3-EXIT`; the qualified code baseline is `7a70943`. The remaining `DEVICE_VALIDATION_V1_REFRESHED` checks require owner hardware/credentials and are not a substitute for another coding campaign.
 
 ## Source-of-truth hierarchy
 
@@ -14,11 +14,12 @@ When instructions disagree, use this order:
 
 1. explicit locked user decision recorded in an accepted ADR or `docs/00-PRODUCT-SPEC.md`;
 2. `AGENTS.md`;
-3. `.agent/STATE.yaml` for current reality and waypoint;
-4. `.agent/AUTONOMOUS_EXECUTION.md` and `.agent/OPERATING_CONTRACT.md`;
-5. subsystem specifications in `docs/`;
-6. current work packet;
-7. existing implementation.
+3. `.agent/PLANNER_HANDOFF.md` and `.agent/EXECUTION_PROMPT.md` for planner/executor campaign semantics;
+4. `.agent/STATE.yaml` for current reality and waypoint;
+5. `.agent/AUTONOMOUS_EXECUTION.md` and `.agent/OPERATING_CONTRACT.md`;
+6. subsystem specifications in `docs/`;
+7. current work packet;
+8. existing implementation.
 
 Existing code does not overrule a locked specification merely because it already exists.
 
@@ -26,25 +27,26 @@ Existing code does not overrule a locked specification merely because it already
 
 Every fresh session must:
 
-1. inspect git status/HEAD without modifying anything;
-2. read `.agent/STATE.yaml`;
-3. read `.agent/WAYPOINTS.yaml`;
-4. read the active work packet;
-5. inspect relevant code/tests;
-6. run the cheapest available baseline before broad edits;
-7. resume from the recorded waypoint.
+1. inspect repository root, remote, branch, git status, HEAD, and `origin/main` without modifying anything;
+2. read `START_HERE.md`, `.agent/PLANNER_HANDOFF.md`, and `.agent/EXECUTION_PROMPT.md`;
+3. read `.agent/STATE.yaml` and `.agent/WAYPOINTS.yaml`;
+4. read the active work packet only if one genuinely exists;
+5. inspect relevant code/tests before editing;
+6. run the cheapest useful baseline when code work is actually justified;
+7. resume from the recorded waypoint rather than replaying historical campaigns.
 
 If state and code disagree, investigate and correct the state only after evidence. Never guess progress from filenames alone.
 
 ## Continuous autonomy rules
 
-- Do not ask for permission to execute work already authorized by the roadmap.
-- Do not wait after a packet passes. Update state and continue.
+- Do not ask for permission to execute work already authorized by an active campaign.
+- Do not wait after a packet passes; update state and continue while safe ready work remains.
 - Do not ask the user to choose between equivalent internal implementation details. Use the simplest compliant option.
-- Do not perform broad cleanup just because you noticed it. Log nonblocking Medium/Low debt in `.agent/HARDENING_BACKLOG.md`.
+- Do not perform broad cleanup just because you noticed it. Record genuine nonblocking Medium/Low debt in `.agent/HARDENING_BACKLOG.md` unless an active hardening campaign owns it.
 - Fix Critical/High regressions immediately before feature progress continues.
 - If one path is blocked by credentials, signing, physical hardware, or an upstream service, continue independent deterministic work where possible.
 - Do not mark a gate complete because implementation looks plausible. Observe evidence.
+- When all implementation and hardening work is terminal and only external owner validation remains, stop agent-side construction rather than manufacturing another campaign.
 
 ## Architectural invariants
 
@@ -79,7 +81,7 @@ Medium/Low issues may be deferred only when logged with impact and reproduction/
 
 Use `.agent/WAYPOINTS.yaml` as the machine-readable plan and `.agent/work-packets/INDEX.md` for narrative ordering.
 
-For each packet:
+For each active packet:
 
 1. prove prerequisites;
 2. decompose into the smallest coherent implementation slices;
@@ -112,7 +114,7 @@ The coordinator integrates, validates, and updates durable state. Never allow mu
 - iOS compile/project generation: macOS/Xcode CI.
 - SwiftUI/UI behavior: XCUITest/iOS Simulator.
 - YouTubeKit behavior: isolated live smoke tests plus deterministic fake-extractor tests.
-- Background/PiP/lock-screen semantics: automate what Simulator supports; record physical-device-only checks for later release/hardening.
+- Background/PiP/lock-screen semantics: automate what Simulator supports; record physical-device-only checks for later release validation.
 - Google auth: deterministic fake auth in routine CI; real OAuth is an integration gate, never a password-driven automation flow.
 
 ## Commit/checkpoint discipline
@@ -164,10 +166,12 @@ Escalate only when:
 - upstream breakage is proven and blocks all useful dependent work;
 - continuing risks destructive or security-sensitive behavior.
 
-Before escalating, update `.agent/STATE.yaml` with `blocked_reason`, attempted mitigations, evidence, and the smallest human action required.
+Before escalating an active campaign, update `.agent/STATE.yaml` with `blocked_reason`, attempted mitigations, evidence, and the smallest human action required.
+
+If there is no active agent-actionable campaign and only owner-only device/account evidence remains, that is a terminal planner outcome, not an engineering escalation.
 
 ## Campaign boundary
 
-The active campaign is implementation M0–M8. Broad hardening/torture/a11y/performance cleanup is deferred to a later campaign, except Critical/High correctness or security issues that block safe implementation.
+Implementation M0–M8, DDV2 spec closure, and HARDENING_V3 are complete. `H3-EXIT` passed on the qualified code SHA `7a70943`; the later commits through `f1dcca` are durable-state/docs reconciliation only. The H3 whole-repository audit recorded no residual Critical/High findings and only two bounded Low notes that do not justify another campaign.
 
-When `IC-EXIT` passes, set status to `implementation_complete_ready_for_hardening` and stop broad feature construction.
+Current downstream work is `DEVICE_VALIDATION_V1_REFRESHED`: physical iPhone Batch A A1–A14 plus one authenticated opt-in live-smoke dispatch. Those checks must use real owner evidence and must not be fabricated or converted into speculative code churn. A new coding campaign requires new evidence-backed defects, an explicit new product directive, or a future planner audit that identifies justified agent-actionable work.

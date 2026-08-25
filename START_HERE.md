@@ -1,50 +1,51 @@
-# START HERE — FocusTube Autonomous Implementation Entry Point
+# START HERE — FocusTube Autonomous Engineering Entry Point
 
-FocusTube is designed to be executable by a fresh AI coding agent with **zero chat history and minimal human supervision**. Repository state, not conversation memory, is authoritative.
+FocusTube is designed to be recoverable by a fresh AI coding agent with **zero chat history and minimal human supervision**. Repository state, not conversation memory, is authoritative.
 
-## Mission
+## Current mission
 
-Build the complete V1 implementation of FocusTube: a personal native iOS YouTube client for deliberate long-form viewing, with native playback, comments/account features, and first-class offline downloads, while structurally excluding Shorts and short-form consumption mechanics.
+The implementation and hardening campaigns are complete. The repository is now in external validation handoff, not another autonomous construction wave.
 
-The implementation campaign is continuous. **Do not stop after one task or one work packet.** Finish the active packet, validate it, checkpoint it, advance the durable state, select the next unblocked packet, and continue until the implementation-campaign exit gate is reached or a true stop condition exists.
+- Last coding campaign: `HARDENING_V3_SYSTEMIC_DEBT_CLOSURE` — **COMPLETE**.
+- Exit gate: `H3-EXIT` — passed 2026-08-26.
+- Qualified code baseline: `7a70943`.
+- Automated evidence at that code SHA: Core Tests run `32891558919` SUCCESS; iOS CI run `32891558884` SUCCESS, including Build Debug/Release, 141 XCTest, journeys 20/20, and the fail-closed Gate.
+- Latest docs-tip evidence at `f1dcca`: Core Tests run `32898272247` SUCCESS; iOS CI run `32898272210` SUCCESS.
+- Hardening backlog: HB-015..HB-030 resolved with evidence; H3-07 whole-repository re-audit found no residual Critical/High agent-actionable defect and only two bounded Low notes.
+- Open GitHub issues/PRs at the 2026-08-26 planner audit: none.
+- Current downstream waypoint: `DEVICE_VALIDATION_V1_REFRESHED` — owner-executed physical-iPhone Batch A A1–A14 plus one authenticated opt-in live-smoke dispatch against `7a70943`.
 
-## Current campaign
-
-- Campaign: `DEVICE_VALIDATION_V1` (active; restored after HARDENING_V2 exit)
-- Scope: owner-executed physical-device/account validation (Batch A items A1–A14, Part 0 setup) plus one opt-in live-smoke dispatch. All agent-actionable engineering — implementation M0–M8, HARDENING_V1 backlog closure, the HARDENING_V2 adversarial pass, and the 2026-08-23 FINAL_COMPLETION_V1 ship-readiness pass (which found and fixed real product defects behind a silently red iOS CI: unreachable video page under iOS 26 modal presentation, non-observable LibraryStore, inflatable player overlay rows, host-disk-dependent fixture admission) — is complete with both workflows green on `42f761a` (Core Tests run 32666070090; iOS CI run 32666070146).
-- Agent role while waiting: keep CI green, diagnose/repair any owner-reported device failures (DV-8), record evidence.
-- Nonblocking Medium/Low cleanup still goes to `.agent/HARDENING_BACKLOG.md` (currently HB-013, HB-014); Critical/High is fixed immediately.
+**Planner verdict:** there is no legitimate next agent-side implementation/hardening campaign. Do not manufacture churn. A new coding campaign requires new evidence-backed defects or an explicit new product directive.
 
 ## Mandatory reading order
 
-Before making changes in a fresh session, read in this exact order:
+Before making changes in a fresh session, read in this order:
 
 1. `START_HERE.md`
 2. `AGENTS.md`
-3. `.agent/STATE.yaml`
-4. `.agent/AUTONOMOUS_EXECUTION.md`
-5. `.agent/WAYPOINTS.yaml`
-6. `.agent/OPERATING_CONTRACT.md`
-7. `.agent/STATE_MACHINE.md`
-8. current packet under `.agent/work-packets/`
-9. subsystem docs referenced by that packet
-10. `docs/14-ACCEPTANCE-GATES.md`
-11. `docs/16-IMPLEMENTATION-CAMPAIGN.md`
+3. `.agent/PLANNER_HANDOFF.md`
+4. `.agent/EXECUTION_PROMPT.md`
+5. `.agent/STATE.yaml`
+6. `.agent/AUTONOMOUS_EXECUTION.md`
+7. `.agent/WAYPOINTS.yaml`
+8. `.agent/OPERATING_CONTRACT.md`
+9. `.agent/HARDENING_BACKLOG.md`
+10. an active work packet only if durable state proves one exists
+11. subsystem docs/tests relevant to any newly evidenced defect
 
 Only read the entire documentation set when a decision actually spans multiple subsystems. Prefer targeted context over repeatedly rereading every file.
 
-## Five-minute recovery algorithm
+## Recovery algorithm
 
 A fresh agent must be able to resume with this algorithm:
 
-1. `git status --short --branch` and inspect the current HEAD.
-2. Read `.agent/STATE.yaml` and `.agent/WAYPOINTS.yaml`.
-3. If the worktree contains changes, determine whether they are documented in state/checkpoint notes before touching them. Do not discard unknown work.
-4. Read the active work packet.
-5. Inspect the implementation/tests relevant to its acceptance criteria.
-6. Run the cheapest deterministic baseline available in the current environment.
-7. Continue from `current_waypoint`, not from the beginning of the project.
-8. After the packet passes, update state and immediately continue to the next packet.
+1. Verify repository root/remote and run `git status --short --branch`; inspect local HEAD and `origin/main`.
+2. Read `.agent/EXECUTION_PROMPT.md`, `.agent/STATE.yaml`, and `.agent/WAYPOINTS.yaml`.
+3. If the execution prompt is `Status: ACTIVE`, reconcile it against current main and resume its first genuinely incomplete requirement.
+4. If the execution prompt is complete and state says only `DEVICE_VALIDATION_V1_REFRESHED` remains, do not start code work merely because the repository is idle.
+5. Check whether new evidence exists: a red hosted workflow, owner-reported device failure, new issue/PR, or explicit new product directive.
+6. If a new defect is real and agent-actionable, inspect the implementation/tests, run the cheapest useful baseline, repair it under the locked invariants, validate truthfully, update durable state, and commit/push.
+7. If no such evidence exists, stop cleanly and report that owner device/account validation is the next action.
 
 Do not ask the user to restate project history that exists in the repository.
 
@@ -72,79 +73,39 @@ If real evidence makes a locked decision impossible, create an ADR proposal and 
 
 ## Autonomy directive
 
-The default behavior is **continue, not ask**.
+The default behavior inside an **active, justified** campaign is continue, not ask. Outside an active campaign, the default is truthfully stop rather than invent work.
 
-The agent may autonomously:
+An agent may autonomously:
 
-- implement planned V1 functionality;
-- refactor locally when required to satisfy the active packet;
-- add deterministic tests and test seams;
-- repair CI/build failures caused by project code/configuration;
+- execute work already authorized by an ACTIVE execution prompt;
+- repair newly evidenced Critical/High regressions immediately;
+- diagnose and fix CI/build failures caused by project code/configuration;
+- add deterministic tests/test seams required by a real defect;
 - update docs/state/checkpoints to match verified reality;
-- fix Critical/High bugs immediately;
-- defer nonblocking Medium/Low cleanup to the hardening backlog;
-- advance from one packet to the next when its gate evidence passes.
+- respond to owner-reported device failures when the root cause is agent-actionable.
 
-Do **not** pause for subjective confirmation about naming, minor UI details, file organization, or implementation choices already constrained by the specs. Choose the simplest maintainable option consistent with the architecture.
+Do not create speculative features, broad cleanup waves, or another hardening campaign simply because owner validation is still pending.
 
 ## True stop conditions
 
-Stop the affected path only when one of these is true:
+Stop the affected path when one of these is true:
 
-1. a required secret/account action cannot be safely synthesized or mocked;
-2. Apple signing or physical-device action is required and no automated environment can perform it;
-3. an upstream dependency is demonstrably broken and there is no compliant local fix;
-4. two repository specifications materially contradict each other and precedence rules cannot resolve them;
-5. satisfying the packet requires changing a locked architectural decision;
-6. continuing would risk credential exposure, destructive data loss, or irreversible repository damage.
+1. there is no active agent-actionable campaign and no new evidence-backed defect;
+2. a required secret/account action cannot be safely synthesized or mocked;
+3. Apple signing or physical-device action is required and no automated environment can perform it;
+4. an upstream dependency is demonstrably broken and there is no compliant local fix;
+5. two repository specifications materially contradict each other and precedence rules cannot resolve them;
+6. satisfying the work requires changing a locked architectural decision;
+7. continuing would risk credential exposure, destructive data loss, or irreversible repository damage.
 
-When stopped, record the blocker precisely in `.agent/STATE.yaml`, add evidence, continue any independent unblocked work, and only then request human input if nothing useful remains.
+When an active campaign is blocked, record the blocker precisely in `.agent/STATE.yaml`, add evidence, continue independent unblocked work, and only then escalate if nothing useful remains. When only owner validation remains, do not misclassify that as unfinished engineering.
 
-## Continuous execution loop
+## Current validation handoff
 
-```text
-RECOVER STATE
-    -> SELECT ACTIVE WAYPOINT
-    -> INSPECT CODE + TESTS
-    -> IMPLEMENT SMALLEST COHERENT SLICE
-    -> LOCAL DETERMINISTIC VALIDATION
-    -> REMOTE APPLE VALIDATION when required
-    -> FIX FAILURES
-    -> RECORD EVIDENCE
-    -> CHECKPOINT
-    -> ADVANCE STATE
-    -> NEXT WAYPOINT
-    -> repeat until IMPLEMENTATION_COMPLETE
-```
+`DEVICE_VALIDATION_V1_REFRESHED` is intentionally owner-executed. Required evidence is:
 
-A claim such as "should work" is never evidence. Evidence is an observed command result, test result, CI run, simulator launch, screenshot/artifact, or device-validation record.
+- physical iPhone Batch A A1–A14 against code SHA `7a70943`;
+- one authenticated opt-in live-smoke dispatch;
+- repair/requalification only if either produces a real defect.
 
-## Initial technical priority
-
-Do not spend significant effort on UI polish before proving the media path:
-
-```text
-YouTube video ID
-  -> YouTubeKit local extraction
-  -> allowed stream normalization {1080,720,480,360}
-  -> native AVPlayer playback
-  -> background download
-  -> native adaptive mux when required
-  -> validated local file
-  -> offline AVPlayer playback
-```
-
-## Windows baseline
-
-From Windows, use the platform-neutral package whenever possible:
-
-```powershell
-swift --version
-swift test
-```
-
-SwiftUI/AVKit/AVFoundation/SwiftData/GoogleSignIn behavior must be validated through macOS/Xcode CI. See `docs/08-WINDOWS-REMOTE-IOS-DEVELOPMENT.md`.
-
-## End condition for this campaign
-
-The campaign ends when DEVICE_VALIDATION_BATCH_A items A1–A14 pass with owner evidence and one live-smoke dispatch result is recorded (DV-EXIT). The terminal durable state is `personal_release_validated`. If a genuine external blocker appears instead, state becomes `implementation_complete_external_validation_required` with the blocker recorded in `.agent/STATE.yaml`.
+Never invent run IDs, screenshots, device outcomes, credentials, or live-service results. The terminal product-validation state is reached only when the owner evidence exists.
