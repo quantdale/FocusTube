@@ -476,7 +476,11 @@ final class DownloadServiceTests: XCTestCase {
         // a second enqueue would reset the coordinator task to .queued while
         // the first transfer's events are still arriving.
         await service.download(videoID: "v7", title: "T", channelTitle: "C", quality: .p720)
-        XCTAssertEqual(gated.beginCount, 1)
+        // The first transfer proceeds to its transport begin independently of
+        // the refused duplicate; admission is reserved synchronously, so the
+        // waitUntil above can legitimately fire while begin() is still in
+        // flight — wait for the begin itself instead of racing it.
+        await waitUntil({ gated.beginCount == 1 }, "original transfer should still begin exactly once")
         let inFlight = await manager.coordinatorTask("v7-720")
         XCTAssertEqual(inFlight?.state.status, .downloading)
 

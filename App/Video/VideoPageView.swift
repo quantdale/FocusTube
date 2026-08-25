@@ -224,9 +224,9 @@ struct VideoPageView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 saveButton
+                downloadButton
                 likeButton
                 subscribeButton
-                downloadButton
                 shareButton
                 moreMenu
             }
