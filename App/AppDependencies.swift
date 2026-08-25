@@ -61,7 +61,7 @@ final class AppDependencies {
         excludeMediaFromBackups()
         return AppDependencies(
             auth: GoogleSignInAuthSession(),
-            api: YouTubeDataClient(),
+            api: YouTubeDataClient(onItemsSkipped: Self.reportSkippedItems),
             extractor: YouTubeKitMediaExtractor(),
             transport: BackgroundDownloadTransport.shared,
             container: container,
@@ -69,6 +69,13 @@ final class AppDependencies {
             incompleteDirectory: DownloadManager.defaultIncompleteDirectory(),
             validate: MediaAssetValidator.makeSeam()
         )
+    }
+
+    /// HB-016 non-silent requirement: partial page decodes report skipped-item
+    /// counts through the platform logger at the composition boundary.
+    private static func reportSkippedItems(endpoint: String, count: Int) {
+        Logger(subsystem: "com.quantdale.FocusTube", category: "youtube-client")
+            .warning("\(count, privacy: .public) malformed item(s) skipped in \(endpoint, privacy: .public)")
     }
 
     #if DEBUG

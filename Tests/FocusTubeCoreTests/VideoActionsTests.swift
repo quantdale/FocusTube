@@ -77,6 +77,13 @@ private final class FullStubAPI: YouTubeAPI, @unchecked Sendable {
         if let error = actionThrows { throw error }
         return myRatingState
     }
+
+    // HB-019: no inherited protocol-extension defaults remain; playlist
+    // endpoints are stubbed explicitly so full conformance stays honest.
+    func fetchMyPlaylists(accessToken: String) async throws -> [PlaylistSummary] { [] }
+    func fetchPlaylistItems(playlistID: String, accessToken: String) async throws -> [PlaylistItemSummary] { [] }
+    func addToPlaylist(playlistID: String, videoID: String, accessToken: String) async throws {}
+    func removeFromPlaylist(playlistItemID: String, accessToken: String) async throws {}
 }
 
 final class VideoActionsTests: XCTestCase {

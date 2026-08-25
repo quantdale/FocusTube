@@ -1,7 +1,7 @@
 import XCTest
 @testable import FocusTubeCore
 
-private struct SearchStubAPI: YouTubeAPI {
+private struct SearchStubAPI: YouTubeReading {
     var searchIDs: [String]
     var nextPageToken: String?
     var details: [VideoSummary]
@@ -23,7 +23,7 @@ private struct SearchStubAPI: YouTubeAPI {
 
 // Class (not struct) so hydration calls can be recorded for assertions;
 // @unchecked Sendable is safe here because tests exercise calls sequentially.
-private final class RecordingSearchAPI: YouTubeAPI, @unchecked Sendable {
+private final class RecordingSearchAPI: YouTubeReading, @unchecked Sendable {
     var searchResult: (ids: [String], nextPageToken: String?)
     var details: [VideoSummary]
     private(set) var detailCalls: [[String]] = []
@@ -87,7 +87,7 @@ final class SearchServiceTests: XCTestCase {
     }
 
     func testQuotaErrorPropagates() async {
-        struct FailingAPI: YouTubeAPI {
+        struct FailingAPI: YouTubeReading {
             func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { [] }
             func fetchPlaylistVideoIDs(playlistID: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) { ([], nil) }
             func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] { [] }

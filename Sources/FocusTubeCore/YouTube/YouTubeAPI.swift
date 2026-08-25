@@ -7,6 +7,10 @@ import FoundationNetworking
 public enum YouTubeAPIError: Error, Equatable, Sendable {
     case unauthorized
     case quotaExceeded
+    /// Permanent permission denial (e.g. legacy reason "forbidden"/
+    /// "insufficientPermissions" or canonical status PERMISSION_DENIED).
+    /// Retrying cannot succeed; UI must not offer retry guidance.
+    case forbidden
     case commentsDisabled
     case notFound
     case network
@@ -32,10 +36,17 @@ public struct URLSessionHTTPPerformer: HTTPPerforming {
     }
 }
 
-/// Boundary for the YouTube Data API v3. Media extraction (YouTubeKit) is never
-/// coupled to this; the API client only needs an OAuth access token (or API
-/// key) and returns normalized `VideoSummary` values.
-public protocol YouTubeAPI: Sendable {
+/// Read-only boundary over the YouTube Data API v3. Media extraction
+/// (YouTubeKit) is never coupled to this; the API client only needs an OAuth
+/// access token (or API key) and returns normalized `VideoSummary` values.
+///
+/// HB-019: read and mutation surfaces are separate protocols with NO
+/// protocol-extension throwing defaults, so a conformer can no longer compile
+/// while silently inheriting `unknown(status:-1)` failures for endpoints it
+/// forgot to implement. The only extension-provided member is
+/// `fetchSubscriptionFeed`, whose default is REAL composed behavior over the
+/// required read methods — not a trap.
+public protocol YouTubeReading: Sendable {
     /// Uploads-playlist IDs for the authenticated user's subscriptions.
     func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String]
     /// Video IDs contained in a playlist (uploads playlist), plus the
@@ -47,15 +58,23 @@ public protocol YouTubeAPI: Sendable {
     func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?)
     /// Comments for a video (top-level + their replies), or the disabled state.
     func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage
+    /// One page of the subscription feed as hydrated video summaries, with an
+    /// opaque continuation token for explicit load-more. A REAL composed
+    /// default is provided by extension below (it chains the required read
+    /// methods); conformers may override it — dynamic dispatch applies because
+    /// it is a requirement, unlike the removed HB-019 throwing stubs.
+    func fetchSubscriptionFeed(accessToken: String, pageToken: String?) async throws -> SubscriptionFeedPage
+}
+
+/// Mutation and authenticated-lookup boundary. Every conformer implements each
+/// endpoint explicitly; there are no defaults to inherit silently.
+public protocol YouTubeWriting: Sendable {
     /// Subscribe the authenticated user to a channel.
     func subscribe(channelID: String, accessToken: String) async throws
     /// Unsubscribe by subscription resource ID.
     func unsubscribe(subscriptionID: String, accessToken: String) async throws
     /// Set the authenticated user's rating for a video.
     func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws
-    /// One page of the subscription feed as hydrated video summaries, with an
-    /// opaque continuation token for explicit load-more.
-    func fetchSubscriptionFeed(accessToken: String, pageToken: String?) async throws -> SubscriptionFeedPage
     /// Creates a top-level comment on a video (commentThreads.insert).
     func postTopLevelComment(videoID: String, text: String, accessToken: String) async throws -> Comment
     /// Creates a reply under an existing comment (comments.insert).
@@ -75,6 +94,11 @@ public protocol YouTubeAPI: Sendable {
     /// Removes an item by its playlistItem resource id.
     func removeFromPlaylist(playlistItemID: String, accessToken: String) async throws
 }
+
+/// Full API boundary: everything a production client implements. Read-path
+/// stores/services take the narrower `YouTubeReading`; mutation-capable fakes
+/// and views compose both via this typealias.
+public typealias YouTubeAPI = YouTubeReading & YouTubeWriting
 
 /// Result of looking up the user's subscription to a channel. Carries the
 /// resource id required by `subscriptions.delete` — an unsubscribe can never be
@@ -117,51 +141,14 @@ private func normalizedToken(_ token: String?) -> String? {
     return token
 }
 
-extension YouTubeAPI {
+extension YouTubeReading {
     /// Convenience overload fetching the first feed page.
     public func fetchSubscriptionFeed(accessToken: String) async throws -> SubscriptionFeedPage {
         try await fetchSubscriptionFeed(accessToken: accessToken, pageToken: nil)
     }
 
-    // DDV2-03 mutation/lookup endpoints ship with loud defaults so read-path
-    // fakes stay minimal; anything that accidentally CALLS them in tests gets
-    // the distinctive unknown(status: -1) failure instead of silence.
-    // YouTubeDataClient implements all of them for real.
-
-    public func postTopLevelComment(videoID: String, text: String, accessToken: String) async throws -> Comment {
-        throw YouTubeAPIError.unknown(status: -1)
-    }
-
-    public func postReply(parentCommentID: String, text: String, accessToken: String) async throws -> Comment {
-        throw YouTubeAPIError.unknown(status: -1)
-    }
-
-    public func findMySubscription(channelID: String, accessToken: String) async throws -> SubscriptionLookup? {
-        throw YouTubeAPIError.unknown(status: -1)
-    }
-
-    public func fetchMyVideoRating(videoID: String, accessToken: String) async throws -> VideoRatingState {
-        throw YouTubeAPIError.unknown(status: -1)
-    }
-
-    public func fetchMyPlaylists(accessToken: String) async throws -> [PlaylistSummary] {
-        throw YouTubeAPIError.unknown(status: -1)
-    }
-
-    public func fetchPlaylistItems(playlistID: String, accessToken: String) async throws -> [PlaylistItemSummary] {
-        throw YouTubeAPIError.unknown(status: -1)
-    }
-
-    public func addToPlaylist(playlistID: String, videoID: String, accessToken: String) async throws {
-        throw YouTubeAPIError.unknown(status: -1)
-    }
-
-    public func removeFromPlaylist(playlistItemID: String, accessToken: String) async throws {
-        throw YouTubeAPIError.unknown(status: -1)
-    }
-
-    /// Aggregates the subscriptions' uploads playlists into one hydrated feed
-    /// page. Playlists are walked in subscription order; each visits at most
+    /// Default implementation of the required feed aggregation: playlists are
+    /// walked in subscription order; each visits at most
     /// two `playlistItems` pages per call to bound quota. The walk pauses at
     /// the first playlist that still has more pages when the cap is hit, and
     /// its position ("<playlistIndex>|<pageToken>") becomes the page's opaque

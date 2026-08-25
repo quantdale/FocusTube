@@ -14,13 +14,13 @@ public final class HomeFeedStore {
     public private(set) var isAuthenticated = false
 
     private let auth: AuthSession
-    private let api: YouTubeAPI
+    private let api: YouTubeReading
     private let aggregator: HomeFeedAggregator
     /// Monotonic token for in-flight fetches: a response may only mutate state
     /// while no newer load/load-more has started (HB-004 stale-response race).
     private var loadGeneration = 0
 
-    public init(auth: AuthSession, api: YouTubeAPI) {
+    public init(auth: AuthSession, api: YouTubeReading) {
         self.auth = auth
         self.api = api
         self.aggregator = HomeFeedAggregator(api: api)

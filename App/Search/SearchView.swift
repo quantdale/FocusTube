@@ -198,6 +198,7 @@ struct SearchView: View {
         switch error {
         case .quotaExceeded: return "Search quota exceeded. Try again later."
         case .unauthorized: return "Sign in to search."
+        case .forbidden: return "Search isn't permitted for this account."
         case .network: return "Network error."
         case .unknown: return "Search failed."
         default: return "Search unavailable."

@@ -18,7 +18,7 @@ disposition. Dispositions update per workstream as evidence lands.
 
 ## Ledger
 
-### HB-015 (Medium) — 403 taxonomy conflates denials with quotaExceeded — LIVE
+### HB-015 (Medium) — 403 taxonomy conflates denials with quotaExceeded — FIXED (H3-01)
 - Code: YouTubeDataClient.swift:308-324 (`apiError(from:statusCode:)` only special-cases legacy
   `errors[].reason == "commentsDisabled"`; all other 403 -> `.quotaExceeded`). New-style
   `error.status == "PERMISSION_DENIED"` envelopes fall through.
@@ -27,16 +27,31 @@ disposition. Dispositions update per workstream as evidence lands.
 - Tests: YouTubeDataClientTests.testQuota403EnvelopeWithoutCommentsDisabledReasonStaysGeneric pins
   current conflation — must be re-authored with the new taxonomy, not weakened.
 - Migration: none (pure enum case addition; Equatable exhaustiveness audited via compiler switches).
-- Disposition: fix in H3-01 — typed `.forbidden` for permanent permission denials
-  (403 non-quota reasons incl. PERMISSION_DENIED status), keep quota reasons mapped to
-  `.quotaExceeded`, deliberate malformed-envelope fallback; UI copy distinguishes retryable vs not.
+- Disposition: FIXED in H3-01 — typed `.forbidden` case added; mapping order:
+  commentsDisabled legacy reason -> commentsDisabled; quota reasons
+  (quotaExceeded/dailyLimit/rateLimit/userRateLimit) or canonical status
+  RESOURCE_EXHAUSTED -> .quotaExceeded; permission reasons
+  (forbidden/insufficientPermissions) or canonical status PERMISSION_DENIED ->
+  .forbidden; DELIBERATE fallback for unparseable/unrecognized 403 bodies stays
+  .quotaExceeded (likeliest cause for this app + only safe retry guidance).
+  Tests: PermissionDenied envelope, legacy-reason table incl. unknown-reason
+  fallback, RESOURCE_EXHAUSTED canonical, permission-denial-does-not-masquerade-
+  as-comments-disabled. UI: explicit .forbidden copy at all five error-label
+  sites (comments/account actions/search/playlists/subscriptions feed).
 
-### HB-016 (Low) — all-or-nothing page decoding — LIVE
+### HB-016 (Low) — all-or-nothing page decoding — FIXED (H3-01, skip-and-continue adopted)
 - Code: YouTubeDataClient.swift:87-93 (`decode` throws over whole response), all page models strict.
 - Decision required by prompt: adopt deterministic skip-and-continue per item OR record why
   strictness stays. Current callers treat a failed page as surface-wide failure.
-- Disposition: decide in H3-01 from evidence; if adopted, log skipped-count via os.Logger and pin
-  with table tests; malformed-envelope fallback stays typed `.decode`.
+- Disposition: FIXED in H3-01 — ADOPTED deterministic per-item skip-and-continue
+  across every list-bearing endpoint (subscriptions/playlistItems/videos/search/
+  commentThreads/playlists lookups). Truthfulness bounds enforced and tested:
+  (1) a list where EVERY item is malformed still throws .decode (no silent empty
+  state); (2) partial skips are non-silent via injected onItemsSkipped observer,
+  wired to os.Logger at AppDependencies composition; (3) top-level envelope
+  fields remain strict. Tests: single-malformed-item skip + count reporting,
+  all-malformed-throws-decode, pre-existing whole-payload malformed suite still
+  green unchanged.
 
 ### HB-017 (Medium) — DownloadState dead statuses + untested transition table bypassed — LIVE
 - Code: DownloadState.swift:74-104 table exists; DownloadCoordinator writes status directly at
@@ -52,17 +67,28 @@ disposition. Dispositions update per workstream as evidence lands.
   add full transition-table test, remove/justify dead statuses (keep Codable decode tolerance for
   old rows).
 
-### HB-018 (Low) — inconsistent pre-network resource-id validation — LIVE
+### HB-018 (Low) — inconsistent pre-network resource-id validation — FIXED (H3-01)
 - Code: YouTubeDataClient subscribe(:137)/unsubscribe(:147)/rateVideo(:153)/findMySubscription(:203)/
   fetchMyVideoRating(:218)/addToPlaylist(:261)/removeFromPlaylist(:272) take ids unguarded;
   comments paths validate text+parentID first.
-- Disposition: fix in H3-01 — shared non-empty guard -> `.invalidInput`, wire-shape regression tests.
+- Disposition: FIXED in H3-01 — shared validatedResourceID guard applied to
+  subscribe/unsubscribe/rateVideo/findMySubscription/fetchMyVideoRating/
+  addToPlaylist(both ids)/removeFromPlaylist/fetchComments/fetchPlaylistVideoIDs/
+  fetchPlaylistItems/postTopLevelComment(videoID); all map to typed .invalidInput.
+  Test: table-driven no-network rejection across 12 call shapes.
 
-### HB-019 (Low) — protocol-extension default traps — LIVE
+### HB-019 (Low) — protocol-extension default traps — FIXED (H3-01, protocol decomposition)
 - Code: YouTubeAPI.swift:131-161 eight throwing defaults (`unknown(status:-1)`).
 - Consumers: production client implements all; UITestFixtures fake implements its needed subset.
-- Disposition: fix in H3-01 — remove defaults so conformers must implement (compiler-enforced),
-  updating fakes deliberately; keep read-path fakes explicit rather than silent.
+- Disposition: FIXED in H3-01 — decomposed into `YouTubeReading` (5 read methods
+  + required fetchSubscriptionFeed whose ONLY default is REAL composed logic,
+  not a trap) and `YouTubeWriting` (11 mutation/lookup endpoints, no defaults);
+  `YouTubeAPI` = Reading & Writing typealias keeps production signatures stable.
+  Read-path stores/services narrowed (HomeFeedStore/SearchStore/HomeFeedAggregator/
+  SearchService); read-only fakes narrowed conformance (7 fakes); full fakes
+  (FixtureYouTubeAPI/FullStubAPI) implement everything explicitly — FullStubAPI
+  was silently inheriting throwing defaults, proving the trap was live.
+  Compiler now enforces every conformer implements what it claims.
 
 ### HB-020 (Low) — OfflineLibraryPolicy tie-order claims exceed guarantees — LIVE
 - Code: OfflineLibraryPolicy.swift:33-49 sorted() claims stability but uses comparator without
@@ -72,11 +98,15 @@ disposition. Dispositions update per workstream as evidence lands.
 - Disposition: fix in H3-03 — explicit deterministic tiebreakers (videoID), total order comparators,
   edge tests (equal timestamps, empty channel titles, negative sizes, grouping ties).
 
-### HB-021 (Low) — per-row ISO8601DateFormatter allocation; fractional seconds nil — LIVE
+### HB-021 (Low) — per-row ISO8601DateFormatter allocation; fractional seconds nil — FIXED (H3-01)
 - Code: ISO8601DateFormatter constructed inside decode maps at YouTubeDataClient.swift:59 (details),
   :118/:127 (comments+replies), :486 (insert normalization). Default options reject fractional forms.
-- Disposition: fix in H3-01 — cached static formatters (with + without fractional seconds), fallback
-  chain; malformed required fields still fail decode as today.
+- Disposition: FIXED in H3-01 — shared cached APIDate parsers (plain +
+  fractional-second formatters, thread-safe instances, nonisolated(unsafe) under
+  Swift 6 strict concurrency) replace per-item allocations at all publishedAt
+  decode sites (details/comments/replies/insert-normalization); fractional forms
+  now parse instead of silently nil'ing. Test: plain + .250Z fractional both yield
+  non-nil dates through fetchVideoDetails.
 
 ### HB-022 (Medium) — shared lastFailure alert ownership — LIVE
 - Code: DownloadService.lastFailure written from finish()/fail() for ANY settled run including queue
@@ -152,12 +182,15 @@ disposition. Dispositions update per workstream as evidence lands.
 - TabView no selection binding/restoration: RootView TabView {:23 has no selection. Make explicit.
 - Share fallback file:///: VideoPageView:340 `?? URL(fileURLWithPath: "/")`. Controlled error instead.
 
-### HB-030 (Low) — residual deterministic-test gaps — LIVE (crossrefs)
-- commentThreads pageToken plumbing through client (playlistItems analog tested): absent.
-- Out-of-range numeric feed-resume index restart: covered indirectly? verify + pin explicitly.
-- OfflineLibraryPolicy negative-size/empty-title/tie cases: absent.
-- Recents custom maxEntries below existing count: policy covered partially; trim-below-cap case verify.
-- Equal-timestamp tie ordering: absent.
+### HB-030 (Low) — residual deterministic-test gaps — PARTIALLY FIXED (H3-01 API portions done; remainder owned by H3-06)
+- commentThreads pageToken plumbing through client (playlistItems analog tested): FIXED in H3-01
+  (wire-shape test asserting videoId/pageToken params present on continuation,
+  absent on first page).
+- Out-of-range numeric feed-resume index restart: FIXED in H3-01
+  (testOutOfRangeResumeIndexRestartsFromFirstPlaylist pins "9|stale-token" restart).
+- OfflineLibraryPolicy negative-size/empty-title/tie cases: open -> H3-03/H3-06.
+- Recents custom maxEntries below existing count: open -> H3-06 (verify policy trim path).
+- Equal-timestamp tie ordering: open -> H3-03/H3-06.
 - Disposition: close in H3-06 alongside regressions from H3-01..05 (table-driven, cheapest layer).
 
 ## Cross-cutting execution notes

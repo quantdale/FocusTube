@@ -44,7 +44,7 @@ private struct ArrivalTimeout: Error {}
 /// path. Outcomes are consumed in call arrival order from `scripted`, then
 /// `fallback` applies forever. Successes are numbered in delivery order so
 /// concurrent loads are distinguishable without timing.
-private actor ScriptedFeedAPI: YouTubeAPI {
+    private actor ScriptedFeedAPI: YouTubeReading {
     enum Outcome {
         case success
         case failure(YouTubeAPIError)

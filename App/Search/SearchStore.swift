@@ -14,13 +14,13 @@ public final class SearchStore {
 
     public private(set) var nextPageToken: String?
     private let auth: AuthSession
-    private let api: YouTubeAPI
+    private let api: YouTubeReading
     private let service: SearchService
     /// Monotonic token for in-flight loads: a response may only mutate state
     /// while no newer submit/load-more has started (HB-004 stale-response race).
     private var loadGeneration = 0
 
-    public init(auth: AuthSession, api: YouTubeAPI) {
+    public init(auth: AuthSession, api: YouTubeReading) {
         self.auth = auth
         self.api = api
         self.service = SearchService(api: api)

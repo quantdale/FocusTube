@@ -17,9 +17,9 @@ public struct HomeFeedPage: Sendable {
 /// surface, route, or implicit autoplay path; load-more is an explicit caller
 /// decision, never automatic infinite pagination.
 public struct HomeFeedAggregator: Sendable {
-    private let api: YouTubeAPI
+    private let api: YouTubeReading
 
-    public init(api: YouTubeAPI) {
+    public init(api: YouTubeReading) {
         self.api = api
     }
 

@@ -44,7 +44,7 @@ private struct ArrivalTimeout: Error {}
 /// arrival order from `scripted`, then `fallback` applies forever. Success
 /// echoes the submitted query as one long-form result id so concurrent loads
 /// are distinguishable without timing.
-private actor ScriptedSearchAPI: YouTubeAPI {
+    private actor ScriptedSearchAPI: YouTubeReading {
     enum Outcome {
         case success
         case failure(YouTubeAPIError)

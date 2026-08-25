@@ -334,6 +334,7 @@ struct LibraryView: View {
         switch error {
         case .unauthorized: return "Sign in to see your playlists."
         case .quotaExceeded: return "YouTube quota exceeded. Try again later."
+        case .forbidden: return "You don't have access to these playlists."
         default: return "Couldn't load playlists."
         }
     }
@@ -557,6 +558,7 @@ private struct HomeFeedView: View {
         switch error {
         case .quotaExceeded: return "Subscription quota exceeded. Try again later."
         case .unauthorized: return "Sign in to see your subscriptions."
+        case .forbidden: return "Your account doesn't have permission to view this feed."
         case .network: return "Network error loading your subscriptions."
         case .unknown: return "Couldn't load your subscriptions."
         default: return "Subscriptions unavailable."

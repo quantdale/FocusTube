@@ -751,6 +751,7 @@ struct VideoPageView: View {
         switch error {
         case .unauthorized: return "Sign in to post or see comments."
         case .quotaExceeded: return "Comments quota exceeded. Try again later."
+        case .forbidden: return "You don't have access to comments on this video."
         case .commentsDisabled: return "Comments are disabled for this video."
         case .notFound: return "Comments are unavailable for this video."
         case .network: return "Network error loading comments."
@@ -764,6 +765,7 @@ struct VideoPageView: View {
         switch error {
         case .unauthorized: return "Sign in to use this action."
         case .quotaExceeded: return "YouTube API quota exceeded. Try again later."
+        case .forbidden: return "Your account doesn't have permission for this action."
         case .commentsDisabled: return "Comments are unavailable for this action."
         case .notFound: return "The item no longer exists."
         case .invalidInput: return "That input can't be submitted. Check it and try again."

@@ -17,9 +17,9 @@ public struct SearchResultPage: Sendable {
 /// when the caller explicitly submits a query. Results are hydrated (durations
 /// known) and passed through `ShortFormPolicy` before any UI render.
 public struct SearchService: Sendable {
-    private let api: YouTubeAPI
+    private let api: YouTubeReading
 
-    public init(api: YouTubeAPI) {
+    public init(api: YouTubeReading) {
         self.api = api
     }
 

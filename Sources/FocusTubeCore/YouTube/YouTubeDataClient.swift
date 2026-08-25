@@ -6,13 +6,28 @@ import FoundationNetworking
 /// Typed YouTube Data API v3 client over `HTTPPerforming`. Pure request
 /// building and error mapping are separated so they are deterministically
 /// testable without network or credentials. No tokens are ever logged.
+///
+/// List decoding is deliberately tolerant at the ITEM level (HB-016): one
+/// anomalous element skips with a reported count instead of failing the whole
+/// page, but a list where EVERY item is malformed still throws `.decode` so
+/// systematic shape drift surfaces as an error rather than a silent empty
+/// state. Top-level envelope fields stay strict.
 public struct YouTubeDataClient: YouTubeAPI {
     private let performer: HTTPPerforming
     private let baseURL: URL
+    /// Observability seam for skipped malformed items (HB-016 non-silent
+    /// requirement). Core stays platform-neutral; production wires an
+    /// `os.Logger` reporter at composition time.
+    private let onItemsSkipped: (@Sendable (_ endpoint: String, _ count: Int) -> Void)?
 
-    public init(performer: HTTPPerforming = URLSessionHTTPPerformer(), baseURL: URL = URL(string: "https://www.googleapis.com/youtube/v3")!) {
+    public init(
+        performer: HTTPPerforming = URLSessionHTTPPerformer(),
+        baseURL: URL = URL(string: "https://www.googleapis.com/youtube/v3")!,
+        onItemsSkipped: (@Sendable (_ endpoint: String, _ count: Int) -> Void)? = nil
+    ) {
         self.performer = performer
         self.baseURL = baseURL
+        self.onItemsSkipped = onItemsSkipped
     }
 
     // MARK: - Endpoints
@@ -24,11 +39,12 @@ public struct YouTubeDataClient: YouTubeAPI {
             "maxResults": "50"
         ])
         let data = try await perform(request)
-        let decoded = try Self.decode(SubscriptionsResponse.self, from: data)
-        return decoded.items.map { $0.contentDetails.relatedPlaylists.uploads }
+        let decoded = try self.decode(SubscriptionsResponse.self, from: data)
+        return try self.resolved(decoded.items, endpoint: "subscriptions").map { $0.contentDetails.relatedPlaylists.uploads }
     }
 
     public func fetchPlaylistVideoIDs(playlistID: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
+        guard let playlistID = Self.validatedResourceID(playlistID) else { throw YouTubeAPIError.invalidInput }
         var query: [String: String] = [
             "part": "contentDetails",
             "playlistId": playlistID,
@@ -39,8 +55,9 @@ public struct YouTubeDataClient: YouTubeAPI {
         }
         let request = try Self.buildRequest(baseURL: baseURL, path: "playlistItems", accessToken: accessToken, query: query)
         let data = try await perform(request)
-        let decoded = try Self.decode(PlaylistItemsResponse.self, from: data)
-        return (decoded.items.map { $0.contentDetails.videoId }, decoded.nextPageToken)
+        let decoded = try self.decode(PlaylistItemsResponse.self, from: data)
+        let items = try self.resolved(decoded.items, endpoint: "playlistItems")
+        return (items.map { $0.contentDetails.videoId }, decoded.nextPageToken)
     }
 
     public func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] {
@@ -49,14 +66,14 @@ public struct YouTubeDataClient: YouTubeAPI {
             "id": ids.joined(separator: ",")
         ])
         let data = try await perform(request)
-        let decoded = try Self.decode(VideosResponse.self, from: data)
-        return decoded.items.map { item in
+        let decoded = try self.decode(VideosResponse.self, from: data)
+        return try self.resolved(decoded.items, endpoint: "videos").map { item in
             VideoSummary(
                 id: item.id,
                 title: item.snippet.title,
                 channelTitle: item.snippet.channelTitle,
                 durationSeconds: VideoSummary.duration(from: item.contentDetails.duration),
-                publishedAt: ISO8601DateFormatter().date(from: item.snippet.publishedAt),
+                publishedAt: APIDate.date(item.snippet.publishedAt),
                 thumbnailURL: item.snippet.thumbnails.medium?.url,
                 description: item.snippet.description,
                 channelID: item.snippet.channelId
@@ -76,15 +93,18 @@ public struct YouTubeDataClient: YouTubeAPI {
         }
         let request = try Self.buildRequest(baseURL: baseURL, path: "search", accessToken: accessToken, query: query)
         let data = try await perform(request)
-        let decoded = try Self.decode(SearchResponse.self, from: data)
-        return (decoded.items.compactMap { $0.id.videoId }, decoded.nextPageToken)
+        let decoded = try self.decode(SearchResponse.self, from: data)
+        let items = try self.resolved(decoded.items, endpoint: "search")
+        return (items.compactMap { $0.id.videoId }, decoded.nextPageToken)
     }
 
     // MARK: - Decoding
 
-    /// Maps raw `DecodingError`s onto the typed `.decode` API error so callers
-    /// never see untyped decoder internals (G3 acceptance).
-    private static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+    /// Wraps one list element so a single anomalous item cannot fail the whole
+    /// page (HB-016). Deliberate tradeoff recorded in the H3 audit ledger:
+    /// partial content plus a reported skip count beats a full-surface error
+    /// when Google emits an unexpected shape for individual resources.
+    private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         do {
             return try JSONDecoder().decode(type, from: data)
         } catch {
@@ -92,9 +112,25 @@ public struct YouTubeDataClient: YouTubeAPI {
         }
     }
 
+    /// Unwraps tolerated items, enforcing the two truthfulness bounds:
+    /// every-item-malformed still throws `.decode`, and any partial skip is
+    /// reported through the injected observer instead of vanishing.
+    private func resolved<T>(_ wrapped: [TolerantItem<T>], endpoint: String) throws -> [T] {
+        let values = wrapped.compactMap(\.value)
+        if !wrapped.isEmpty, values.isEmpty {
+            throw YouTubeAPIError.decode
+        }
+        let skipped = wrapped.count - values.count
+        if skipped > 0 {
+            onItemsSkipped?("youtube.\(endpoint)", skipped)
+        }
+        return values
+    }
+
     // MARK: - Comments
 
     public func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage {
+        guard let videoID = Self.validatedResourceID(videoID) else { throw YouTubeAPIError.invalidInput }
         var query: [String: String] = [
             "part": "snippet,replies",
             "videoId": videoID,
@@ -106,8 +142,8 @@ public struct YouTubeDataClient: YouTubeAPI {
         }
         let request = try Self.buildRequest(baseURL: baseURL, path: "commentThreads", accessToken: accessToken, query: query)
         let data = try await perform(request)
-        let decoded = try Self.decode(CommentThreadsResponse.self, from: data)
-        let comments = decoded.items.map { item -> Comment in
+        let decoded = try self.decode(CommentThreadsResponse.self, from: data)
+        let comments = try self.resolved(decoded.items, endpoint: "commentThreads").map { item -> Comment in
             let top = item.snippet.topLevelComment
             let replies = (item.replies?.comments ?? []).map { rc in
                 Comment(
@@ -115,7 +151,7 @@ public struct YouTubeDataClient: YouTubeAPI {
                     author: rc.snippet.authorDisplayName,
                     text: rc.snippet.textDisplay,
                     likeCount: rc.snippet.likeCount ?? 0,
-                    publishedAt: ISO8601DateFormatter().date(from: rc.snippet.publishedAt),
+                    publishedAt: APIDate.date(rc.snippet.publishedAt),
                     replyCount: 0
                 )
             }
@@ -124,7 +160,7 @@ public struct YouTubeDataClient: YouTubeAPI {
                 author: top.snippet.authorDisplayName,
                 text: top.snippet.textDisplay,
                 likeCount: top.snippet.likeCount ?? 0,
-                publishedAt: ISO8601DateFormatter().date(from: top.snippet.publishedAt),
+                publishedAt: APIDate.date(top.snippet.publishedAt),
                 replyCount: item.snippet.totalReplyCount ?? 0,
                 replies: replies
             )
@@ -135,6 +171,7 @@ public struct YouTubeDataClient: YouTubeAPI {
     // MARK: - Account actions
 
     public func subscribe(channelID: String, accessToken: String) async throws {
+        guard let channelID = Self.validatedResourceID(channelID) else { throw YouTubeAPIError.invalidInput }
         var request = try Self.buildRequest(baseURL: baseURL, path: "subscriptions", accessToken: accessToken, query: ["part": "snippet"])
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -145,12 +182,14 @@ public struct YouTubeDataClient: YouTubeAPI {
     }
 
     public func unsubscribe(subscriptionID: String, accessToken: String) async throws {
+        guard let subscriptionID = Self.validatedResourceID(subscriptionID) else { throw YouTubeAPIError.invalidInput }
         var request = try Self.buildRequest(baseURL: baseURL, path: "subscriptions", accessToken: accessToken, query: ["id": subscriptionID])
         request.httpMethod = "DELETE"
         _ = try await perform(request)
     }
 
     public func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {
+        guard let videoID = Self.validatedResourceID(videoID) else { throw YouTubeAPIError.invalidInput }
         var request = try Self.buildRequest(baseURL: baseURL, path: "videos/rate", accessToken: accessToken, query: [
             "id": videoID,
             "rating": rating.rawValue
@@ -166,6 +205,7 @@ public struct YouTubeDataClient: YouTubeAPI {
     /// network work; the request body carries `textOriginal` only.
     public func postTopLevelComment(videoID: String, text: String, accessToken: String) async throws -> Comment {
         guard let trimmed = Self.validatedCommentText(text) else { throw YouTubeAPIError.invalidInput }
+        guard let videoID = Self.validatedResourceID(videoID) else { throw YouTubeAPIError.invalidInput }
         var request = try Self.buildRequest(baseURL: baseURL, path: "commentThreads", accessToken: accessToken, query: ["part": "snippet"])
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -176,7 +216,7 @@ public struct YouTubeDataClient: YouTubeAPI {
             )
         ))
         let data = try await perform(request)
-        let decoded = try Self.decode(InsertedThreadResponse.self, from: data)
+        let decoded = try self.decode(InsertedThreadResponse.self, from: data)
         return decoded.snippet.topLevelComment.normalizedComment
     }
 
@@ -185,7 +225,7 @@ public struct YouTubeDataClient: YouTubeAPI {
     /// ancestor id per API semantics, which callers normalize before calling.
     public func postReply(parentCommentID: String, text: String, accessToken: String) async throws -> Comment {
         guard let trimmed = Self.validatedCommentText(text) else { throw YouTubeAPIError.invalidInput }
-        guard !parentCommentID.isEmpty else { throw YouTubeAPIError.invalidInput }
+        guard let parentCommentID = Self.validatedResourceID(parentCommentID) else { throw YouTubeAPIError.invalidInput }
         var request = try Self.buildRequest(baseURL: baseURL, path: "comments", accessToken: accessToken, query: ["part": "snippet"])
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -193,7 +233,7 @@ public struct YouTubeDataClient: YouTubeAPI {
             snippet: .init(parentId: parentCommentID, textOriginal: trimmed)
         ))
         let data = try await perform(request)
-        let decoded = try Self.decode(InsertedCommentResource.self, from: data)
+        let decoded = try self.decode(InsertedCommentResource.self, from: data)
         return decoded.normalizedComment
     }
 
@@ -201,6 +241,7 @@ public struct YouTubeDataClient: YouTubeAPI {
     /// filtered `subscriptions.list` (`mine=true&forChannelId=`). Returns nil
     /// when the user is not subscribed.
     public func findMySubscription(channelID: String, accessToken: String) async throws -> SubscriptionLookup? {
+        guard let channelID = Self.validatedResourceID(channelID) else { throw YouTubeAPIError.invalidInput }
         let request = try Self.buildRequest(baseURL: baseURL, path: "subscriptions", accessToken: accessToken, query: [
             "part": "id,snippet",
             "mine": "true",
@@ -208,18 +249,21 @@ public struct YouTubeDataClient: YouTubeAPI {
             "maxResults": "1"
         ])
         let data = try await perform(request)
-        let decoded = try Self.decode(MySubscriptionsResponse.self, from: data)
-        return decoded.items.first.map {
+        let decoded = try self.decode(MySubscriptionsResponse.self, from: data)
+        let items = try self.resolved(decoded.items, endpoint: "subscriptions.lookup")
+        return items.first.map {
             SubscriptionLookup(subscriptionID: $0.id, channelTitle: $0.snippet.title)
         }
     }
 
     /// Reads the authenticated user's current rating for a video.
     public func fetchMyVideoRating(videoID: String, accessToken: String) async throws -> VideoRatingState {
+        guard let videoID = Self.validatedResourceID(videoID) else { throw YouTubeAPIError.invalidInput }
         let request = try Self.buildRequest(baseURL: baseURL, path: "videos/getRating", accessToken: accessToken, query: ["id": videoID])
         let data = try await perform(request)
-        let decoded = try Self.decode(VideoRatingResponse.self, from: data)
-        return decoded.items.first.flatMap { VideoRatingState(rawValue: $0.rating) } ?? .unspecified
+        let decoded = try self.decode(VideoRatingResponse.self, from: data)
+        let items = try self.resolved(decoded.items, endpoint: "videos.getRating")
+        return items.first.flatMap { VideoRatingState(rawValue: $0.rating) } ?? .unspecified
     }
 
     // MARK: - Supported playlists (DDV2-08, bounded subset)
@@ -232,22 +276,23 @@ public struct YouTubeDataClient: YouTubeAPI {
             "maxResults": "50"
         ])
         let data = try await perform(request)
-        let decoded = try Self.decode(MyPlaylistsResponse.self, from: data)
-        return decoded.items.map {
+        let decoded = try self.decode(MyPlaylistsResponse.self, from: data)
+        return try self.resolved(decoded.items, endpoint: "playlists").map {
             PlaylistSummary(id: $0.id, title: $0.snippet.title, privacyStatus: $0.status?.privacyStatus, itemCount: $0.contentDetails.itemCount ?? 0)
         }
     }
 
     /// Items of one playlist with the resource ids needed for removal.
     public func fetchPlaylistItems(playlistID: String, accessToken: String) async throws -> [PlaylistItemSummary] {
+        guard let playlistID = Self.validatedResourceID(playlistID) else { throw YouTubeAPIError.invalidInput }
         let request = try Self.buildRequest(baseURL: baseURL, path: "playlistItems", accessToken: accessToken, query: [
             "part": "snippet,contentDetails",
             "playlistId": playlistID,
             "maxResults": "50"
         ])
         let data = try await perform(request)
-        let decoded = try Self.decode(PlaylistItemsDetailResponse.self, from: data)
-        return decoded.items.map {
+        let decoded = try self.decode(PlaylistItemsDetailResponse.self, from: data)
+        return try self.resolved(decoded.items, endpoint: "playlistItems.detail").map {
             PlaylistItemSummary(
                 playlistItemID: $0.id,
                 videoID: $0.contentDetails.videoId,
@@ -259,6 +304,8 @@ public struct YouTubeDataClient: YouTubeAPI {
 
     /// Appends a video to a user-owned playlist (playlistItems.insert).
     public func addToPlaylist(playlistID: String, videoID: String, accessToken: String) async throws {
+        guard let playlistID = Self.validatedResourceID(playlistID),
+              let videoID = Self.validatedResourceID(videoID) else { throw YouTubeAPIError.invalidInput }
         var request = try Self.buildRequest(baseURL: baseURL, path: "playlistItems", accessToken: accessToken, query: ["part": "snippet"])
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -270,6 +317,7 @@ public struct YouTubeDataClient: YouTubeAPI {
 
     /// Removes an item by its playlistItem resource id.
     public func removeFromPlaylist(playlistItemID: String, accessToken: String) async throws {
+        guard let playlistItemID = Self.validatedResourceID(playlistItemID) else { throw YouTubeAPIError.invalidInput }
         var request = try Self.buildRequest(baseURL: baseURL, path: "playlistItems", accessToken: accessToken, query: ["id": playlistItemID])
         request.httpMethod = "DELETE"
         _ = try await perform(request)
@@ -285,6 +333,15 @@ public struct YouTubeDataClient: YouTubeAPI {
     }
 
     static let maxCommentTextLength = 10_000
+
+    /// Shared pre-wire guard for resource ids (HB-018). Ids normally originate
+    /// from API responses, but callers may reconstruct or persist them; garbage
+    /// input must surface as typed `.invalidInput` instead of an opaque wire
+    /// error, uniformly across read/mutation paths.
+    static func validatedResourceID(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     // MARK: - Execution / mapping
 
@@ -305,13 +362,45 @@ public struct YouTubeDataClient: YouTubeAPI {
         return data
     }
 
+    /// Legacy `errors[].reason` strings Google emits for quota-family denials.
+    private static let quotaReasons: Set<String> = [
+        "quotaExceeded",
+        "dailyLimitExceeded",
+        "rateLimitExceeded",
+        "userRateLimitExceeded"
+    ]
+
+    /// Legacy `errors[].reason` strings for permanent permission denials.
+    private static let permissionReasons: Set<String> = [
+        "forbidden",
+        "insufficientPermissions"
+    ]
+
     private static func apiError(from data: Data, statusCode: Int) -> YouTubeAPIError {
-        if statusCode == 403,
-           let decoded = try? JSONDecoder().decode(ErrorEnvelope.self, from: data),
-           decoded.error.errors.contains(where: { $0.reason == "commentsDisabled" }) {
+        guard statusCode == 403 else { return mapError(statusCode) }
+        // HB-015 taxonomy. Evidence order:
+        // 1. legacy reason "commentsDisabled" keeps its dedicated product case;
+        // 2. recognized quota reasons (legacy) or canonical status
+        //    RESOURCE_EXHAUSTED stay retryable `.quotaExceeded`;
+        // 3. recognized permission reasons or canonical status PERMISSION_DENIED
+        //    become permanent `.forbidden` (distinct non-retry copy);
+        // 4. DELIBERATE fallback: unparseable/unrecognized 403 bodies remain
+        //    `.quotaExceeded`. Quota is the overwhelmingly likeliest 403 cause
+        //    for this app's endpoints and the only classification whose retry
+        //    guidance is safe when the true cause is unknown.
+        let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data)
+        let reasons = Set((envelope?.error.errors ?? []).compactMap(\.reason))
+        if reasons.contains("commentsDisabled") {
             return .commentsDisabled
         }
-        return mapError(statusCode)
+        let status = envelope?.error.status?.uppercased()
+        if !reasons.isDisjoint(with: quotaReasons) || status == "RESOURCE_EXHAUSTED" {
+            return .quotaExceeded
+        }
+        if !reasons.isDisjoint(with: permissionReasons) || status == "PERMISSION_DENIED" {
+            return .forbidden
+        }
+        return .quotaExceeded
     }
 
     public static func mapError(_ statusCode: Int) -> YouTubeAPIError {
@@ -335,100 +424,135 @@ public struct YouTubeDataClient: YouTubeAPI {
     }
 }
 
-// MARK: - Private decode models
+/// Cached RFC3339 parsers (HB-021). Formatter allocation used to happen inside
+/// per-item decode maps, and the default option set silently parsed
+/// fractional-second timestamps to nil. Both shapes now parse through shared
+/// instances; ISO8601DateFormatter is documented thread-safe.
+enum APIDate {
+    /// ISO8601DateFormatter is documented thread-safe; `nonisolated(unsafe)`
+    /// satisfies Swift 6 strict concurrency for these shared instances.
+    private nonisolated(unsafe) static let plain: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private nonisolated(unsafe) static let fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static func date(_ raw: String) -> Date? {
+        fractional.date(from: raw) ?? plain.date(from: raw)
+    }
+}
+
+/// Wraps one list element so a single anomalous item cannot fail the whole
+/// page decode (HB-016). File-private decode-model support type.
+private struct TolerantItem<Item: Decodable>: Decodable {
+    let value: Item?
+
+    init(from decoder: Decoder) throws {
+        value = try? Item(from: decoder)
+    }
+}
+
+/// One subscriptions.list row. Fields Google may omit are optional; a row that
+/// cannot decode at all is skipped by the client's tolerant item policy.
+private struct SubscriptionItem: Decodable {
+    let contentDetails: ContentDetails
+    struct ContentDetails: Decodable {
+        let relatedPlaylists: RelatedPlaylists
+        struct RelatedPlaylists: Decodable {
+            let uploads: String
+        }
+    }
+}
 
 private struct SubscriptionsResponse: Decodable {
-    let items: [SubscriptionItem]
-    struct SubscriptionItem: Decodable {
-        let contentDetails: ContentDetails
-        struct ContentDetails: Decodable {
-            let relatedPlaylists: RelatedPlaylists
-            struct RelatedPlaylists: Decodable {
-                let uploads: String
-            }
-        }
+    let items: [TolerantItem<SubscriptionItem>]
+}
+
+private struct PlaylistRow: Decodable {
+    let contentDetails: ContentDetails
+    struct ContentDetails: Decodable {
+        let videoId: String
     }
 }
 
 private struct PlaylistItemsResponse: Decodable {
     let nextPageToken: String?
-    let items: [PlaylistItem]
-    struct PlaylistItem: Decodable {
-        let contentDetails: ContentDetails
-        struct ContentDetails: Decodable {
-            let videoId: String
+    let items: [TolerantItem<PlaylistRow>]
+}
+
+private struct VideoRow: Decodable {
+    let id: String
+    let snippet: Snippet
+    let contentDetails: ContentDetails
+    struct Snippet: Decodable {
+        let title: String
+        let channelTitle: String
+        let channelId: String?
+        let publishedAt: String
+        let description: String
+        let thumbnails: Thumbnails
+        struct Thumbnails: Decodable {
+            let medium: Thumbnail?
+            struct Thumbnail: Decodable {
+                let url: URL
+            }
         }
+    }
+    struct ContentDetails: Decodable {
+        let duration: String
     }
 }
 
 private struct VideosResponse: Decodable {
-    let items: [VideoItem]
-    struct VideoItem: Decodable {
-        let id: String
-        let snippet: Snippet
-        let contentDetails: ContentDetails
-        struct Snippet: Decodable {
-            let title: String
-            let channelTitle: String
-            let channelId: String?
-            let publishedAt: String
-            let description: String
-            let thumbnails: Thumbnails
-            struct Thumbnails: Decodable {
-                let medium: Thumbnail?
-                struct Thumbnail: Decodable {
-                    let url: URL
-                }
-            }
-        }
-        struct ContentDetails: Decodable {
-            let duration: String
-        }
+    let items: [TolerantItem<VideoRow>]
+}
+
+private struct SearchRow: Decodable {
+    let id: ID
+    struct ID: Decodable {
+        let videoId: String?
     }
 }
 
 private struct SearchResponse: Decodable {
     let nextPageToken: String?
-    let items: [SearchItem]
-    struct SearchItem: Decodable {
-        let id: ID
-        struct ID: Decodable {
-            let videoId: String?
-        }
-    }
+    let items: [TolerantItem<SearchRow>]
 }
 
 private struct ErrorEnvelope: Decodable {
     let error: ErrorBody
     struct ErrorBody: Decodable {
-        let errors: [ErrorItem]
+        let errors: [ErrorItem]?
+        let status: String?
         struct ErrorItem: Decodable {
-            let reason: String
+            let reason: String?
         }
     }
 }
 
-private struct CommentThreadsResponse: Decodable {
-    let nextPageToken: String?
-    let items: [Item]
-    struct Item: Decodable {
-        let id: String
-        let snippet: Snippet
-        let replies: Replies?
-        struct Snippet: Decodable {
-            let topLevelComment: TopLevelComment
-            let totalReplyCount: Int?
-            struct TopLevelComment: Decodable {
-                let id: String
-                let snippet: CommentSnippet
-            }
+private struct CommentThreadRow: Decodable {
+    let id: String
+    let snippet: Snippet
+    let replies: Replies?
+    struct Snippet: Decodable {
+        let topLevelComment: TopLevelComment
+        let totalReplyCount: Int?
+        struct TopLevelComment: Decodable {
+            let id: String
+            let snippet: CommentSnippet
         }
-        struct Replies: Decodable {
-            let comments: [ReplyComment]
-            struct ReplyComment: Decodable {
-                let id: String
-                let snippet: CommentSnippet
-            }
+    }
+    struct Replies: Decodable {
+        let comments: [ReplyComment]
+        struct ReplyComment: Decodable {
+            let id: String
+            let snippet: CommentSnippet
         }
     }
     struct CommentSnippet: Decodable {
@@ -437,6 +561,11 @@ private struct CommentThreadsResponse: Decodable {
         let likeCount: Int?
         let publishedAt: String
     }
+}
+
+private struct CommentThreadsResponse: Decodable {
+    let nextPageToken: String?
+    let items: [TolerantItem<CommentThreadRow>]
 }
 
 // MARK: - Mutation models (DDV2-03)
@@ -483,7 +612,7 @@ private struct InsertedCommentResource: Decodable {
             author: snippet.authorDisplayName ?? "",
             text: snippet.textDisplay ?? snippet.textOriginal ?? "",
             likeCount: snippet.likeCount ?? 0,
-            publishedAt: snippet.publishedAt.flatMap { ISO8601DateFormatter().date(from: $0) },
+            publishedAt: snippet.publishedAt.flatMap { APIDate.date($0) },
             replyCount: 0
         )
     }
@@ -498,63 +627,67 @@ private struct InsertedThreadResponse: Decodable {
     }
 }
 
-/// Response of `subscriptions.list` filtered by mine+forChannelId.
-private struct MySubscriptionsResponse: Decodable {
-    let items: [Item]
-    struct Item: Decodable {
-        let id: String
-        let snippet: Snippet
-        struct Snippet: Decodable {
-            let title: String?
-        }
+/// Row of `subscriptions.list` filtered by mine+forChannelId.
+private struct MySubscriptionRow: Decodable {
+    let id: String
+    let snippet: Snippet
+    struct Snippet: Decodable {
+        let title: String?
     }
+}
+
+private struct MySubscriptionsResponse: Decodable {
+    let items: [TolerantItem<MySubscriptionRow>]
 }
 
 /// Response of `videos.getRating`.
+private struct VideoRatingRow: Decodable {
+    let videoId: String
+    let rating: String
+}
+
 private struct VideoRatingResponse: Decodable {
-    let items: [Item]
-    struct Item: Decodable {
-        let videoId: String
-        let rating: String
+    let items: [TolerantItem<VideoRatingRow>]
+}
+
+/// Row of `playlists.list` filtered to mine.
+private struct MyPlaylistRow: Decodable {
+    let id: String
+    let snippet: Snippet
+    let status: Status?
+    let contentDetails: ContentDetails
+    struct Snippet: Decodable {
+        let title: String
+    }
+    struct Status: Decodable {
+        let privacyStatus: String?
+    }
+    struct ContentDetails: Decodable {
+        let itemCount: Int?
     }
 }
 
-/// Response of `playlists.list` filtered to mine.
 private struct MyPlaylistsResponse: Decodable {
-    let items: [Item]
-    struct Item: Decodable {
-        let id: String
-        let snippet: Snippet
-        let status: Status?
-        let contentDetails: ContentDetails
-        struct Snippet: Decodable {
-            let title: String
-        }
-        struct Status: Decodable {
-            let privacyStatus: String?
-        }
-        struct ContentDetails: Decodable {
-            let itemCount: Int?
-        }
+    let items: [TolerantItem<MyPlaylistRow>]
+}
+
+/// Detailed `playlistItems.list` row including snippet titles.
+private struct PlaylistItemDetailRow: Decodable {
+    let id: String
+    let snippet: Snippet
+    let contentDetails: ContentDetails
+    struct Snippet: Decodable {
+        let title: String
+        let channelTitle: String
+        let videoOwnerChannelTitle: String?
+    }
+    struct ContentDetails: Decodable {
+        let videoId: String
     }
 }
 
-/// Detailed `playlistItems.list` response including snippet titles.
 private struct PlaylistItemsDetailResponse: Decodable {
-    let items: [Item]
-    struct Item: Decodable {
-        let id: String
-        let snippet: Snippet
-        let contentDetails: ContentDetails
-        struct Snippet: Decodable {
-            let title: String
-            let channelTitle: String
-            let videoOwnerChannelTitle: String?
-        }
-        struct ContentDetails: Decodable {
-            let videoId: String
-        }
-    }
+    let items: [TolerantItem<PlaylistItemDetailRow>]
 }
 
 /// Request body for `playlistItems.insert`.

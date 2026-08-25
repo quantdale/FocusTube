@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import FocusTubeCore
 
-private struct StubYouTubeAPI: YouTubeAPI {
+private struct StubYouTubeAPI: YouTubeReading {
     var feedPage: SubscriptionFeedPage
 
     init(summaries: [VideoSummary], nextPageToken: String? = nil) {
@@ -24,7 +24,7 @@ private struct StubYouTubeAPI: YouTubeAPI {
 }
 
 // Actor so page-token pass-through can be recorded across await boundaries.
-private actor PageRecordingAPI: YouTubeAPI {
+    private actor PageRecordingAPI: YouTubeReading {
     let page: SubscriptionFeedPage
     private(set) var receivedTokens: [String?] = []
 
@@ -51,7 +51,7 @@ private actor PageRecordingAPI: YouTubeAPI {
 // @unchecked Sendable is safe here because tests exercise calls sequentially.
 // Deliberately does NOT implement `fetchSubscriptionFeed`, so calls exercise
 // the protocol's default aggregation implementation under test.
-private final class FeedScriptedAPI: YouTubeAPI, @unchecked Sendable {
+private final class FeedScriptedAPI: YouTubeReading, @unchecked Sendable {
     let playlistIDs: [String]
     /// Pages served per playlist in call order; exhausted playlists serve empty pages.
     var pagesByPlaylist: [String: [(ids: [String], nextPageToken: String?)]] = [:]
@@ -208,6 +208,27 @@ final class HomeFeedAggregatorTests: XCTestCase {
         XCTAssertEqual(page.videos.map { $0.id }, only)
         XCTAssertNil(page.nextPageToken)
         XCTAssertEqual(api.playlistCalls.map { "\($0.playlistID)|\($0.pageToken ?? "nil")" }, ["PC|nil"])
+    }
+
+    /// HB-030: a syntactically valid token whose playlist index is out of
+    /// range (e.g. subscriptions shrank between sessions) restarts from the
+    /// first playlist instead of crashing or skipping the walk.
+    func testOutOfRangeResumeIndexRestartsFromFirstPlaylist() async throws {
+        let ids = (0..<5).map { "pd-\($0)" }
+        let api = FeedScriptedAPI(playlistIDs: ["PD1", "PD2"])
+        api.pagesByPlaylist = [
+            "PD1": [(ids: ids, nextPageToken: nil)],
+            "PD2": [(ids: ids, nextPageToken: nil)]
+        ]
+        for id in ids {
+            api.detailsByID[id] = summary(id: id, duration: 600)
+        }
+
+        let page = try await api.fetchSubscriptionFeed(accessToken: "tok", pageToken: "9|stale-token")
+
+        XCTAssertEqual(page.videos.map { $0.id }, ids + ids, "walk restarts from the first playlist")
+        XCTAssertNil(page.nextPageToken)
+        XCTAssertEqual(api.playlistCalls.map { "\($0.playlistID)|\($0.pageToken ?? "nil")" }, ["PD1|nil", "PD2|nil"])
     }
 
     func testEmptySubscriptionsReturnEmptyPageWithoutDetailCalls() async throws {
