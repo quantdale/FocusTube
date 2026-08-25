@@ -26,12 +26,21 @@ struct DownloadsView: View {
     ]
 
     var body: some View {
-        List {
-            activeSection
-            queuedSection
-            failedSection
-            offlineHeaderSection
-            offlineContentSections
+        // A deliberate non-lazy scroll view: personal-scale download counts make
+        // laziness worthless here, while lazy List rows proved unreliable to
+        // realize in both the accessibility tree and XCUITest queries on current
+        // iOS runtimes (the same contract as VideoPageView).
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                activeSection
+                queuedSection
+                failedSection
+                offlineHeaderSection
+                offlineContentSections
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
         .navigationTitle("Downloads")
         .sheet(item: $playingLocal) { media in
@@ -61,13 +70,33 @@ struct DownloadsView: View {
         .task { store.reconcileDownloads() }
     }
 
+    // MARK: - Section scaffolding
+
+    /// Non-List section container with an accessible header so every row is
+    /// always realized in the hierarchy (never lazily discarded).
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func emptyText(_ value: String) -> some View {
+        Text(value)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+    }
+
     // MARK: - Active queue
 
     private var activeSection: some View {
-        Section("In progress") {
+        section("In progress") {
             if downloadManager.liveTasks.isEmpty {
-                Text("No active downloads.")
-                    .foregroundStyle(.secondary)
+                emptyText("No active downloads.")
             }
             ForEach(downloadManager.liveTasks) { task in
                 HStack {
@@ -113,13 +142,12 @@ struct DownloadsView: View {
     // MARK: - Durable queue
 
     private var queuedSection: some View {
-        Section("Waiting to download") {
+        section("Waiting to download") {
             // Durable queue projection (DDV2-01): persisted `.queued`
             // records are user-visible and cancellable, never invisible
             // slot consumers.
             if downloadManager.queuedTasks.isEmpty {
-                Text("Nothing waiting.")
-                    .foregroundStyle(.secondary)
+                emptyText("Nothing waiting.")
             }
             ForEach(downloadManager.queuedTasks) { task in
                 HStack {
@@ -151,15 +179,14 @@ struct DownloadsView: View {
     // MARK: - Failures
 
     private var failedSection: some View {
-        Section("Failed downloads") {
+        section("Failed downloads") {
             // Failed/interrupted records stay listed so the promised retry
             // is actionable: Retry re-invokes the service, which re-resolves
             // fresh signed URLs instead of replaying expired ones. Served
             // from the cached failure projection (HB-013), not a per-render
             // SwiftData refetch.
             if downloadManager.failedTasks.isEmpty {
-                Text("No failed downloads.")
-                    .foregroundStyle(.secondary)
+                emptyText("No failed downloads.")
             }
             ForEach(downloadManager.failedTasks) { task in
                 HStack {
@@ -205,7 +232,7 @@ struct DownloadsView: View {
     }
 
     private var offlineHeaderSection: some View {
-        Section("Downloaded") {
+        section("Downloaded") {
             Picker("Sort by", selection: $sortOrder) {
                 Text("Newest").tag(OfflineLibraryPolicy.SortOrder.newestFirst)
                 Text("Largest").tag(OfflineLibraryPolicy.SortOrder.largestFirst)
@@ -222,8 +249,7 @@ struct DownloadsView: View {
                 .accessibilityIdentifier("offline-storage-summary")
 
             if summaries.isEmpty {
-                Text("No downloaded videos yet.")
-                    .foregroundStyle(.secondary)
+                emptyText("No downloaded videos yet.")
             }
         }
     }
@@ -234,16 +260,18 @@ struct DownloadsView: View {
         switch sortOrder {
         case .byChannelThenNewest:
             ForEach(OfflineLibraryPolicy.groupedByChannel(summaries), id: \.channel) { group in
-                Section(group.channel) {
+                section(group.channel) {
                     ForEach(group.items, id: \.id) { item in
                         offlineRow(item)
                     }
                 }
             }
         default:
-            Section {
-                ForEach(OfflineLibraryPolicy.sorted(summaries, by: sortOrder), id: \.id) { item in
-                    offlineRow(item)
+            if !summaries.isEmpty {
+                section("Offline videos") {
+                    ForEach(OfflineLibraryPolicy.sorted(summaries, by: sortOrder), id: \.id) { item in
+                        offlineRow(item)
+                    }
                 }
             }
         }

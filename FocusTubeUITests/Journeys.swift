@@ -133,23 +133,18 @@ final class Journeys: XCTestCase {
         start.press(forDuration: 0.05, thenDragTo: end)
     }
 
-    /// Performs one scroll attempt using the strategy selected by `attempt`,
-    /// preferring container-scoped gestures over app-wide ones.
+    /// Performs one scroll attempt. Container-targeted gestures are used
+    /// EXCLUSIVELY when a scrollable host exists: mixing app-level swipes into
+    /// the rotation made the page oscillate between scrolled and top positions
+    /// (CI evidence: target minY alternated -44 ↔ 802 across attempts), because
+    /// app-wide drags land on the player/card layer and reset or swallow the
+    /// pan. The coordinate drag is the fallback for hosts XCUITest cannot name.
     private func scrollOnce(_ app: XCUIApplication, direction: SwipeDirection, attempt: Int) {
         let container = largestScrollContainer(app)
-        switch attempt % 3 {
-        case 0:
-            if let container {
-                if direction == .up { container.element.swipeUp(velocity: .fast) } else { container.element.swipeDown(velocity: .fast) }
-            } else if direction == .up {
-                app.swipeUp(velocity: .fast)
-            } else {
-                app.swipeDown(velocity: .fast)
-            }
-        case 1:
-            dragScroll(app, frame: container?.frame ?? app.frame, direction: direction)
-        default:
-            if direction == .up { app.swipeUp(velocity: .fast) } else { app.swipeDown(velocity: .fast) }
+        if let container {
+            if direction == .up { container.element.swipeUp(velocity: .fast) } else { container.element.swipeDown(velocity: .fast) }
+        } else {
+            dragScroll(app, frame: app.frame, direction: direction)
         }
     }
 
@@ -806,10 +801,13 @@ final class Journeys: XCTestCase {
             "composer must gain keyboard focus before typing;\(treeDiagnostics(app))"
         )
         target.typeText("Fixture journey comment")
+        // The keyboard may cover the submit control: dismiss it first so the
+        // tap lands on the button, not on keyboard glass.
+        dismissKeyboard(app)
         app.buttons["comment-submit"].tap()
         XCTAssertTrue(
             app.staticTexts["Fixture journey comment"].waitForExistence(timeout: 5),
-            "posted top-level comment appears in the tree"
+            "posted top-level comment appears in the tree;\(treeDiagnostics(app))"
         )
 
         // Reply to the first fixture comment thread. Scrolling down to the
@@ -827,11 +825,34 @@ final class Journeys: XCTestCase {
             "composer must gain keyboard focus before typing;\(treeDiagnostics(app))"
         )
         target.typeText("Fixture journey reply")
+        dismissKeyboard(app)
         app.buttons["comment-submit"].tap()
         let postedReply = app.staticTexts.containing(
             NSPredicate(format: "label CONTAINS %@", "Fixture journey reply")
         ).firstMatch
-        XCTAssertTrue(postedReply.waitForExistence(timeout: 5), "posted reply renders under its parent")
+        XCTAssertTrue(
+            postedReply.waitForExistence(timeout: 5),
+            "posted reply renders under its parent;\(treeDiagnostics(app))"
+        )
+    }
+
+    /// Dismisses the keyboard by tapping a neutral chrome point (the navigation
+    /// bar), then waits until it is actually gone so subsequent taps cannot be
+    /// swallowed by keyboard glass.
+
+    /// Dismisses the keyboard by tapping a neutral chrome point (the navigation
+    /// bar), then waits until it is actually gone so subsequent taps cannot be
+    /// swallowed by keyboard glass.
+    private func dismissKeyboard(_ app: XCUIApplication) {
+        guard app.keyboards.firstMatch.exists else { return }
+        let bar = app.navigationBars.firstMatch
+        if bar.exists, bar.isHittable {
+            bar.tap()
+        } else {
+            app.swipeDown()
+        }
+        let gone = NSPredicate(format: "exists == false")
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: app.keyboards.firstMatch)], timeout: 5)
     }
 
     // MARK: - Journey L: offline playback reaches playing (HB-014)
@@ -850,7 +871,10 @@ final class Journeys: XCTestCase {
             "Downloads tab must come to front;\(treeDiagnostics(app))"
         )
         let completedRow = app.buttons.matching(identifier: "downloaded-row").firstMatch
-        XCTAssertTrue(completedRow.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            completedRow.waitForExistence(timeout: 10),
+            "completed download row must render;\(treeDiagnostics(app))"
+        )
         completedRow.tap()
 
         // The fixture transfer finalized REAL playable media: the player must
