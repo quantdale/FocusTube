@@ -42,9 +42,11 @@ ann*.json
 checks_*.json
 jobs_*.json
 cr.json
+cr_*.json
 jobs.json
 runs*.json
 run-now.json
+run_page.html
 br.json
 ci-logs/
 ci-logs.zip
