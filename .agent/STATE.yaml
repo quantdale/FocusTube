@@ -134,6 +134,7 @@ current_waypoint:
     - Core Tests run 32855544250 SUCCESS at 05a80af
     - iOS CI run 32855544105 SUCCESS at 05a80af (fail-closed Gate green, unit=0 ui=0)
     - full UI journey set green in the same leg incl. formerly-failing L/D/I
+    - stability: SECOND consecutive full green leg at docs tip b5c3cea — Core Tests run 32859271508 and iOS CI run 32859271422 both SUCCESS (whole journey suite repeated)
     - checkpoint .agent/checkpoints/20260825-DDV2-SYSTEMIC-CONVERGENCE.md
   validation_required:
     - device evidence A1-A14 (owner, physical iPhone)
