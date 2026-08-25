@@ -713,6 +713,7 @@ final class DownloadServiceTests: XCTestCase {
     func testCancelFreesSlotAndPromotesQueuedDownload() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let temp = root.appendingPathComponent("component.mp4")

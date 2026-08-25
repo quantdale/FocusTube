@@ -31,7 +31,7 @@ final class Journeys: XCTestCase {
     /// (assertion autoclosures), so passing tests pay nothing. Remote agents can
     /// read these through check-run annotations without authenticated API access.
     private func treeDiagnostics(_ app: XCUIApplication) -> String {
-        var facts = ["sheets=\(app.sheets.count)"]
+        var facts = ["sheets=\(app.sheets.count)", "state=\(app.state.rawValue)", "keyboards=\(app.keyboards.count)"]
         let probes: [(String, XCUIElement)] = [
             ("title", app.staticTexts["video-title"]),
             ("channel", app.staticTexts["video-channel"]),
@@ -51,11 +51,12 @@ final class Journeys: XCTestCase {
             .split(separator: "\n")
             .filter { line in
                 ["Sheet", "Alert", "video-title", "download-button", "save-toggle",
-                 "'Close'", "Playback failed", "Loading…", "feed-video-row", "Window",
-                 "Application"]
+                 "'Close'", "Playback failed", "feed-video-row", "Window",
+                 "Application", "TabBar", "NavigationBar", "downloaded-row",
+                 "No downloaded videos yet.", "search-result-row", "load-more"]
                     .contains { line.contains($0) }
             }
-            .prefix(30)
+            .prefix(40)
         return "FACTS{\(facts.joined(separator: ","))} TREE{\(interesting.joined(separator: " ~ "))}"
     }
 
@@ -363,8 +364,16 @@ final class Journeys: XCTestCase {
             "page one must advertise continuation and be tappable [\(loadTrace)]"
         )
 
-        let appended = app.buttons.matching(identifier: "feed-video-row").element(boundBy: 3)
-        XCTAssertTrue(appended.waitForExistence(timeout: 5), "explicit Load more must append page two")
+        // Page two exhausts the fixture feed (nextPageToken becomes nil), so the
+        // load-more control DISAPPEARING is the deterministic append proof — a
+        // lazy List may never realize far-below-fold rows for count-based queries.
+        let stillAdvertising = NSPredicate(format: "exists == true")
+        let expectation = XCTNSPredicateExpectation(predicate: stillAdvertising, object: app.buttons["load-more-button"].firstMatch)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [expectation], timeout: 5),
+            .timedOut,
+            "explicit Load more must consume the fixture's last page (control must disappear);\(treeDiagnostics(app))"
+        )
     }
 
     // MARK: - Journey D: search
@@ -390,9 +399,15 @@ final class Journeys: XCTestCase {
 
         let lmTrace = revealAndTap(app, "load-more-button")
         XCTAssertTrue(lmTrace.isEmpty, "load more must be reachable [\(lmTrace);\(treeDiagnostics(app))]")
-        XCTAssertTrue(
-            app.staticTexts["Fixture Search Result Gamma"].waitForExistence(timeout: 5),
-            "Load more must append the second result page"
+        // Second page exhausts the fixture results: the disappearing load-more
+        // control is the deterministic append proof (lazy List rows far below
+        // the fold may never realize for count queries).
+        let stillAdvertising = NSPredicate(format: "exists == true")
+        let expectation = XCTNSPredicateExpectation(predicate: stillAdvertising, object: app.buttons["load-more-button"].firstMatch)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [expectation], timeout: 5),
+            .timedOut,
+            "Load more must consume the fixture's last result page;\(treeDiagnostics(app))"
         )
     }
 
@@ -590,6 +605,12 @@ final class Journeys: XCTestCase {
         waitForDownloadSettle(app)
 
         app.tabBars.buttons["Downloads"].tap()
+        // Tab arrival is asserted explicitly: a mis-delivered tab tap must fail
+        // HERE with full diagnostics, never masquerade as a registration defect.
+        XCTAssertTrue(
+            app.navigationBars["Downloads"].waitForExistence(timeout: 8),
+            "Downloads tab must come to front;\(treeDiagnostics(app))"
+        )
         // SwiftUI Buttons merge their label children, so the row is addressed
         // by its own identifier; the merged label carries the real title.
         let completedRow = app.buttons.matching(identifier: "downloaded-row").firstMatch
@@ -780,6 +801,10 @@ final class Journeys: XCTestCase {
         )
 
         target.tap()
+        XCTAssertTrue(
+            app.keyboards.firstMatch.waitForExistence(timeout: 5),
+            "composer must gain keyboard focus before typing;\(treeDiagnostics(app))"
+        )
         target.typeText("Fixture journey comment")
         app.buttons["comment-submit"].tap()
         XCTAssertTrue(
@@ -795,6 +820,12 @@ final class Journeys: XCTestCase {
         let composerBackTrace = interact(app, locate: { $0.buttons["comment-submit"].firstMatch }, tap: false)
         XCTAssertTrue(composerBackTrace.isEmpty, "composer must scroll back into view [\(composerBackTrace);\(treeDiagnostics(app))]")
         target.tap()
+        // Focus proof: typeText without a focused field silently drops input,
+        // which would masquerade as a product defect in the reply path.
+        XCTAssertTrue(
+            app.keyboards.firstMatch.waitForExistence(timeout: 5),
+            "composer must gain keyboard focus before typing;\(treeDiagnostics(app))"
+        )
         target.typeText("Fixture journey reply")
         app.buttons["comment-submit"].tap()
         let postedReply = app.staticTexts.containing(
@@ -814,6 +845,10 @@ final class Journeys: XCTestCase {
         waitForDownloadSettle(app)
 
         app.tabBars.buttons["Downloads"].tap()
+        XCTAssertTrue(
+            app.navigationBars["Downloads"].waitForExistence(timeout: 8),
+            "Downloads tab must come to front;\(treeDiagnostics(app))"
+        )
         let completedRow = app.buttons.matching(identifier: "downloaded-row").firstMatch
         XCTAssertTrue(completedRow.waitForExistence(timeout: 10))
         completedRow.tap()

@@ -1,0 +1,64 @@
+FULL MESSAGE:
+	DownloadServiceTests.testCancelFreesSlotAndPromotesQueuedDownload()
+
+RAW:
+{
+ "path": ".github",
+ "blob_href": "https://github.com/quantdale/FocusTube/blob/023918a7b8b3ea8d492524dd1992a57d2c57bb55/.github",
+ "start_line": 114,
+ "start_column": null,
+ "end_line": 114,
+ "end_column": null,
+ "annotation_level": "notice",
+ "title": "",
+ "message": "\tDownloadServiceTests.testCancelFreesSlotAndPromotesQueuedDownload()",
+ "raw_details": ""
+}
+
+FULL MESSAGE:
+/Users/runner/work/FocusTube/FocusTube/FocusTubeTests/DownloadServiceTests.swift:0: error: -[FocusTubeTests.DownloadServiceTests testCancelFreesSlotAndPromotesQueuedDownload] : failed: caught error: "Error Domain=NSCocoaErrorDomain Code=4 "“focustube-dsvc-DBC154D8-3660-49D9-AD54-DCA067B966C0” couldn’t be removed." UserInfo={NSUserStringVariant=(
+
+RAW:
+{
+ "path": ".github",
+ "blob_href": "https://github.com/quantdale/FocusTube/blob/023918a7b8b3ea8d492524dd1992a57d2c57bb55/.github",
+ "start_line": 112,
+ "start_column": null,
+ "end_line": 112,
+ "end_column": null,
+ "annotation_level": "failure",
+ "title": "",
+ "message": "/Users/runner/work/FocusTube/FocusTube/FocusTubeTests/DownloadServiceTests.swift:0: error: -[FocusTubeTests.DownloadServiceTests testCancelFreesSlotAndPromotesQueuedDownload] : failed: caught error: \"Error Domain=NSCocoaErrorDomain Code=4 \"\u201cfocustube-dsvc-DBC154D8-3660-49D9-AD54-DCA067B966C0\u201d couldn\u2019t be removed.\" UserInfo={NSUserStringVariant=(",
+ "raw_details": ""
+}
+
+FULL MESSAGE:
+unit log tail:
+2026-08-25 02:20:05.255 xcodebuild[21146:61458] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-08-25 02:20:05.255 xcodebuild[21146:61458] [MT] IDETestOperationsObserverDebug: 85.514 sec, +85.514 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/runner/work/FocusTube/FocusTube/Artifacts/UnitTests.xcresult
+
+Failing tests:
+	DownloadServiceTests.testCancelFreesSlotAndPromotesQueuedDownload()
+
+** TEST FAILED **
+
+Testing started
+
+
+RAW:
+{
+ "path": ".github",
+ "blob_href": "https://github.com/quantdale/FocusTube/blob/023918a7b8b3ea8d492524dd1992a57d2c57bb55/.github",
+ "start_line": 55,
+ "start_column": null,
+ "end_line": 55,
+ "end_column": null,
+ "annotation_level": "warning",
+ "title": "",
+ "message": "unit log tail:\n2026-08-25 02:20:05.255 xcodebuild[21146:61458] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start\n2026-08-25 02:20:05.255 xcodebuild[21146:61458] [MT] IDETestOperationsObserverDebug: 85.514 sec, +85.514 sec -- end\n\nTest session results, code coverage, and logs:\n\t/Users/runner/work/FocusTube/FocusTube/Artifacts/UnitTests.xcresult\n\nFailing tests:\n\tDownloadServiceTests.testCancelFreesSlotAndPromotesQueuedDownload()\n\n** TEST FAILED **\n\nTesting started\n",
+ "raw_details": ""
+}
+
