@@ -165,12 +165,13 @@ final class DownloadFailureOwnershipTests: XCTestCase {
         await service.download(videoID: "v3", title: "V3", channelTitle: "C", quality: .p720)
         await service.download(videoID: "v4", title: "V4", channelTitle: "C", quality: .p360)
 
-        // The promoted head (v3) fails its transfer; releasing the gates lets
-        // both held slots settle so promotion runs.
+        // The promoted head (v3) fails every attempt (bounded automatic
+        // retries re-begin it); releasing the gates lets both held slots
+        // settle so promotion runs.
         transport.fail("v3-720")
         transport.releaseAll()
 
-        try await waitUntilThrowing({ transport.beginCount(for: "v3-720") == 1 },
+        try await waitUntilThrowing({ transport.beginCount(for: "v3-720") >= 1 },
                                     "promoted job was never started")
         try await waitUntilThrowing({
             manager.failedTasks.contains { $0.id == "v3-720" }
