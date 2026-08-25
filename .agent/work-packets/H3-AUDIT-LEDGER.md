@@ -268,3 +268,63 @@ disposition. Dispositions update per workstream as evidence lands.
 - No test weakening: HB-015's existing generic-403 test gets re-authored to the new taxonomy with
   equal-or-stronger assertions; journey-affecting UI changes keep identifier contracts stable.
 - CI plane: every code wave pushes to main; Core Tests + iOS CI Gate must be green at final SHA.
+
+## H3-07 — Whole-repository systemic re-audit (documented findings)
+
+Executed 2026-08-25/26 after HB consumption, per EXECUTION_PROMPT checklist. Method:
+grep-level invariant sweeps + targeted source reads of every subsystem touched by H3 plus
+its callers/consumers; results below are OBSERVED, not implied.
+
+1. Dependency composition/lifecycle: AppDependencies remains the single @MainActor owner;
+   fixture path still DEBUG-gated (#if DEBUG at :31/:83/:208); production live() path wires
+   the new onItemsSkipped reporter nonisolated. No init-spawned reconciliation regressions.
+2. SwiftData models/migrations: three additive optional fields landed this campaign
+   (DownloadRecord.plannedDurationSeconds, WatchHistoryEntry/SavedItem channelID+videoDescription)
+   — lightweight migration only; legacy-nil fallbacks pinned by tests
+   (testLegacyRowWithoutPlannedDurationReadsNil, DDV2 tolerance tests).
+3. Auth boundaries: fake/live split intact; GoogleSignInAuthSession DEBUG blocks verified;
+   sign-in surfaces now truthful for fake sessions (HB-029).
+4. API taxonomy/pagination/quota/stale-response: .forbidden case propagated to all five UI
+   label sites (compiler-exhaustive switches); generation guards in Home/Search stores
+   unchanged; NEW pre-await duplicate-submit gate in SearchView complements them; playlists
+   loads guarded; commentThreads pageToken wire-pinned.
+5. Download queue/admission/retry/reconcile/finalize/delete/storage accounting: transition
+   table now authoritative (full matrix test); completion-final rule closes the
+   completed→failed regression class; promotion failures surface as failed rows; retry
+   re-runs storage admission with persisted duration. Filesystem divergence paths
+   (reconcileDownloads, sweepMuxingOrphans, pruneEmptyAncestors) re-read — unchanged and sound.
+6. Player/background seams: PlayerCoordinator/BackgroundMediaCoordinator untouched by H3;
+   Now Playing wiring and command registration re-verified present in RootView.task.
+7. Cross-surface model/navigation fidelity: Library/playlist-origin VideoSummary payloads now
+   carry description/channelID/thumbnail (H3-03); Home/Search cards read memoized projection
+   (H3-04); tab selection restored via SceneStorage (H3-05).
+8. Shorts firewall / no-autoplay / explicit pagination: ShortFormPolicy duration+route
+   blocking applied before render (HomeFeedAggregator, SearchService); zero Shorts routes/UI;
+   autoplay grep clean (comments-only hits); load-more buttons remain the only pagination
+   entry points.
+9. Loading/empty/error/degraded/offline states: quality surface tri-stated; playlist detail
+   gained retry; downloads failed section remains the settlement-failure surface; degraded-
+   persistence flag observable on LibraryStore/RecentSearchStore.
+10. A11y: caption buttons raised to 44pt (More/Less, Cancel, Reply); decorative chevrons AX-
+    hidden; card progress announced via accessibilityValue without touching journey label
+    contracts; identifiers preserved everywhere journeys query them.
+11. Concurrency: coordinator actor event chains unchanged; new closures marked @Sendable /
+    nonisolated where they cross executors (reportSkippedItems lesson from run 32869064329);
+    MainActor isolation held across store/view edits.
+12. Render-time work: N-scans-per-render pattern eliminated; formatter churn cached; Downloads
+    projections already incremental (HB-013 lineage re-verified).
+13. Privacy/secrets/logging: no print/NSLog; os.Logger privacy annotations on new logs; no
+    tokens/URLs in newly persisted fields (duration/flag/description/channelID only).
+14. XcodeGen/CI reproducibility: project.yml untouched; fail-closed gate contract self-check
+    still wired and passing in every leg (observed in runs 32873103739/32874983676 steps).
+15. Tests overfitting implementation: transition-matrix test pins the MODEL contract (product
+    boundary), EventOrdering rewrite asserts user-observable outcome (no regression of settled
+    media) rather than internal ordering bookkeeping.
+
+Findings requiring fixes were closed in their workstreams (see items above); residual new
+findings beyond recorded backlog: none at Critical/High. Two Low notes recorded:
+- L1: RecentSearchStore.load() caps fetch at maxEntries+5 rows then relies on policy trim on
+  next record — benign historical artifact, documented here rather than churned.
+- L2: exactly-zero-fraction entries appear in Library continue-watching lists but hide their
+  strip on cards (0 excluded by >0 visibility) — cosmetic boundary agreed during threshold
+  unification.
