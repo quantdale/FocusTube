@@ -116,4 +116,6 @@ tree: 141+11, zero failures.
 
 ## Consecutive-leg evidence (appended after the docs-tip leg completed)
 
-- Docs-tip iOS CI run: RESULT_RECORDED_BELOW.
+- Docs-tip iOS CI run 32895711483 (run #197 at e21897e): completed successfully —
+  second consecutive green leg over the identical code tree (DDV2 precedent).
+  Qualification pair: #196 (32891558884 @ 7a70943) + #197 (32895711483 @ e21897e).
