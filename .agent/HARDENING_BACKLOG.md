@@ -24,6 +24,158 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 
 ## Backlog
 
+### HB-015 — 403 taxonomy conflates every non-commentsDisabled denial with quotaExceeded
+- Severity: Medium
+- Discovered in: DDV2 systemic-convergence audit (b9ee1e0 era)
+- Area: Sources/FocusTubeCore/YouTube/YouTubeDataClient.swift (~:309-325), App copy sites (RootView, VideoPageView)
+- Evidence/reproduction: any 403 without the legacy `error.errors[].reason == "commentsDisabled"` envelope maps to `.quotaExceeded`; newer-style `{"error":{"status":"PERMISSION_DENIED"}}` envelopes also fall through; permanent permission denials render the transient "try again later" message.
+- Impact: wrong error taxonomy; misleading retry affordances on permanent denials.
+- Suggested hardening action: typed `.forbidden` case + reason-string/status mapping, then dedicated UI copy; keep malformed-envelope fallback deliberate.
+- Blocks implementation: no
+
+### HB-016 — all-or-nothing page decoding discards an entire page/batch on one anomalous item
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit
+- Area: YouTubeDataClient decode paths (`throw .decode` over whole arrays)
+- Evidence/reproduction: one malformed item among 50 fails the whole hydration/feed page (recorded deliberate tradeoff since HB-011a fixtures).
+- Impact: full-surface error instead of partial content when Google emits an unexpected shape.
+- Suggested hardening action: conscious decision to adopt skip-and-continue per-item decoding with a logged count.
+- Blocks implementation: no
+
+### HB-017 — DownloadState has unreachable statuses and an untested transition table bypassed by event paths
+- Severity: Medium
+- Discovered in: DDV2 systemic-convergence audit
+- Area: Sources/FocusTubeCore/Download/DownloadState.swift; DownloadCoordinator direct status writes
+- Evidence/reproduction: nothing ever enters `.waitingForRetry` or `.reResolving`; coordinator assigns `state.status = .failed` directly, bypassing `transition(to:)`; zero transition-table tests exist (only PlaybackState is covered).
+- Impact: model drift — the table is advisory; future invalid-transition regressions are undetectable by tests.
+- Suggested hardening action: route event-path writes through `transition(to:)` (or delete dead cases after confirming no persisted rows carry them) and add a table test.
+- Blocks implementation: no
+
+### HB-018 — pre-network input validation inconsistent outside comment mutation
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit
+- Area: YouTubeDataClient (subscribe/unsubscribe/rate/playlists/comments-read id parameters)
+- Evidence/reproduction: empty ids reach the wire and surface as opaque `unknown(status:400)`; comments validate text+parentID first (asymmetric).
+- Impact: divergent error taxonomy for garbage input; ids normally originate from API responses so real-world likelihood is low.
+- Suggested hardening action: shared non-empty resource-id guard mapped to `.invalidInput`.
+- Blocks implementation: no
+
+### HB-019 — YouTubeAPI protocol-extension defaults convert missing overrides into runtime failures
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit
+- Area: Sources/FocusTubeCore/YouTube/YouTubeAPI.swift (eight throwing mutation/lookup defaults)
+- Evidence/reproduction: a future conformer omitting an override compiles cleanly and throws `unknown(status:-1)` only when a user taps that action; production client implements all.
+- Impact: latent silent-failure mode for new conformers.
+- Suggested hardening action: split read vs mutation protocols or drop the defaults.
+- Blocks implementation: no
+
+### HB-020 — OfflineLibraryPolicy stability/tie-order claims exceed language guarantees
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit
+- Area: Sources/FocusTubeCore/Library/OfflineLibraryPolicy.swift
+- Evidence/reproduction: "Stable: ties preserve input order" relies on incidental stdlib sort behavior; groupedByChannel orders groups via dictionary + max-createdAt so exact-timestamp ties can swap between runs.
+- Impact: nondeterministic ordering only in tie cases; personal-scale cosmetic.
+- Suggested hardening action: explicit tiebreakers (videoID) and drop/justify the stability claim.
+- Blocks implementation: no
+
+### HB-021 — per-row ISO8601DateFormatter allocation; fractional-second timestamps silently nil
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit
+- Area: YouTubeDataClient publishedAt decoding sites
+- Evidence/reproduction: formatter constructed inside map per item; RFC3339 fractional forms parse to nil (fields optional everywhere).
+- Impact: needless allocation churn; silently missing dates on unusual shapes.
+- Suggested hardening action: cached formatters (with/without fractional seconds).
+- Blocks implementation: no
+
+### HB-022 — shared lastFailure alert staleness/presentation ownership
+- Severity: Medium
+- Discovered in: DDV2 systemic-convergence audit
+- Area: App/Download/DownloadService.swift (lastFailure), App/Video/VideoPageView.swift (only presenter)
+- Evidence/reproduction: failures raised while Downloads/front-of-house surfaces own settlement (retry, queue promotion, background completion) set lastFailure that nobody displays; the next pushed video page — possibly days later, different video — pops the stale alert.
+- Impact: misleading alert context; needs a product decision about where download failures belong (Downloads surface vs global banner).
+- Suggested hardening action: present download failures where they originate (Downloads view alert/badge) and clear on presentation; keep video-page alert scoped to its own start attempts.
+- Blocks implementation: no
+
+### HB-023 — Retry path drops durationSeconds, skipping the storage pre-check
+- Severity: Medium
+- Discovered in: DDV2 systemic-convergence audit
+- Area: App/Download/DownloadsView.swift failed-section retry; App/Download/DownloadRecord.swift (no persisted duration for non-queued rows)
+- Evidence/reproduction: retry calls download(durationSeconds: 0 default); runOnce documents unknown-duration as skipping the free-space check; queued rows carry duration in QueuedDownloadMetadata but failed rows generally do not.
+- Impact: huge-video retry on nearly-full device fails late (finalization/storage) instead of upfront storageRefused.
+- Suggested hardening action: additive persisted duration field (lightweight migration) captured at enqueue, threaded through retry.
+- Blocks implementation: no
+
+### HB-024 — download-quality section conflates resolving/failed/empty into one string
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit
+- Area: App/Video/VideoPageView.loadQualities; App/Video/DownloadQualityPickerView
+- Evidence/reproduction: until extraction finishes (and permanently when extraction fails) the picker reads "No downloadable qualities available" — truthful state is "couldn't check yet/failed".
+- Impact: degraded-state distinction collapse; download button correctly disabled either way.
+- Suggested hardening action: tri-state picker copy keyed off resolution lifecycle.
+- Blocks implementation: no
+
+### HB-025 — SwiftData save failures are logged-only while UI keeps optimistic state
+- Severity: Medium
+- Discovered in: DDV2 systemic-convergence audit
+- Area: App/Library/LibraryStore.save, App/Search/RecentSearchStore.persist
+- Evidence/reproduction: saved/recents flips mutate in-memory state before persistence; a failed save logs a fault but the write silently disappears on relaunch.
+- Impact: session-consistent UI that loses data across relaunches with no user-visible signal; needs a product decision on surfacing.
+- Suggested hardening action: define a degraded-persistence indicator or write-through verification before mutating UI state.
+- Blocks implementation: no
+
+### HB-026 — composer/reply UX edges beyond the submit-guard fixes
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit (partially fixed b9ee1e0)
+- Area: App/Video/VideoPageView.swift composer
+- Evidence/reproduction: FIXED in b9ee1e0: duplicate-submit gate before first await, field disabled during flight, posted-text snapshot. Remaining: tapping Reply discards any typed draft without confirmation.
+- Impact: occasional input loss requiring retyping.
+- Suggested hardening action: preserve draft across reply-target switches or confirm discard.
+- Blocks implementation: no
+
+### HB-027 — main-thread history scans per VideoCard row + per-cell formatter churn
+- Severity: Medium
+- Discovered in: DDV2 systemic-convergence audit
+- Area: App/Components/VideoCard.resumeFraction callers (RootView, SearchView); LibraryStore.history full-table fetch; per-call RelativeDateTimeFormatter/DateFormatter construction
+- Evidence/reproduction: N result rows trigger N complete WatchHistoryEntry fetches per body evaluation; every progress tick invalidates observers during playback.
+- Impact: correctness holds at personal scale; degradation grows with history size on the main actor.
+- Suggested hardening action: inject a precomputed videoID→fraction dictionary per render pass; cache formatters.
+- Blocks implementation: no
+
+### HB-028 — continue-watching strip invisible to VoiceOver on Home/Search cards
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit
+- Area: App/Components/VideoCard.swift progress overlay
+- Evidence/reproduction: the 4pt strip is decoration with no accessibilityValue; Library rows announce via ProgressView but Home/Search cards do not.
+- Impact: VoiceOver users cannot distinguish half-watched from unstarted cards on two of three surfaces.
+- Suggested hardening action: expose an accessibilityValue ("x% watched") on the card element without altering the natural-child label composition the journeys assert.
+- Blocks implementation: no
+
+### HB-029 — Low app-UX batch from the convergence audits
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit (b9ee1e0 era)
+- Area: multiple views
+- Items:
+  - AsyncImage with nil legacy thumbnailURL spins forever instead of a failure glyph (VideoCard).
+  - Library-reconstructed summaries persist neither channelID nor description, permanently hiding Subscribe and description More/Less when opened from Library/playlists (independent of row age).
+  - Playlists load lacks generation token; fast double-tap issues two quota-costing list calls.
+  - PlaylistDetailView error state has no retry affordance (siblings all have one).
+  - Search submit stays enabled during flight — repeated identical submits burn quota (state safety held by generation guard).
+  - Sign-in buttons lack re-entry guards; Settings sign-in silently no-ops under fake sessions.
+  - Remaining sub-44pt targets (description More/Less, Reply/Cancel caption buttons) and non-hidden decorative chevrons; watch-history rows lack sibling identifiers/hints.
+  - Continue-watching visibility thresholds differ between VideoCard (0.01–0.99) and Library rows (any progress > 0).
+  - TabView has no selection binding/state restoration.
+  - Share fallback shares file:///? on malformed ids instead of surfacing an error.
+- Blocks implementation: no
+
+### HB-030 — residual deterministic-test gaps
+- Severity: Low
+- Discovered in: DDV2 systemic-convergence audit
+- Area: Tests/FocusTubeCoreTests
+- Items: commentThreads pageToken plumbing through the client (playlistItems analog is tested); out-of-range numeric feed-resume index restart; empty-channel-title/negative-size OfflineLibraryPolicy edges; custom maxEntries below existing count for recents; equal-timestamp tie ordering.
+- Impact: uncovered edge behaviors only; no known defect behind them today.
+- Suggested hardening action: add the listed cheap table cases.
+- Blocks implementation: no
+
 ### HB-013 — DownloadsView re-fetches all records on every progress render
 - Severity: Low
 - Discovered in: FINAL-COMPLETION_V1 audit (2026-08-23)
