@@ -12,6 +12,9 @@ struct SearchView: View {
 
     @State private var queryText = ""
     @State private var selectedVideo: VideoSummary?
+    /// Submitting a search replaces the keyboard with results: focus is
+    /// dropped explicitly so the results list gets the full viewport.
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         List {
@@ -21,6 +24,7 @@ struct SearchView: View {
                         .textFieldStyle(.roundedBorder)
                         .submitLabel(.search)
                         .onSubmit(submit)
+                        .focused($fieldFocused)
                         .accessibilityLabel("Search query")
                         .accessibilityIdentifier("search-field")
                     Button("Search") {
@@ -100,9 +104,11 @@ struct SearchView: View {
     /// Single explicit-submit path shared by the keyboard (Return/Search key)
     /// and the button. Whitespace-only queries are rejected without an API call;
     /// the trimmed text is what gets submitted and recorded as a recent query.
+    /// A successful submit drops field focus so results render unobstructed.
     private func submit() {
         let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        fieldFocused = false
         recentSearches.record(trimmed)
         Task { await store.submit(trimmed) }
     }

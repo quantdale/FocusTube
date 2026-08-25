@@ -203,6 +203,10 @@ final class Journeys: XCTestCase {
                         settled = recheck
                         break
                     }
+                    // Visible but not yet stable (push animation, quality load,
+                    // keyboard settle): NEVER scroll a visible target away —
+                    // full-range flings would throw it out of the band and
+                    // start a top/bottom oscillation. Just re-read next pass.
                 } else if f.height > 0 {
                     if f.maxY < win.midY {
                         scrollOnce(app, direction: .down, attempt: swipes)
@@ -394,9 +398,8 @@ final class Journeys: XCTestCase {
             app.staticTexts["Fixture Sneaky Short"].exists,
             "short-form results are filtered before render, always"
         )
-        // The keyboard squeezes the results list and swallows reveal gestures:
-        // dismiss it before hunting the load-more control.
-        dismissKeyboard(app)
+        // Submitting drops field focus (product behavior): the keyboard must
+        // not squeeze the results list while the reveal loop hunts load-more.
 
         let lmTrace = revealAndTap(app, "load-more-button")
         XCTAssertTrue(lmTrace.isEmpty, "load more must be reachable [\(lmTrace);\(treeDiagnostics(app))]")
