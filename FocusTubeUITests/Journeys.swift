@@ -246,17 +246,28 @@ final class Journeys: XCTestCase {
             // never fabricate a pass, only unblock a mis-reported reveal.
             if tap, swipes >= 12 {
                 let late = locate(app)
-                let screen = app.frame
-                let f = late.frame
-                if late.exists, f.width > 1, f.height > 1,
-                   f.minY >= screen.minY, f.maxY <= screen.maxY + 1,
-                   f.midX >= screen.minX, f.midX <= screen.maxX {
-                    let cx = min(max(f.midX, screen.minX + 4), screen.maxX - 4)
-                    let cy = min(max(f.midY, screen.minY + 4), screen.maxY - 4)
-                    app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-                        .withOffset(CGVector(dx: cx, dy: cy))
-                        .tap()
-                    return ""
+                if late.exists {
+                    // Existence double-read before ANY snapshot fetch: lazy
+                    // rows can deallocate between exists and frame, and a
+                    // vanished mid-query element throws an uncatchable
+                    // snapshot failure (run 46844a8) instead of returning a
+                    // diagnostic trace.
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+                    let confirm = locate(app)
+                    if confirm.exists {
+                        let screen = app.frame
+                        let f = confirm.frame
+                        if f.width > 1, f.height > 1,
+                           f.minY >= screen.minY, f.maxY <= screen.maxY + 1,
+                           f.midX >= screen.minX, f.midX <= screen.maxX {
+                            let cx = min(max(f.midX, screen.minX + 4), screen.maxX - 4)
+                            let cy = min(max(f.midY, screen.minY + 4), screen.maxY - 4)
+                            app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                                .withOffset(CGVector(dx: cx, dy: cy))
+                                .tap()
+                            return ""
+                        }
+                    }
                 }
             }
             let containerNote = largestScrollContainer(app).map { "container=\(Int($0.frame.width))x\(Int($0.frame.height))" } ?? "container=none"

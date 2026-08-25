@@ -50,8 +50,7 @@ struct RootView: View {
                 DownloadsView(
                     store: libraryStore,
                     downloadManager: downloadManager,
-                    downloadService: downloadService,
-                    playerCoordinator: playerCoordinator
+                    downloadService: downloadService
                 )
             }
             .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }

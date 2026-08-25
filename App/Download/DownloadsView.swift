@@ -11,11 +11,10 @@ struct DownloadsView: View {
     let store: LibraryStore
     @Bindable var downloadManager: DownloadManager
     let downloadService: DownloadService
-    let playerCoordinator: PlayerCoordinator
 
     @State private var pendingDelete: DownloadedMedia?
     @State private var sortOrder: OfflineLibraryPolicy.SortOrder = .newestFirst
-    @State private var playingLocal: OfflineMediaSummary?
+    @State private var playingLocal: LocalPlaybackTarget?
 
     /// Phases the coordinator's state machine allows cancelling. Validating/
     /// muxing/finalizing are intentionally non-cancellable — the coordinator
@@ -43,8 +42,8 @@ struct DownloadsView: View {
             .padding(.bottom, 24)
         }
         .navigationTitle("Downloads")
-        .sheet(item: $playingLocal) { media in
-            LocalPlayerSheet(playerCoordinator: playerCoordinator, media: media) {
+        .sheet(item: $playingLocal) { target in
+            LocalPlayerSheet(fileURL: target.url, title: target.title, channelTitle: target.channel) {
                 playingLocal = nil
             }
         }
@@ -292,18 +291,12 @@ struct DownloadsView: View {
     private func offlineRow(_ item: OfflineMediaSummary) -> some View {
         HStack {
             Button {
-                // Local playback must not tick the online video page's
-                // history handler; route progress away and set local Now
-                // Playing metadata explicitly. A visible local player surface
-                // (HB-014) lets journeys assert a genuine playing state.
-                playerCoordinator.onProgress = nil
                 if let stored = store.downloaded.first(where: { $0.id == item.id }) {
-                    playerCoordinator.playLocalFile(
-                        stored.fileURL,
+                    playingLocal = LocalPlaybackTarget(
+                        url: stored.fileURL,
                         title: item.title,
-                        artist: nil
+                        channel: item.channelTitle
                     )
-                    playingLocal = item
                 }
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
@@ -354,27 +347,50 @@ struct DownloadsView: View {
     }
 }
 
-/// Full-screen local player for offline media. Stopping on dismiss prevents
-/// background audio continuing invisibly after the surface is gone.
+/// One local-playback presentation. Identifiable by file URL so `.sheet(item:)`
+/// can present a fresh player per target.
+struct LocalPlaybackTarget: Identifiable {
+    let url: URL
+    let title: String
+    let channel: String
+    var id: String { url.absoluteString }
+}
+
+/// Full-screen local player for offline media. Owns a DEDICATED coordinator per
+/// presentation: the shared app coordinator's AVPlayerViewController belongs to
+/// whichever surface embedded it last (the video page), and re-parenting that
+/// controller into this sheet paused playback mid-flight (run 46844a8,
+/// pstate=paused) while online failure states leaked into offline playback.
+/// Stopping on dismiss prevents background audio continuing invisibly after
+/// the surface is gone.
 struct LocalPlayerSheet: View {
-    let playerCoordinator: PlayerCoordinator
-    let media: OfflineMediaSummary
+    let fileURL: URL
+    let title: String
+    let channelTitle: String
     let onDone: () -> Void
+
+    @State private var coordinator: PlayerCoordinator?
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
-            PlayerView(coordinator: playerCoordinator)
-                .padding(.top, 48)
+            if let coordinator {
+                PlayerView(coordinator: coordinator)
+                    .padding(.top, 48)
+            } else {
+                ProgressView()
+                    .tint(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             VStack {
                 HStack {
-                    Text(media.title)
+                    Text(title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Spacer()
                     Button("Done") {
-                        playerCoordinator.stop()
+                        coordinator?.stop()
                         onDone()
                     }
                     .accessibilityIdentifier("local-player-done")
@@ -384,11 +400,21 @@ struct LocalPlayerSheet: View {
                 Spacer()
             }
         }
+        .task {
+            if coordinator == nil {
+                let fresh = PlayerCoordinator()
+                fresh.nowPlayingTitle = title
+                fresh.nowPlayingArtist = channelTitle
+                fresh.playLocalFile(fileURL, title: title, artist: channelTitle)
+                coordinator = fresh
+            }
+        }
         // Swipe-down (interactive) dismissal bypasses the Done button; stop
         // here too so audio never continues invisibly after the surface goes.
         // Double-stop is idempotent (Done already stopped the player).
         .onDisappear {
-            playerCoordinator.stop()
+            coordinator?.stop()
+            coordinator = nil
         }
     }
 }

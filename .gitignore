@@ -38,6 +38,9 @@ Thumbs.db
 # Local diagnostics scratch
 ann.json
 ann*.txt
+ann*.json
+checks_*.json
+jobs_*.json
 cr.json
 jobs.json
 runs*.json
