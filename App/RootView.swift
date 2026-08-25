@@ -354,9 +354,9 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         List {
-            if let removalError {
+            if let message = removalError {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(removalError).font(.caption).foregroundStyle(.secondary)
+                    Text(message).font(.caption).foregroundStyle(.secondary)
                     Button("Try again") {
                         removalError = nil
                         Task { await load() }

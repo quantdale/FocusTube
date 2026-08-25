@@ -86,9 +86,10 @@ struct SearchView: View {
             }
         }
         .navigationTitle("Search")
-        // Any drag over the results drops the keyboard so below-fold controls
-        // are reachable at full list height; submit keeps field focus.
-        .keyboardDismissMode(.onDragStart)
+        // Any scroll over the results immediately drops the keyboard so
+        // below-fold controls are reachable at full list height; submit keeps
+        // field focus.
+        .scrollDismissesKeyboard(.immediately)
         // Pushed video page (see LibraryView note): modal presentation of
         // AVKit-hosting content is unreliable on current iOS 26 runtimes.
         .navigationDestination(item: $selectedVideo) { video in
