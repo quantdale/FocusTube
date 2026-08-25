@@ -349,12 +349,15 @@ enum FixtureMediaFactory {
         }
         input.markAsFinished()
 
-        // BOUNDED completion wait — never an unbounded semaphore block.
-        var waitedMs = 0
-        while writer.status == .writing && waitedMs < 10_000 {
-            Thread.sleep(forTimeInterval: 0.01)
-            waitedMs += 10
-        }
+        // finishWriting() is REQUIRED: markAsFinished only closes the INPUT;
+        // without an explicit finishWriting call the writer stays .writing
+        // forever, so any completion poll deterministically expires with
+        // Code=4 (the aebae44 regression that silently degraded every
+        // transfer to filler bytes). Completion is awaited through a bounded
+        // semaphore — never an unbounded block on a wedged encoder.
+        let finished = DispatchSemaphore(value: 0)
+        writer.finishWriting { finished.signal() }
+        _ = finished.wait(timeout: .now() + 10)
         guard writer.status == .completed else {
             throw writer.error ?? NSError(domain: "FixtureMedia", code: 4)
         }
@@ -409,15 +412,16 @@ final class ScriptedDownloadTransport: DownloadTransport, @unchecked Sendable {
                 let temp = try FixtureMediaFactory.tempCopy(for: request.id, component: component)
                 onEvent(.completed(tempLocation: temp, component: component))
             } catch {
-                // Generation failure degrades to filler bytes; the exact error
-                // is stashed for the DEBUG diagnostic surface in DownloadsView
-                // (journey failure trees read it without authenticated API
-                // access).
+                // Generation failure must NEVER masquerade as a completed
+                // download: opaque filler bytes previously produced fake
+                // completed rows whose playback failed (the run 32828052990
+                // regression). The transfer instead degrades to the same typed
+                // transport failure the failure script uses, so the row
+                // honestly reports a failed state. The exact error is stashed
+                // for the DEBUG diagnostic surface in DownloadsView.
                 UserDefaults.standard.set("\(error)", forKey: "fixture.media.enc-failure")
-                let temp = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("fixture-\(request.id)#\(component).bin")
-                try? Data([0xFF, 0xFF, 0xFF, 0xFF]).write(to: temp)
-                onEvent(.completed(tempLocation: temp, component: component))
+                onEvent(.failed(.transportFailed))
+                return
             }
         }
     }

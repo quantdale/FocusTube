@@ -12,6 +12,12 @@ struct SearchView: View {
 
     @State private var queryText = ""
     @State private var selectedVideo: VideoSummary?
+    /// SwiftUI owns field focus: submit drops it deliberately (results render
+    /// unobstructed by the keyboard), and because @FocusState stays the single
+    /// source of truth the field can be re-focused by tapping it again. The
+    /// earlier UIResponder.resignFirstResponder approach desynced SwiftUI's
+    /// internal focus state on iOS 26 and broke re-focus entirely.
+    @FocusState private var queryFieldFocused: Bool
 
     var body: some View {
         List {
@@ -21,6 +27,7 @@ struct SearchView: View {
                         .textFieldStyle(.roundedBorder)
                         .submitLabel(.search)
                         .onSubmit(submit)
+                        .focused($queryFieldFocused)
                         .accessibilityLabel("Search query")
                         .accessibilityIdentifier("search-field")
                     Button("Search") {
@@ -100,9 +107,13 @@ struct SearchView: View {
     /// Single explicit-submit path shared by the keyboard (Return/Search key)
     /// and the button. Whitespace-only queries are rejected without an API call;
     /// the trimmed text is what gets submitted and recorded as a recent query.
+    /// A successful submit deliberately drops field focus through the
+    /// @FocusState binding so results render at full height; refocusing remains
+    /// a plain tap on the field (SwiftUI keeps its internal state consistent).
     private func submit() {
         let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        queryFieldFocused = false
         recentSearches.record(trimmed)
         Task { await store.submit(trimmed) }
     }

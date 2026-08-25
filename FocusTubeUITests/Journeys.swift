@@ -406,8 +406,9 @@ final class Journeys: XCTestCase {
             app.staticTexts["Fixture Sneaky Short"].exists,
             "short-form results are filtered before render, always"
         )
-        // Submitting drops field focus (product behavior): the keyboard must
-        // not squeeze the results list while the reveal loop hunts load-more.
+        // Submit deliberately drops field focus (SwiftUI @FocusState): the
+        // keyboard must not squeeze the results list while the reveal loop
+        // hunts load-more, and tapping the field again re-focuses it.
 
         let lmTrace = revealAndTap(app, "load-more-button")
         XCTAssertTrue(lmTrace.isEmpty, "load more must be reachable [\(lmTrace);\(treeDiagnostics(app))]")
