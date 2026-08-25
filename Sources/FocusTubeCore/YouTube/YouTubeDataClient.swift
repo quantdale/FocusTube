@@ -297,7 +297,10 @@ public struct YouTubeDataClient: YouTubeAPI {
                 playlistItemID: $0.id,
                 videoID: $0.contentDetails.videoId,
                 title: $0.snippet.title,
-                channelTitle: $0.snippet.videoOwnerChannelTitle ?? $0.snippet.channelTitle
+                channelTitle: $0.snippet.videoOwnerChannelTitle ?? $0.snippet.channelTitle,
+                videoDescription: $0.snippet.description,
+                thumbnailURL: $0.snippet.thumbnails?.medium?.url.absoluteString,
+                channelID: $0.snippet.videoOwnerChannelId
             )
         }
     }
@@ -680,6 +683,15 @@ private struct PlaylistItemDetailRow: Decodable {
         let title: String
         let channelTitle: String
         let videoOwnerChannelTitle: String?
+        let videoOwnerChannelId: String?
+        let description: String?
+        let thumbnails: Thumbnails?
+        struct Thumbnails: Decodable {
+            let medium: Thumbnail?
+            struct Thumbnail: Decodable {
+                let url: URL
+            }
+        }
     }
     struct ContentDetails: Decodable {
         let videoId: String

@@ -102,13 +102,18 @@ disposition. Dispositions update per workstream as evidence lands.
   was silently inheriting throwing defaults, proving the trap was live.
   Compiler now enforces every conformer implements what it claims.
 
-### HB-020 (Low) — OfflineLibraryPolicy tie-order claims exceed guarantees — LIVE
+### HB-020 (Low) — OfflineLibraryPolicy tie-order claims exceed guarantees — FIXED (H3-03)
 - Code: OfflineLibraryPolicy.swift:33-49 sorted() claims stability but uses comparator without
   tiebreakers; groupedByChannel(:53-75) orders groups by max createdAt with equal-timestamp ties
   unordered across runs (dictionary + non-total comparator).
 - Tests: OfflineLibraryPolicyTests cover primary orders, not ties/negative sizes/empty titles.
-- Disposition: fix in H3-03 — explicit deterministic tiebreakers (videoID), total order comparators,
-  edge tests (equal timestamps, empty channel titles, negative sizes, grouping ties).
+- Disposition: FIXED in H3-03 — every comparator is now TOTAL: explicit `id`
+  ascending tiebreaker after primary keys in all three sort orders;
+  groupedByChannel breaks equal newest-timestamp ties by case-insensitive
+  channel display name. Stability claim replaced with a documented total-order
+  guarantee. Tests: equal-timestamps-by-id across all orders incl. reversed
+  input invariance, negative sizes with id tiebreak, empty/whitespace/named
+  channel grouping, grouping tie on newest timestamp.
 
 ### HB-021 (Low) — per-row ISO8601DateFormatter allocation; fractional seconds nil — FIXED (H3-01)
 - Code: ISO8601DateFormatter constructed inside decode maps at YouTubeDataClient.swift:59 (details),
@@ -159,12 +164,23 @@ disposition. Dispositions update per workstream as evidence lands.
 - Disposition: fix in H3-05 — tri-state lifecycle (resolving / failed / genuinely-empty) driving picker
   copy; button disabled-state preserved.
 
-### HB-025 (Medium) — SwiftData save failures logged-only while UI keeps optimistic state — LIVE
+### HB-025 (Medium) — SwiftData save failures logged-only while UI keeps optimistic state — FIXED (H3-03)
 - Code: LibraryStore.save():287-293 logs fault; RecentSearchStore.persist():76-86 logs fault and keeps
   in-memory view. Mutations flip observable state BEFORE persistence outcome is known.
-- Disposition: fix in H3-03 — truthful degraded-persistence signal (bounded design): write-through
-  verification ordering + user-visible degraded indicator where durable loss would otherwise be
-  silent; save/delete rollback audit; deterministic failure-injection tests.
+- Disposition: FIXED in H3-03 with a two-tier truthful design:
+  Durability-critical data (offline download index): addDownloadedMedia rolls
+  back insert/update mutations when save() fails (ALL prior field values
+  restored) so the session never advertises a download whose durable row
+  vanished.
+  Session-tolerant data (history/saves): optimistic in-memory state kept for
+  usability, but observable `isPersistenceDegraded` flips on failure and clears
+  on next success — no silent durability claims; rationale recorded per the
+  prompt's tested-design option.
+  Recents: full write-through — entries advance only after persist succeeds;
+  failed rewrites context.rollback() so broken transactions cannot resurrect.
+  Injected save seam (`saveHandler:`) enables deterministic failure injection.
+  Tests (app target): rollback-on-insert/update + flag lifecycle; history
+  session-usability-with-signal; recents write-through gating for record/clear.
 
 ### HB-026 (Low) — reply-target switch destroys draft — LIVE
 - Code: VideoPageView replyTarget set at :550-551 clears composerText unconditionally; submit success
@@ -186,14 +202,19 @@ disposition. Dispositions update per workstream as evidence lands.
 - Disposition: fix in H3-05 — add accessibilityValue("x% watched") on the thumbnail/card element
   WITHOUT collapsing natural-child label composition; verify journeys unaffected.
 
-### HB-029 (Low batch) — multiple UX edges — LIVE (each sub-item spot-checked)
+### HB-029 (Low batch) — multiple UX edges — PARTIALLY FIXED (persistence/navigation portions in H3-03; remainder owned by H3-05)
 - AsyncImage(nil URL) spins forever: VideoCard.thumbnail uses AsyncImage(url:) — nil URL never leaves
   .empty phase (failure branch only covers real-URL failures). Fix: bounded placeholder/failure glyph
   for nil URL.
-- Playlist-origin summaries drop channelID/description: PlaylistDetailView:374-383 builds VideoSummary
-  with nils (duration/published/thumbnail/description/channelID) — Subscribe hidden + no description
-  when opened from playlist; same pattern suspected for Library-origin reconstructions (verify during
-  H3-03; evolve persisted models additively).
+- Playlist-origin summaries drop channelID/description: FIXED in H3-03 —
+  PlaylistItemSummary gained additive optional videoDescription/thumbnailURL/
+  channelID (init defaults keep fakes compiling); fetchPlaylistItems decodes
+  snippet.description / thumbnails.medium / videoOwnerChannelId (wire test
+  pins them); PlaylistDetailView reconstructs VideoSummary with those fields;
+  WatchHistoryEntry/SavedItem gained additive channelID/videoDescription
+  (lightweight migration), populated at recordProgress/save call sites and used
+  by RootView summary(from:) reconstruction — Subscribe and description
+  More/Less survive Library/playlist-origin navigation; legacy rows degrade nil.
 - Playlists load lacks generation token: verify exact site during H3-05; add pre-await duplicate gate.
 - PlaylistDetailView load-error has NO retry affordance: RootView.swift:367-368 renders Text(errorText)
   only (removalError DOES have Try again). Fix: real retry affordance + stale-response protection.

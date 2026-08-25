@@ -53,7 +53,9 @@ final class PlaylistAPITests: XCTestCase {
     func testFetchPlaylistItemsCarriesRemovableResourceID() async throws {
         let body = """
         {"items":[{"id":"PI9","snippet":{"title":"Item Title",
-        "channelTitle":"Chan","videoOwnerChannelTitle":"Owner"},
+        "channelTitle":"Chan","videoOwnerChannelTitle":"Owner",
+        "videoOwnerChannelId":"UCowner123","description":"Item description text",
+        "thumbnails":{"medium":{"url":"https://t/pi9.jpg"}}},
         "contentDetails":{"videoId":"vid7"}}]}
         """
         let performer = CapturingPerformer(data: Data(body.utf8))
@@ -65,6 +67,9 @@ final class PlaylistAPITests: XCTestCase {
         XCTAssertEqual(items.first?.playlistItemID, "PI9", "removal needs the playlistItem id")
         XCTAssertEqual(items.first?.videoID, "vid7", "playback needs the video id")
         XCTAssertEqual(items.first?.channelTitle, "Owner")
+        XCTAssertEqual(items.first?.channelID, "UCowner123", "Subscribe must survive playlist-origin navigation")
+        XCTAssertEqual(items.first?.videoDescription, "Item description text")
+        XCTAssertEqual(items.first?.thumbnailURL, "https://t/pi9.jpg")
         XCTAssertEqual(queryItems(performer.lastRequest)["playlistId"], "PL1")
     }
 

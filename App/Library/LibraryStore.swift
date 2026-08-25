@@ -24,10 +24,23 @@ final class LibraryStore {
     private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "library-store")
     private let context: ModelContext
     private let fileManager: FileManaging
+    /// Injected persistence boundary (H3-03/HB-025): production performs
+    /// `context.save()`; deterministic failure-injection tests substitute a
+    /// throwing closure.
+    private let performSave: () throws -> Void
+    /// HB-025 truthful signal: set when a SwiftData save fails, cleared by the
+    /// next successful save. UI may surface this as a degraded-persistence
+    /// indicator instead of silently claiming durability.
+    public private(set) var isPersistenceDegraded = false
 
-    public init(context: ModelContext, fileManager: FileManaging = FileManager.default) {
+    public init(
+        context: ModelContext,
+        fileManager: FileManaging = FileManager.default,
+        saveHandler: (() throws -> Void)? = nil
+    ) {
         self.context = context
         self.fileManager = fileManager
+        self.performSave = saveHandler ?? { try context.save() }
     }
 
     // MARK: - Watch history / resume
@@ -40,7 +53,9 @@ final class LibraryStore {
         duration: Int?,
         completed: Bool,
         publishedAt: Date? = nil,
-        thumbnailURL: String? = nil
+        thumbnailURL: String? = nil,
+        channelID: String? = nil,
+        videoDescription: String? = nil
     ) {
         // A failed fetch must not silently insert a duplicate entry for a
         // video that may already have history — abort and log instead.
@@ -60,6 +75,8 @@ final class LibraryStore {
             existing.updatedAt = Date()
             if let publishedAt { existing.publishedAt = publishedAt }
             if let thumbnailURL { existing.thumbnailURL = thumbnailURL }
+            if let channelID { existing.channelID = channelID }
+            if let videoDescription { existing.videoDescription = videoDescription }
         } else {
             context.insert(WatchHistoryEntry(
                 videoID: videoID,
@@ -70,7 +87,9 @@ final class LibraryStore {
                 updatedAt: Date(),
                 completed: completed,
                 publishedAt: publishedAt,
-                thumbnailURL: thumbnailURL
+                thumbnailURL: thumbnailURL,
+                channelID: channelID,
+                videoDescription: videoDescription
             ))
         }
         mutate()
@@ -116,7 +135,9 @@ final class LibraryStore {
         channelTitle: String,
         durationSeconds: Int? = nil,
         publishedAt: Date? = nil,
-        thumbnailURL: String? = nil
+        thumbnailURL: String? = nil,
+        channelID: String? = nil,
+        videoDescription: String? = nil
     ) {
         // A failed fetch must not silently insert a duplicate save — abort.
         let existing: SavedItem?
@@ -130,6 +151,8 @@ final class LibraryStore {
             existing.durationSeconds = durationSeconds ?? existing.durationSeconds
             if let publishedAt { existing.publishedAt = publishedAt }
             if let thumbnailURL { existing.thumbnailURL = thumbnailURL }
+            if let channelID { existing.channelID = channelID }
+            if let videoDescription { existing.videoDescription = videoDescription }
             mutate()
             save()
         } else {
@@ -140,7 +163,9 @@ final class LibraryStore {
                 savedAt: Date(),
                 durationSeconds: durationSeconds,
                 publishedAt: publishedAt,
-                thumbnailURL: thumbnailURL
+                thumbnailURL: thumbnailURL,
+                channelID: channelID,
+                videoDescription: videoDescription
             ))
             mutate()
             save()
@@ -194,6 +219,12 @@ final class LibraryStore {
             // blank must never clobber a known value.
             let newIsPlaceholder = media.title == media.videoID
             let existingIsPlaceholder = existing.title == existing.videoID
+            let previousTitle = existing.title
+            let previousChannelTitle = existing.channelTitle
+            let previousResolution = existing.resolution
+            let previousFileURL = existing.fileURL
+            let previousSizeBytes = existing.sizeBytes
+            let previousCreatedAt = existing.createdAt
             if !newIsPlaceholder || existingIsPlaceholder {
                 existing.title = media.title
             }
@@ -204,11 +235,27 @@ final class LibraryStore {
             existing.fileURL = media.fileURL
             existing.sizeBytes = media.sizeBytes
             existing.createdAt = media.createdAt
+            mutate()
+            if !save() {
+                // HB-025 durability-critical rollback: the offline index must
+                // never advertise a download whose durable row failed to
+                // persist. Restore the exact prior field values.
+                existing.title = previousTitle
+                existing.channelTitle = previousChannelTitle
+                existing.resolution = previousResolution
+                existing.fileURL = previousFileURL
+                existing.sizeBytes = previousSizeBytes
+                existing.createdAt = previousCreatedAt
+                Self.logger.fault("Downloaded-index upsert rolled back after failed save")
+            }
         } else {
             context.insert(media)
+            mutate()
+            if !save() {
+                context.delete(media)
+                Self.logger.fault("Downloaded-index insert rolled back after failed save")
+            }
         }
-        mutate()
-        save()
     }
 
     public var downloaded: [DownloadedMedia] {
@@ -282,13 +329,19 @@ final class LibraryStore {
 
     // MARK: - Persistence / filesystem hygiene
 
-    /// Persists pending changes; a failed save is logged loudly instead of
-    /// silently dropped, so metadata loss is diagnosable.
-    private func save() {
+    /// Persists pending changes. On failure the store flags itself degraded
+    /// (observable) and logs loudly; callers that need durable truth roll
+    /// their optimistic mutation back (see `addDownloadedMedia`).
+    @discardableResult
+    private func save() -> Bool {
         do {
-            try context.save()
+            try performSave()
+            isPersistenceDegraded = false
+            return true
         } catch {
-            Self.logger.fault("SwiftData save failed (\(error.localizedDescription))")
+            isPersistenceDegraded = true
+            Self.logger.fault("SwiftData save failed (\(error.localizedDescription)); persistence degraded")
+            return false
         }
     }
 

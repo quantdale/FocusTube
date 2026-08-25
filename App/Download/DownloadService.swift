@@ -1,4 +1,5 @@
 import Foundation
+import os
 import FocusTubeCore
 
 /// A user-observable download failure: which video+quality failed and the typed

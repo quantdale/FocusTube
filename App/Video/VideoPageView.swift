@@ -129,7 +129,9 @@ struct VideoPageView: View {
                         duration: video.durationSeconds,
                         completed: false,
                         publishedAt: video.publishedAt,
-                        thumbnailURL: video.thumbnailURL?.absoluteString
+                        thumbnailURL: video.thumbnailURL?.absoluteString,
+                        channelID: video.channelID,
+                        videoDescription: video.description
                     )
                 }
             }
@@ -281,7 +283,9 @@ struct VideoPageView: View {
                     channelTitle: video.channelTitle,
                     durationSeconds: video.durationSeconds,
                     publishedAt: video.publishedAt,
-                    thumbnailURL: video.thumbnailURL?.absoluteString
+                    thumbnailURL: video.thumbnailURL?.absoluteString,
+                    channelID: video.channelID,
+                    videoDescription: video.description
                 )
                 isSaved = true
             }

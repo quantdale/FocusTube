@@ -30,26 +30,38 @@ public enum OfflineLibraryPolicy {
         case byChannelThenNewest
     }
 
-    /// Returns `items` ordered per `order`. Stable: ties preserve input order.
+    /// Returns `items` ordered per `order`. HB-020: the order is TOTAL —
+    /// every comparator ends in an explicit `id` tiebreaker, so equal
+    /// timestamps/sizes/negative values cannot make results depend on sort
+    /// implementation details or input order.
     public static func sorted(_ items: [OfflineMediaSummary], by order: SortOrder) -> [OfflineMediaSummary] {
         switch order {
         case .newestFirst:
-            return items.sorted(by: { $0.createdAt > $1.createdAt })
+            return items.sorted(by: { lhs, rhs in
+                if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+                return lhs.id < rhs.id
+            })
         case .largestFirst:
-            return items.sorted(by: { $0.sizeBytes > $1.sizeBytes })
+            return items.sorted(by: { lhs, rhs in
+                if lhs.sizeBytes != rhs.sizeBytes { return lhs.sizeBytes > rhs.sizeBytes }
+                return lhs.id < rhs.id
+            })
         case .byChannelThenNewest:
             return items.sorted(by: { lhs, rhs in
                 let comparison = lhs.channelTitle.caseInsensitiveCompare(rhs.channelTitle)
                 if comparison != .orderedSame {
                     return comparison == .orderedAscending
                 }
-                return lhs.createdAt > rhs.createdAt
+                if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+                return lhs.id < rhs.id
             })
         }
     }
 
     /// Groups items by channel title (case-insensitive), channels ordered by
-    /// their newest item first; each group's items are newest-first.
+    /// their newest item first (ties broken by channel display name,
+    /// case-insensitively); each group's items are newest-first with the same
+    /// explicit tiebreakers as `sorted`. Deterministic across runs.
     public static func groupedByChannel(_ items: [OfflineMediaSummary]) -> [(channel: String, items: [OfflineMediaSummary])] {
         var buckets: [String: [OfflineMediaSummary]] = [:]
         var keyByCanonical: [String: String] = [:]
@@ -66,11 +78,10 @@ public enum OfflineLibraryPolicy {
                 (keyByCanonical[key] ?? key, sorted(group, by: .newestFirst))
             }
             .sorted(by: { lhs, rhs in
-                guard let l = lhs.items.map({ $0.createdAt }).max(),
-                      let r = rhs.items.map({ $0.createdAt }).max() else {
-                    return lhs.channel < rhs.channel
-                }
-                return l > r
+                let l = lhs.items.map { $0.createdAt }.max()
+                let r = rhs.items.map { $0.createdAt }.max()
+                if l != r { return l ?? .distantPast > r ?? .distantPast }
+                return lhs.channel.lowercased() < rhs.channel.lowercased()
             })
     }
 

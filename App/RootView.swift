@@ -139,7 +139,9 @@ struct LibraryView: View {
 
     /// Rebuilds the navigation payload from persisted fields. DDV2-08 keeps
     /// optional presentation metadata locally so reconstruction no longer
-    /// loses duration/publish/thumbnail data.
+    /// loses duration/publish/thumbnail data; H3-03 (HB-029) adds channel id
+    /// and description so Subscribe and More/Less survive Library-origin
+    /// navigation. Legacy rows carry nil and degrade as before.
     private static func summary(from entry: WatchHistoryEntry) -> VideoSummary {
         VideoSummary(
             id: entry.videoID,
@@ -148,7 +150,8 @@ struct LibraryView: View {
             durationSeconds: entry.durationSeconds,
             publishedAt: entry.publishedAt,
             thumbnailURL: entry.thumbnailURL.flatMap(URL.init(string:)),
-            description: nil
+            description: entry.videoDescription,
+            channelID: entry.channelID
         )
     }
 
@@ -160,7 +163,8 @@ struct LibraryView: View {
             durationSeconds: item.durationSeconds,
             publishedAt: item.publishedAt,
             thumbnailURL: item.thumbnailURL.flatMap(URL.init(string:)),
-            description: nil
+            description: item.videoDescription,
+            channelID: item.channelID
         )
     }
 
@@ -372,15 +376,19 @@ struct PlaylistDetailView: View {
             } else {
                 ForEach(items, id: \.playlistItemID) { item in
                     Button {
+                        // H3-03 (HB-029): playlist-origin payloads keep the
+                        // video's description/owner-channel metadata when the
+                        // API provided it, so Subscribe and description
+                        // More/Less no longer vanish on this route.
                         onOpenVideo(VideoSummary(
                             id: item.videoID,
                             title: item.title,
                             channelTitle: item.channelTitle,
                             durationSeconds: nil,
                             publishedAt: nil,
-                            thumbnailURL: nil,
-                            description: nil,
-                            channelID: nil
+                            thumbnailURL: item.thumbnailURL.flatMap(URL.init(string:)),
+                            description: item.videoDescription,
+                            channelID: item.channelID
                         ))
                     } label: {
                         Text(item.title).lineLimit(2)

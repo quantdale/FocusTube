@@ -16,8 +16,12 @@ final class WatchHistoryEntry {
     /// legacy rows decode as nil and fall back gracefully in UI).
     var publishedAt: Date?
     var thumbnailURL: String?
+    /// H3-03 (HB-029, additive): channel id + description so Library-origin
+    /// navigation keeps Subscribe actions and the description. Legacy rows nil.
+    var channelID: String?
+    var videoDescription: String?
 
-    init(videoID: String, title: String, channelTitle: String, lastPositionSeconds: Double, durationSeconds: Int?, updatedAt: Date, completed: Bool, publishedAt: Date? = nil, thumbnailURL: String? = nil) {
+    init(videoID: String, title: String, channelTitle: String, lastPositionSeconds: Double, durationSeconds: Int?, updatedAt: Date, completed: Bool, publishedAt: Date? = nil, thumbnailURL: String? = nil, channelID: String? = nil, videoDescription: String? = nil) {
         self.videoID = videoID
         self.title = title
         self.channelTitle = channelTitle
@@ -27,6 +31,8 @@ final class WatchHistoryEntry {
         self.completed = completed
         self.publishedAt = publishedAt
         self.thumbnailURL = thumbnailURL
+        self.channelID = channelID
+        self.videoDescription = videoDescription
     }
 }
 
@@ -41,8 +47,11 @@ final class SavedItem {
     var durationSeconds: Int?
     var publishedAt: Date?
     var thumbnailURL: String?
+    /// H3-03 (HB-029, additive): see WatchHistoryEntry.
+    var channelID: String?
+    var videoDescription: String?
 
-    init(videoID: String, title: String, channelTitle: String, savedAt: Date, durationSeconds: Int? = nil, publishedAt: Date? = nil, thumbnailURL: String? = nil) {
+    init(videoID: String, title: String, channelTitle: String, savedAt: Date, durationSeconds: Int? = nil, publishedAt: Date? = nil, thumbnailURL: String? = nil, channelID: String? = nil, videoDescription: String? = nil) {
         self.videoID = videoID
         self.title = title
         self.channelTitle = channelTitle
@@ -50,6 +59,8 @@ final class SavedItem {
         self.durationSeconds = durationSeconds
         self.publishedAt = publishedAt
         self.thumbnailURL = thumbnailURL
+        self.channelID = channelID
+        self.videoDescription = videoDescription
     }
 }
 

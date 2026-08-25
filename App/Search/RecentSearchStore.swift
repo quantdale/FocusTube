@@ -28,26 +28,38 @@ public final class RecentSearchStore {
 
     private let context: ModelContext
     private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "search-recents")
+    /// Injected persistence boundary (H3-03/HB-025) for deterministic
+    /// failure-injection tests.
+    private let performSave: () throws -> Void
+    /// HB-025 truthful signal: set when persistence fails; cleared by the next
+    /// successful persist. Entries only ever reflect durable truth while the
+    /// flag is set (write-through ordering below).
+    public private(set) var isPersistenceDegraded = false
 
-    public init(context: ModelContext) {
+    public init(context: ModelContext, saveHandler: (() throws -> Void)? = nil) {
         self.context = context
+        self.performSave = saveHandler ?? { try context.save() }
         load()
     }
 
     /// Records a query on explicit submit (policy handles dedupe/bound).
+    /// Write-through: the in-memory view commits ONLY after persistence
+    /// succeeds, so recents never claim more durability than the store holds.
     public func record(_ rawQuery: String) {
-        entries = SearchRecentsPolicy.record(entries, newQuery: rawQuery, now: Date())
-        persist(entries)
+        let updated = SearchRecentsPolicy.record(entries, newQuery: rawQuery, now: Date())
+        guard persist(updated) else { return }
+        entries = updated
     }
 
     public func remove(_ query: String) {
-        entries = SearchRecentsPolicy.remove(query, from: entries)
-        persist(entries)
+        let updated = SearchRecentsPolicy.remove(query, from: entries)
+        guard persist(updated) else { return }
+        entries = updated
     }
 
     public func clear() {
+        guard persist([]) else { return }
         entries.removeAll()
-        persist(entries)
     }
 
     /// Local prefix/contains suggestions for the current typed fragment.
@@ -73,15 +85,25 @@ public final class RecentSearchStore {
 
     /// Rewrites the table from the policy-produced list. Personal-scale row
     /// counts make full-rewrite the simplest deterministic persistence.
-    private func persist(_ updated: [RecentQueryEntry]) {
+    /// Returns success so callers can gate their in-memory commit (HB-025).
+    @discardableResult
+    private func persist(_ updated: [RecentQueryEntry]) -> Bool {
         do {
             try context.delete(model: RecentSearchEntry.self)
             for entry in updated {
                 context.insert(RecentSearchEntry(query: entry.query, updatedAt: entry.updatedAt))
             }
-            try context.save()
+            try performSave()
+            isPersistenceDegraded = false
+            return true
         } catch {
-            Self.logger.fault("Recent-search persist failed (\(error.localizedDescription)); keeping in-memory view")
+            // A failed full-rewrite can leave deleted/inserted rows pending in
+            // the context; roll them back so a later unrelated save cannot
+            // resurrect this broken transaction.
+            context.rollback()
+            isPersistenceDegraded = true
+            Self.logger.fault("Recent-search persist failed (\(error.localizedDescription)); keeping previous durable view")
+            return false
         }
     }
 }
