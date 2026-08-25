@@ -179,6 +179,14 @@ jobs:
             echo "::error::$line"
           done || true
 
+      # Structural regression guard: the test steps above run under
+      # continue-on-error so both bundles always execute and diagnostics always
+      # publish; this checks the honest fail-closed Gate contract survived any
+      # workflow edits (a weakened gate must fail CI, not pass silently).
+      - name: Gate contract self-check
+        if: always()
+        run: bash scripts/ci/verify-gate-contract.sh
+
       # continue-on-error on the test steps exists only to guarantee both bundles
       # always run and diagnostics publish; this gate restores an honest verdict.
       - name: Gate

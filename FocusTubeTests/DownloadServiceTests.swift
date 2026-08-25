@@ -714,7 +714,6 @@ final class DownloadServiceTests: XCTestCase {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("focustube-dsvc-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
         let temp = root.appendingPathComponent("component.mp4")
         try Data([0x01]).write(to: temp)
@@ -723,33 +722,31 @@ final class DownloadServiceTests: XCTestCase {
         let service = await DownloadService(
             extractor: PerVideoExtractor(mediaByID: [
                 "v23": combinedMedia(videoID: "v23", resolution: 720),
-                "v24": combinedMedia(videoID: "v24", resolution: 720)
+                "v24": combinedMedia(videoID: "v24", resolution: 720),
+                "v25": combinedMedia(videoID: "v25", resolution: 720)
             ]),
             downloadManager: manager,
             library: try await makeLibrary(),
             mediaDirectory: root.appendingPathComponent("Media")
         )
 
-        let running = Task { await service.download(videoID: "v23", title: "1", channelTitle: "C", quality: .p720) }
-        await waitUntil({ service.isInFlight(videoID: "v23", quality: .p720) },
-                        "transfer never appeared in flight")
+        // Fill BOTH slots, then request a third job that must park queued.
+        let first = Task { await service.download(videoID: "v23", title: "1", channelTitle: "C", quality: .p720) }
+        let second = Task { await service.download(videoID: "v24", title: "2", channelTitle: "C", quality: .p720) }
+        await waitUntil({ gated.beginCount == 2 }, "both slots should be running")
 
-        let queued = Task { await service.download(videoID: "v24", title: "2", channelTitle: "C", quality: .p720) }
+        let third = Task { await service.download(videoID: "v25", title: "3", channelTitle: "C", quality: .p720) }
         await waitUntil({ [manager] in
-            await manager.records.contains { $0.id == "v24-720" && $0.state.status == .queued }
-        }, "second download never parked as queued")
+            await manager.records.contains { $0.id == "v25-720" && $0.state.status == .queued }
+        }, "third download never parked as queued")
 
         // Cancelling frees a logical slot; the parked request promotes.
         await service.cancel(videoID: "v23", quality: .p720)
-        await running.value
-        await waitUntil({ [manager] in
-            let promoted = await manager.coordinatorTask("v24-720")
-            return promoted != nil
-        }, "queued download was never promoted after cancel")
-        XCTAssertEqual(gated.beginCount, 2)
+        await first.value
+        await waitUntil({ gated.beginCount == 3 }, "queued download was never promoted after cancel")
 
         gated.release()
-        await queued.value
+        _ = await (second.value, third.value)
     }
 
     func testRetryFromFailureListReResolvesFreshComponents() async throws {

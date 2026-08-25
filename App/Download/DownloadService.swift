@@ -371,6 +371,12 @@ final class DownloadService {
             return .deferred
         }
 
+        // Admitted: the record now carries the slot (`.resolving`), so the
+        // promotion reservation must NOT keep double-counting this job in the
+        // budget guard — otherwise a settled sibling can never promote while
+        // this transfer runs.
+        promotingIDs.remove(id)
+
         await downloadManager.begin(request.id)
 
         // Cancellation of the enclosing task (caller went away) stops polling

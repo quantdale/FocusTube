@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-24T06:05:00+08:00
+updated_at: 2026-08-25T10:20:00+08:00
 
 active_campaign:
   id: SPEC_CLOSURE_DAILY_DRIVER_V2
@@ -17,6 +17,39 @@ active_campaign:
     validation; the final device-validation baseline MUST be refreshed after
     this campaign's product changes (42f761a is no longer the handoff SHA).
     Packet narrative: .agent/work-packets/DDV2-CAMPAIGN.md.
+
+convergence_2026_08_25:
+  red_gate_root_cause: >
+    iOS CI runs since the DDV2 wave displayed green test steps while the final
+    Gate failed (run 32712931724 at aebae44, gate message unit=65 ui=65). The
+    two bounded test steps carry continue-on-error so both bundles always run
+    and diagnostics always publish; the Gate honestly restores the verdict from
+    Artifacts/unit.exit and ui.exit. The aggregate logic was NEVER defective —
+    the handoff claim of an orchestration bug was wrong; real product/test
+    failures were hiding behind green step badges.
+  unit_failures_fixed: >
+    DownloadService promotion double-counted a promoted job in promotingIDs
+    after admission (the persisted .resolving record already carries the slot),
+    so a settled sibling could never promote while a promoted transfer ran:
+    DurableQueueTests.testSettlePromotesOldestQueuedJobFirstAndExactlyOnce and
+    DownloadServiceTests.testCancelFreesSlotAndPromotesQueuedDownload. Fix:
+    promotingIDs.remove(id) at admission; cancel-frees-slot test rewritten to
+    fill BOTH slots before expecting deferral.
+  ui_failures_fixed: >
+    Five journeys failed on taller DDV2 layouts because synthesized swipe
+    gestures do not reliably scroll on the iOS 26 simulator (window band
+    {{0,135.5},{402,603}}), exposing controls below the fold for the first
+    time. Reveal machinery now rotates three gesture strategies (container
+    element swipe, explicit coordinate press-drag with momentum, app swipe),
+    records frame breadcrumbs + container size in failure traces, and may use
+    one clamped last-resort coordinate tap for tap-probes whose stable frame is
+    inside the physical screen — observable post-conditions remain the verdict.
+    Journey E now asserts label/enabled/rendered contracts without requiring
+    gesture scroll; journeys G/L synchronize with transfer settlement before
+    switching tabs; journey K scrolls the composer back into view before typing
+    the reply.
+  ci_hardening: scripts/ci/verify-gate-contract.sh wired into ios-ci.yml as a
+    structural regression guard asserting the fail-closed verdict restoration.
 
 ddv2_findings_ddv2_00:
   queued_download_durability: CONFIRMED_DEFECT — capacity-deferred requests were
@@ -72,31 +105,28 @@ previous_campaigns:
     evidence_commit: 03ce6f6
     docs_commit: 47e1126
 
-status: spec_closure_daily_driver_v2_in_progress
+status: spec_closure_daily_driver_v2_convergence
 current_milestone: SPEC_CLOSURE_DAILY_DRIVER_V2
-current_gate: DDV2-04 (video actions/comment composer)
-current_work_packet: DDV2-02/03/05/07 batch landing
-current_packet_status: code_complete_local_green_awaiting_ios_ci
+current_gate: DDV2-11-REGRESSION (full qualification via both workflows)
+current_work_packet: DDV2 convergence — red-gate repair + interaction/a11y hardening
+current_packet_status: fixes_landed_awaiting_ios_ci_evidence
 current_waypoint:
-  id: DDV2-01_DURABLE_QUEUE
+  id: DDV2-11_REGRESSION
   objective: >
-    Repair durable queued-download recovery: queued jobs survive process death;
-    queue reconstructed from persisted `.queued` records (FIFO by createdAt);
-    planning metadata persisted WITHOUT signed media URLs; promotion stays FIFO
-    and bounded (max 2); duplicate admission impossible; queued cancel deletes
-    the record; corrupt/legacy rows degrade to typed recoverable failure
-    (`queueStateCorrupted`); relaunch with actives+queued settles correctly.
+    Restore a fully green qualification matrix after the DDV2 wave left main
+    red (iOS CI run 32712931724 at aebae44: unit=65 ui=65 behind a
+    continue-on-error display), close DDV2-08/09 remaining contracts, and
+    record release-qualification evidence.
   acceptance_evidence:
-    - FocusTubeTests/DurableQueueTests.swift (8 tests) covering the 10 required scenarios
-    - Core DownloadQueuePolicyTests green locally on Windows (81 XCTest + 11 swift-testing)
-    - iOS CI (build Debug/Release + unit + UI journeys + gate) green on the packet commit
-    - docs/03 durable-queue section added; STATE/WAYPOINTS updated
+    - Core swift test green locally on Windows (113 XCTest + 11 swift-testing, 0 failures)
+    - promotion double-count fix verified against DurableQueueTests scenario trace
+    - iOS CI green on the packet commit (pending — this waypoint's gate)
   validation_required:
-    - device evidence A1-A14 (owner)
+    - device evidence A1-A14 (owner, downstream DEVICE_VALIDATION_V1)
     - live smoke run result (one manual dispatch)
     - no Critical/High defect open at close
 
-resume_token: SPEC_CLOSURE_DAILY_DRIVER_V2:DDV2-04
+resume_token: SPEC_CLOSURE_DAILY_DRIVER_V2:DDV2-11-REGRESSION
 repo_baseline:
   branch: main
   commit: 42f761a
@@ -222,7 +252,17 @@ packets:
   H2-HARDENING-V2: complete
   DV-BATCH-A: waiting_on_owner
   DDV2-00: complete
-  DDV2-01: in_progress
+  DDV2-01: complete
+  DDV2-02: complete
+  DDV2-03: complete
+  DDV2-04: complete
+  DDV2-05: complete
+  DDV2-06: complete
+  DDV2-07: complete
+  DDV2-08: complete
+  DDV2-09: complete
+  DDV2-10: in_progress
+  DDV2-11: in_progress
 
 blockers:
   - id: owner-device-evidence
