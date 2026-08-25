@@ -37,8 +37,14 @@ Thumbs.db
 
 # Local diagnostics scratch
 ann.json
+ann*.txt
 cr.json
 jobs.json
-runs.json
+runs*.json
+run-now.json
+br.json
 ci-logs/
 ci-logs.zip
+ci-*.json
+ci-*.zip
+tmp_*.py
