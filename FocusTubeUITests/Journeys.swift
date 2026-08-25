@@ -706,8 +706,8 @@ final class Journeys: XCTestCase {
 
     // MARK: - Journey I: search recents (DDV2-07)
 
-    private func clearTextField(_ field: XCUIElement) {
-        field.tap()
+    private func clearTextField(_ app: XCUIApplication, _ field: XCUIElement) {
+        focusAndType(app, field, "")
         for _ in 0..<30 {
             field.typeText(XCUIKeyboardKey.delete.rawValue)
         }
@@ -729,7 +729,7 @@ final class Journeys: XCTestCase {
         )
 
         // Clearing the typed text reveals the persisted recents list.
-        clearTextField(field)
+        clearTextField(app, field)
         let recent = app.buttons.matching(identifier: "recent-search-row").firstMatch
         XCTAssertTrue(recent.waitForExistence(timeout: 5), "recorded query must appear under Recent searches")
 
@@ -745,7 +745,7 @@ final class Journeys: XCTestCase {
         )
 
         // Clear history removes every recent row.
-        clearTextField(field)
+        clearTextField(app, field)
         let clear = app.buttons["clear-search-history"]
         if clear.waitForExistence(timeout: 3) {
             clear.tap()
@@ -805,6 +805,8 @@ final class Journeys: XCTestCase {
         )
 
         target.tap()
+        // Focus proof: typeText without a focused field silently drops input,
+        // which would masquerade as a product defect in the reply path.
         XCTAssertTrue(
             app.keyboards.firstMatch.waitForExistence(timeout: 5),
             "composer must gain keyboard focus before typing;\(treeDiagnostics(app))"
@@ -845,9 +847,22 @@ final class Journeys: XCTestCase {
         )
     }
 
-    /// Dismisses the keyboard by tapping a neutral chrome point (the navigation
-    /// bar), then waits until it is actually gone so subsequent taps cannot be
-    /// swallowed by keyboard glass.
+    /// Focuses a text entry element with one bounded retry (iOS 26 cold taps
+    /// sometimes swallow the first focus tap), then types `text`.
+    private func focusAndType(_ app: XCUIApplication, _ element: XCUIElement, _ text: String) {
+        element.tap()
+        if !app.keyboards.firstMatch.waitForExistence(timeout: 3) {
+            element.tap()
+            _ = app.keyboards.firstMatch.waitForExistence(timeout: 3)
+        }
+        XCTAssertTrue(
+            app.keyboards.firstMatch.exists,
+            "element must gain keyboard focus before typing;\(treeDiagnostics(app))"
+        )
+        if !text.isEmpty {
+            element.typeText(text)
+        }
+    }
 
     /// Dismisses the keyboard by tapping a neutral chrome point (the navigation
     /// bar), then waits until it is actually gone so subsequent taps cannot be

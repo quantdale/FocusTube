@@ -226,6 +226,7 @@ struct VideoPageView: View {
                 saveButton
                 likeButton
                 subscribeButton
+                downloadButton
                 shareButton
                 moreMenu
             }
@@ -233,6 +234,38 @@ struct VideoPageView: View {
             .padding(.vertical, 10)
         }
         .accessibilityElement(children: .contain)
+    }
+
+    /// Starts the transfer with the picker's selection (720p default). Lives in
+    /// the action row so the primary download interaction shares the first
+    /// viewport with the other account-safe actions; the quality picker below
+    /// is the deliberate pre-selection surface.
+    private var downloadButton: some View {
+        Button {
+            startDownload()
+        } label: {
+            if downloadInFlight {
+                Label("Downloading…", systemImage: "arrow.down.circle")
+            } else {
+                Label("Download", systemImage: "arrow.down.circle")
+            }
+        }
+        .disabled(downloadInFlight || qualities.isEmpty)
+        .accessibilityIdentifier("download-button")
+    }
+
+    private func startDownload() {
+        Task {
+            isDownloading = true
+            await downloadService.download(
+                videoID: video.id,
+                title: video.title,
+                channelTitle: video.channelTitle,
+                quality: effectiveQuality,
+                durationSeconds: Double(video.durationSeconds ?? 0)
+            )
+            isDownloading = false
+        }
     }
 
     private var saveButton: some View {
@@ -408,27 +441,9 @@ struct VideoPageView: View {
             Text("Download quality")
                 .font(.headline)
             DownloadQualityPickerView(available: qualities, selection: $selectedQuality)
-            Button {
-                Task {
-                    isDownloading = true
-                    await downloadService.download(
-                        videoID: video.id,
-                        title: video.title,
-                        channelTitle: video.channelTitle,
-                        quality: effectiveQuality,
-                        durationSeconds: Double(video.durationSeconds ?? 0)
-                    )
-                    isDownloading = false
-                }
-            } label: {
-                if downloadInFlight {
-                    Label("Downloading…", systemImage: "arrow.down.circle")
-                } else {
-                    Label("Download", systemImage: "arrow.down.circle")
-                }
-            }
-            .disabled(downloadInFlight || qualities.isEmpty)
-            .accessibilityIdentifier("download-button")
+            Text("Pick a quality, then tap Download above. Downloads never exceed your choice.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
