@@ -230,3 +230,146 @@ locked_decisions:
   oauth: GoogleSignIn
   youtube_api: typed_URLSession_Data_API_v3
   project_generation: XcodeGen
+  backend: none_v1
+  shorts: hard_disabled
+  autoplay_next_default: false
+  infinite_scroll_default: false
+  primary_dev_host: windows
+  apple_build_plane: github_actions_macos
+
+research_baseline:
+  date: 2026-08-20
+  youtube_kit_verified_release: 0.4.8
+  google_signin_documented_version: 9.0.0
+  xcode_target: "26.6"
+  xcodegen_minimum: 2.46.0
+
+progress:
+  packets_total_implementation: 12
+  packets_complete: 12
+  packets_active: 0
+  packets_pending: 0
+  implementation_exit_passed: true
+  hardening_v2_exit_passed: true
+  note: >
+    IC-EXIT passed on 16ad839; HARDENING_V1 backlog fully closed on 03ce6f6;
+    HARDENING_V2 exited on 2c7646d. CORRECTION (2026-08-24, DDV2-00): a prior
+    revision of this note claimed "No open debt remains" while HB-013 and
+    HB-014 were in fact open in .agent/HARDENING_BACKLOG.md — the contradiction
+    is acknowledged; closure is scheduled inside SPEC_CLOSURE_DAILY_DRIVER_V2.
+
+milestones:
+  M0_BOOTSTRAP: complete
+  M1_MEDIA_VIABILITY: complete
+  M2_DURABLE_DOWNLOADS: complete
+  M3_AUTH_DATA_API: complete
+  M4_HOME_FOCUS: complete
+  M5_SEARCH: complete
+  M6_VIDEO_COMMENTS_ACTIONS: complete
+  M7_LIBRARY: complete
+  M8_BACKGROUND_MEDIA: complete
+  M9_HARDENING: complete
+  M10_PERSONAL_RELEASE: complete
+  M11_DEVICE_VALIDATION: in_progress
+
+packets:
+  WP-000-BOOTSTRAP: complete
+  WP-001-EXTRACTION: complete
+  WP-002-PLAYBACK: complete
+  WP-003-COMBINED-DOWNLOAD: complete
+  WP-004-ADAPTIVE-1080: complete
+  WP-005-DURABLE-DOWNLOAD-MANAGER: complete
+  WP-006-AUTH-DATA-API: complete
+  WP-007-HOME-SHORTS-FIREWALL: complete
+  WP-008-SEARCH: complete
+  WP-009-VIDEO-COMMENTS-ACTIONS: complete
+  WP-010-LIBRARY: complete
+  WP-011-BACKGROUND-MEDIA: complete
+  WP-012-HARDEN-RELEASE: complete
+  H2-HARDENING-V2: complete
+  DV-BATCH-A: waiting_on_owner
+  H3-00: complete
+  H3-01: complete
+  H3-02: complete
+  H3-03: complete
+  H3-04: complete
+  H3-05: complete
+  H3-06: complete
+  H3-07: complete
+  H3-08: complete
+  H3-EXIT: complete
+  DDV2-00: complete
+  DDV2-01: complete
+  DDV2-02: complete
+  DDV2-03: complete
+  DDV2-04: complete
+  DDV2-05: complete
+  DDV2-06: complete
+  DDV2-07: complete
+  DDV2-08: complete
+  DDV2-09: complete
+  DDV2-10: complete
+  DDV2-11: complete
+  DDV2-EXIT: complete
+
+blockers:
+  - id: owner-device-evidence
+    detail: >
+      Batch A items A1-A14 need the owner's physical iPhone and Part 0
+      account/signing setup. Not agent-automatable by policy (no credential
+      automation, no fake PASS).
+
+human_inputs_pending:
+  - id: device-batch-a
+    detail: >
+      Owner Part 0 setup (Apple team, Google Cloud iOS OAuth client, YouTube
+      Data API enablement, Config/Secrets.local.xcconfig values) plus
+      DEVICE_VALIDATION_BATCH_A.md items A1-A14 on the physical iPhone with
+      per-item pass/fail evidence. See current_waypoint.
+  - id: live-smoke-dispatch
+    detail: >
+      One opt-in live_smoke run of ios-ci (workflow_dispatch input) for real
+      YouTube extraction/download/mux evidence. As of 2026-08-23 no
+      workflow_dispatch event exists in repository history: dispatch has
+      never been attempted. Requires authenticated GitHub access (gh auth
+      login on the authoring host, then gh workflow run ios-ci.yml --ref
+      main -f live_smoke=true) or a manual Actions-page dispatch by the
+      owner; anonymous API cannot trigger workflow_dispatch. Repository
+      secrets are already configured from Part 0 plumbing (6a0d48e).
+      Config/Secrets.local.xcconfig verified ABSENT locally — Part 0 not
+      yet started on the authoring machine. Re-verified 2026-08-23:
+      total_count=0 dispatch events; gh unauthenticated and no ambient
+      GH_TOKEN/GITHUB_TOKEN on the authoring host.
+
+physical_device_checks_deferred:
+  - PiP real-device behavior
+  - background audio under real suspension/interruption
+  - lock-screen/Bluetooth remote command behavior
+  - final install/signing on target iPhone
+
+known_unproven:
+  - Live YouTube extraction against current YouTube behavior (YouTubeKit 0.4.8) is opt-in smoke only; recorded for owner device validation.
+  - Real Google OAuth flows are deterministic-fake covered; live credential exercise deferred to owner (PERSONAL_RELEASE_CHECKLIST.md section 2).
+
+deferred_debt:
+  - id: repository_visibility
+    severity: administrative
+    detail: Repository observed public during bootstrap. No credentials committed. Visibility does not block implementation.
+
+last_checkpoint:
+  kind: campaign-transition
+  file: .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md
+  commit: final code SHA 7a70943 / docs reconciliation this commit
+  note: >
+    HARDENING_V3 complete: HB-015..HB-030 all resolved with evidence-backed
+    dispositions; whole-repo re-audit documented (ledger H3-07 section);
+    qualification green at final code SHA 7a70943 — Core Tests run 32891558919,
+    iOS CI fail-closed Gate run 32891558884 with Build Debug/Release, Unit and
+    journeys 20/20 green. Red-leg root causes recorded truthfully in the
+    checkpoint.
+
+next_transition:
+  when: owner returns Batch A evidence and one live-smoke result against baseline 7a70943
+  set:
+    status: personal_release_validated
+    note: Device-only verifications recorded by the owner close the campaign (DV-EXIT).
