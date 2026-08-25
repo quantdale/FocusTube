@@ -5,10 +5,11 @@ coordinator_owns_status: true
 # Campaign note (2026-08-22): INTEGRATION_COMPLETION_V1 and HARDENING_V2 are
 # complete (IC-EXIT on 16ad839; H2-EXIT evidence on 2c7646d, see
 # .agent/checkpoints/20260822-H2-recovery.md). The waypoints below remain the
-# historical implementation map. The active campaign is SPEC_CLOSURE_DAILY_DRIVER_V2
-# (owner directive 2026-08-24); its waypoints are appended at the end of this file.
-# .agent/STATE.yaml remains authoritative for current reality.
-campaign: SPEC_CLOSURE_DAILY_DRIVER_V2 (active)
+# historical implementation map. SPEC_CLOSURE_DAILY_DRIVER_V2 completed its exit
+# 2026-08-25 (code baseline 05a80af). The active campaign is now HARDENING_V3
+# (planner-activated 2026-08-25); its waypoints are appended at the end of this
+# file. .agent/STATE.yaml remains authoritative for current reality.
+campaign: HARDENING_V3_SYSTEMIC_DEBT_CLOSURE (active)
 
 waypoints:
   - id: WP-000-BOOTSTRAP
@@ -342,4 +343,96 @@ out_of_campaign:
     exit_evidence:
       - checkpoint .agent/checkpoints/20260825-DDV2-SYSTEMIC-CONVERGENCE.md records root causes, audit findings fixed/deferred (HB-015..HB-030), exact run IDs
       - DEVICE_VALIDATION baseline refreshed to 05a80af (42f761a NOT reused); Batch A A1-A14 and one live-smoke dispatch remain pending external owner evidence
+    next: DEVICE_VALIDATION_V1_REFRESHED (owner-executed)
+
+# --- HARDENING_V3_SYSTEMIC_DEBT_CLOSURE (opened 2026-08-25, planner-activated) ---
+# Narrative scope: .agent/work-packets/H3-CAMPAIGN.md. Audit ledger:
+# .agent/work-packets/H3-AUDIT-LEDGER.md. Execution prompt: .agent/EXECUTION_PROMPT.md
+# (Status: ACTIVE). DEVICE_VALIDATION stays downstream owner-only evidence.
+
+  - id: H3-00-TRUTH-RESET
+    order: 200
+    gate: H3
+    status: complete
+    depends_on: []
+    objective: Reconcile Git/remote truth, verify baseline, verify every HB item against code, transition durable state to HARDENING_V3, produce the audit ledger.
+    exit_evidence:
+      - fast-forward 01e1eeb -> a581f38 (4 planning commits); clean tree; main synced with origin/main
+      - local matrix green at open (swift build clean; 118 XCTest + 11 swift-testing, 0 failures)
+      - Core Tests run 32863980246 SUCCESS at a581f38; gh unauthenticated re-checked
+      - all HB-015..HB-030 verified LIVE with sites/callers/tests/migration/dispositions in .agent/work-packets/H3-AUDIT-LEDGER.md
+      - STATE.yaml/WAYPOINTS.yaml transitioned to HARDENING_V3
+    next: H3-01-API-CONTRACT-HARDENING
+
+  - id: H3-01-API-CONTRACT-HARDENING
+    order: 201
+    gate: H3
+    status: in_progress
+    depends_on: [H3-00-TRUTH-RESET]
+    objective: HB-015/016/018/019/021 + API parts of HB-030 — typed 403 taxonomy beyond quota/commentsDisabled, deliberate partial-vs-strict decode decision, uniform pre-wire resource-id validation, remove protocol default traps, cached fractional RFC3339 parsing, regression tests + caller/UI copy audit.
+    depends_note: owns HB items recorded in the audit ledger
+    next: H3-02-DOWNLOAD-MODEL-TRUTHFULNESS
+
+  - id: H3-02-DOWNLOAD-MODEL-TRUTHFULNESS
+    order: 202
+    gate: H3
+    status: pending
+    depends_on: [H3-01-API-CONTRACT-HARDENING]
+    objective: HB-017/022/023 — route download event paths through the explicit transition model (or prove/remove dead statuses), additive persisted duration for truthful failed-row storage admission, move async failure presentation to the owning surface with clear consumption semantics; re-prove queue/reconcile/offline cluster.
+    next: H3-03-PERSISTENCE-ORDERING-METADATA
+
+  - id: H3-03-PERSISTENCE-ORDERING-METADATA
+    order: 203
+    gate: H3
+    status: pending
+    depends_on: [H3-02-DOWNLOAD-MODEL-TRUTHFULNESS]
+    objective: HB-020/025 + persistence/navigation portions of HB-029/030 — truthful SwiftData save/delete failure semantics with degraded-state signal, deterministic OfflineLibraryPolicy tie ordering, preserve channel/description metadata across Library/playlist-origin navigation additively, explicit TabView selection/restoration if audit confirms loss, edge tests for caps/ties/old-row defaults.
+    next: H3-04-RENDER-PATH-PERFORMANCE
+
+  - id: H3-04-RENDER-PATH-PERFORMANCE
+    order: 204
+    gate: H3
+    status: pending
+    depends_on: [H3-03-PERSISTENCE-ORDERING-METADATA]
+    objective: HB-027 — eliminate per-card full-history fetches via precomputed videoID->fraction projection, cache formatters safely, audit progress-invalidation and image/list behavior without regressing XCUITest stability or a11y contracts.
+    next: H3-05-UX-QUOTA-A11Y
+
+  - id: H3-05-UX-QUOTA-A11Y
+    order: 205
+    gate: H3
+    status: pending
+    depends_on: [H3-04-RENDER-PATH-PERFORMANCE]
+    objective: HB-024/026/028 + remaining HB-029 UX batch — tri-state quality lifecycle copy, draft-preserving reply-target switching, VoiceOver continue-watching value, bounded thumbnail failure state, duplicate-submit guards (search/playlists/sign-in), PlaylistDetail retry affordance, truthful fake-auth states, 44pt targets/decorative AX cleanup/history-row hints, unified continue-watching thresholds, controlled malformed-share error, preserve DDV2 search focus contract.
+    next: H3-06-TEST-GAP-CLOSURE
+
+  - id: H3-06-TEST-GAP-CLOSURE
+    order: 206
+    gate: H3
+    status: pending
+    depends_on: [H3-05-UX-QUOTA-A11Y]
+    objective: HB-030 remainder + regressions discovered en route — commentThreads pageToken plumbing, out-of-range resume restart, ordering tie/negative/empty-title edges, recents custom-cap trim, DownloadState transition table, migration defaults, persistence failure injection, duplicate-submit races; table-driven, cheapest layer.
+    next: H3-07-SYSTEMIC-REAUDIT
+
+  - id: H3-07-SYSTEMIC-REAUDIT
+    order: 207
+    gate: H3
+    status: pending
+    depends_on: [H3-06-TEST-GAP-CLOSURE]
+    objective: Mandatory whole-repository re-audit per EXECUTION_PROMPT H3-07 checklist; fix Critical/High immediately, bounded Medium before exit, record residual Low with evidence; document findings rather than imply them.
+    next: H3-08-QUALIFICATION
+
+  - id: H3-08-QUALIFICATION
+    order: 208
+    gate: H3
+    status: pending
+    depends_on: [H3-07-SYSTEMIC-REAUDIT]
+    objective: Focused suites then full local matrix; push so Apple CI tests exact final code SHA; require green Core Tests AND genuinely green iOS CI fail-closed Gate (unit.exit=0 ui.exit=0); root-cause any red from artifacts; prefer second consecutive green leg for broad UI/harness changes; re-run secrets/focus/release-isolation checks.
+    next: H3-EXIT
+
+  - id: H3-EXIT
+    order: 209
+    gate: H3-EXIT
+    status: pending
+    depends_on: [H3-08-QUALIFICATION]
+    objective: Evidence-backed dispositions for every HB item; no known Critical/High agent-actionable defect; whole-repo audit documented; STATE/WAYPOINTS/INDEX/backlog/checkpoint reconciled; DEVICE_VALIDATION baseline refreshed to final post-H3 code SHA; Batch A + live-smoke stay pending owner evidence; execution prompt marked COMPLETE; final session-report commit pushed.
     next: DEVICE_VALIDATION_V1_REFRESHED (owner-executed)

@@ -4,19 +4,23 @@ plan_version: 2
 updated_at: 2026-08-25T21:30:00+08:00
 
 active_campaign:
-  id: SPEC_CLOSURE_DAILY_DRIVER_V2
+  id: HARDENING_V3_SYSTEMIC_DEBT_CLOSURE
   status: active
-  kind: spec-closure + daily-driver product completion (owner directive)
-  baseline: 934dc69 (docs tip at campaign open)
-  exit_gate: DDV2-EXIT
+  kind: systemic hardening debt closure + release convergence (planner-activated 2026-08-25)
+  planned_from: 01e1eeb2c6d14ad480631a224ba718acfe026023
+  baseline: a581f38 (docs tip at campaign open; code qualification baseline stays 05a80af)
+  exit_gate: H3-EXIT
   note: >
-    Owner directive (2026-08-24): turn the technically hardened but narrow V1
-    into a coherent daily-usable client AND close discrepancies between specs,
-    acceptance claims, and implementation. P0 is the durable queued-download
-    recovery defect. DEVICE_VALIDATION_V1 remains downstream external owner
-    validation; the final device-validation baseline MUST be refreshed after
-    this campaign's product changes (42f761a is no longer the handoff SHA).
-    Packet narrative: .agent/work-packets/DDV2-CAMPAIGN.md.
+    DDV2 is terminal (exit passed 2026-08-25 at code SHA 05a80af, two
+    consecutive green legs). HARDENING_V3 closes the deferred HB-015..HB-030
+    backlog as one system (API taxonomy/protocol design, download state and
+    retry durability, SwiftData persistence truthfulness, ordering/metadata,
+    render-path performance, UX/quota/a11y/input preservation, deterministic
+    test gaps), then performs a mandatory whole-repository re-audit before
+    release handoff. Packet narrative: .agent/work-packets/H3-CAMPAIGN.md.
+    Audit ledger: .agent/work-packets/H3-AUDIT-LEDGER.md. DEVICE_VALIDATION
+    remains downstream owner-only external evidence and does not block
+    deterministic H3 engineering.
 
 convergence_2026_08_25:
   red_gate_root_cause: >
@@ -118,30 +122,31 @@ previous_campaigns:
     evidence_commit: 03ce6f6
     docs_commit: 47e1126
 
-status: ddv2_systemic_convergence_complete_device_validation_pending
-current_milestone: SPEC_CLOSURE_DAILY_DRIVER_V2 (automated engineering complete)
-current_gate: DDV2-EXIT (passed 2026-08-25; downstream external evidence remains)
-current_work_packet: DDV2 convergence — red-gate repair + systemic audit (closed)
-current_packet_status: complete_gates_green_awaiting_owner_device_evidence
+status: hardening_v3_active_systemic_debt_closure
+current_milestone: HARDENING_V3_SYSTEMIC_DEBT_CLOSURE
+current_gate: H3-EXIT (pending; DDV2-EXIT passed 2026-08-25)
+current_work_packet: H3-00 truth reset + audit ledger (complete) → H3-01 API contract hardening
+current_packet_status: in_progress
 current_waypoint:
-  id: DEVICE_VALIDATION_V1_REFRESHED
+  id: H3-01-API-CONTRACT-HARDENING
   objective: >
-    Owner-executed physical-device Batch A (A1-A14) plus one opt-in live-smoke
-    dispatch, now against the refreshed post-DDV2 code baseline 05a80af.
-    Automated agent-actionable engineering for this campaign is closed; every
-    remaining item requires owner hardware/credentials by policy.
+    Close HB-015/016/018/019/021 plus the API portions of HB-030: typed 403
+    taxonomy separating permanent permission denials from quota exhaustion,
+    deliberate partial-vs-strict item-decode decision, uniform pre-wire
+    resource-id validation mapped to typed invalidInput, removal of
+    protocol-extension default traps, cached fractional-capable RFC3339
+    parsing — each with exact request-shape/error-envelope regression tests
+    and an exhaustive caller/UI-copy audit.
   acceptance_evidence:
-    - Core Tests run 32855544250 SUCCESS at 05a80af
-    - iOS CI run 32855544105 SUCCESS at 05a80af (fail-closed Gate green, unit=0 ui=0)
-    - full UI journey set green in the same leg incl. formerly-failing L/D/I
-    - stability: SECOND consecutive full green leg at docs tip b5c3cea — Core Tests run 32859271508 and iOS CI run 32859271422 both SUCCESS (whole journey suite repeated)
-    - checkpoint .agent/checkpoints/20260825-DDV2-SYSTEMIC-CONVERGENCE.md
+    - audit ledger .agent/work-packets/H3-AUDIT-LEDGER.md (all 16 items verified LIVE at a581f38)
+    - local matrix green at campaign open (118 XCTest + 11 swift-testing, 0 failures)
+    - Core Tests run 32863980246 SUCCESS at docs tip a581f38
   validation_required:
-    - device evidence A1-A14 (owner, physical iPhone)
-    - live smoke run result (one manual authenticated dispatch)
-    - no Critical/High defect open at close (verified)
+    - per-workstream deterministic tests + full local matrix before each push
+    - green Core Tests AND iOS CI fail-closed Gate at each final code SHA
+    - HB-015..HB-030 evidence-backed dispositions recorded before H3-EXIT
 
-resume_token: SPEC_CLOSURE_DAILY_DRIVER_V2:DDV2-EXIT-PASSED→DEVICE-VALIDATION-REFRESHED
+resume_token: HARDENING_V3:H3-00-COMPLETE→H3-01-IN-PROGRESS
 repo_baseline:
   branch: main
   commit: 05a80af
@@ -271,6 +276,8 @@ packets:
   WP-012-HARDEN-RELEASE: complete
   H2-HARDENING-V2: complete
   DV-BATCH-A: waiting_on_owner
+  H3-00: complete
+  H3-01: in_progress
   DDV2-00: complete
   DDV2-01: complete
   DDV2-02: complete
@@ -331,20 +338,21 @@ deferred_debt:
 
 last_checkpoint:
   kind: campaign-transition
-  file: .agent/checkpoints/20260825-DDV2-SYSTEMIC-CONVERGENCE.md
-  commit: 05a80af (code) / docs tip records evidence
+  file: .agent/work-packets/H3-AUDIT-LEDGER.md
+  commit: docs wave c34999a..a581f38 activates HARDENING_V3; ledger authored in-session
   note: >
-    DDV2-SYSTEMIC-CONVERGENCE: deterministic FixtureMedia Code=4 root cause
-    (missing writer.finishWriting since aebae44) fixed with unit regression
-    pins; filler fallback replaced by typed failure; search focus contract
-    settled from evidence (retain focus, scroll-dismisses keyboard, non-lazy
-    results); fixture clip lengthened so playing state is observable; local
-    player sheet owns a dedicated coordinator; audits fixed H1/H2/M1-M4/M7-M9
-    plus duration-parser day forms and account-action wire pins; HB-015..030
-    logged as deferred debt; final gates green at 05a80af.
+    H3-00 truth reset performed 2026-08-25: fetched/pruned origin, fast-forwarded
+    01e1eeb -> a581f38 (4 planning commits activating HARDENING_V3), verified repo
+    identity/clean tree/synced main, local swift build clean + swift test 118+11
+    zero failures, hosted Core Tests run 32863980246 SUCCESS at a581f38, gh still
+    unauthenticated (live-smoke stays owner-gated). All HB-015..HB-030 verified
+    LIVE against current code with implementation sites, callers, test impact,
+    migration implications, and dispositions recorded in the audit ledger.
 
 next_transition:
-  when: owner returns Batch A evidence and one live-smoke result
+  when: all H3 workstreams close with no known Critical/High agent-actionable defect,
+    final code SHA has green Core Tests + iOS CI fail-closed Gate, durable state is reconciled
   set:
-    status: personal_release_validated
-    note: Device-only verifications recorded by the owner close the campaign (DV-EXIT).
+    status: hardening_v3_complete_device_validation_pending
+    note: DEVICE_VALIDATION then resumes against the refreshed post-H3 code baseline;
+      owner Batch A evidence plus one authenticated live-smoke dispatch remain external.
