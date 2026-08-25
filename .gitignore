@@ -1,3 +1,7 @@
+".agent/ann.py"  
+".agent/gh.py"  
+".agent/scratch_*.py"  
+".agent/watch_leg.py"  
 # Xcode / generated project
 *.xcodeproj/
 DerivedData/
