@@ -117,13 +117,15 @@ final class Journeys: XCTestCase {
         return (bestElement, bestFrame)
     }
 
-    /// One explicit coordinate drag inside `frame`. XCUIElement.swipeUp() has
-    /// proven unreliable on current iOS 26 simulators (the synthesized gesture
-    /// sometimes never scrolls the hosting view), so the reveal loop rotates
-    /// through element swipes, coordinate press-drags with momentum, and app
-    /// swipes instead of retrying one synthesis path sixteen times.
+    /// One explicit coordinate pan inside `frame` with a MODERATE fixed span.
+    /// Full-range velocity flings proved counterproductive on current iOS 26
+    /// simulators: each fling traverses the entire scroll range, so a
+    /// below-fold target skips over the visible band entirely (CI breadcrumbs:
+    /// target minY alternated 802 <-> -44). A moderate pan moves the content a
+    /// predictable distance per attempt, letting the reveal loop park the
+    /// target inside the window band.
     private func dragScroll(_ app: XCUIApplication, frame: CGRect, direction: SwipeDirection) {
-        let span: CGFloat = 140
+        let span: CGFloat = 320
         let x = frame.midX
         guard frame.height > 2 * span + 40 else { return }
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
@@ -133,19 +135,13 @@ final class Journeys: XCTestCase {
         start.press(forDuration: 0.05, thenDragTo: end)
     }
 
-    /// Performs one scroll attempt. Container-targeted gestures are used
-    /// EXCLUSIVELY when a scrollable host exists: mixing app-level swipes into
-    /// the rotation made the page oscillate between scrolled and top positions
-    /// (CI evidence: target minY alternated -44 ↔ 802 across attempts), because
-    /// app-wide drags land on the player/card layer and reset or swallow the
-    /// pan. The coordinate drag is the fallback for hosts XCUITest cannot name.
+    /// Performs one scroll attempt: a container-scoped moderate PAN. Element
+    /// velocity flings overshoot the whole scroll range and app-level gestures
+    /// land on the player/card layer; the named container plus fixed-span pan
+    /// is the only combination that moved content predictably in CI evidence.
     private func scrollOnce(_ app: XCUIApplication, direction: SwipeDirection, attempt: Int) {
         let container = largestScrollContainer(app)
-        if let container {
-            if direction == .up { container.element.swipeUp(velocity: .fast) } else { container.element.swipeDown(velocity: .fast) }
-        } else {
-            dragScroll(app, frame: app.frame, direction: direction)
-        }
+        dragScroll(app, frame: container?.frame ?? app.frame, direction: direction)
     }
 
     /// Reveals an element fully inside the visible window (with a safety
@@ -391,6 +387,9 @@ final class Journeys: XCTestCase {
             app.staticTexts["Fixture Sneaky Short"].exists,
             "short-form results are filtered before render, always"
         )
+        // The keyboard squeezes the results list and swallows reveal gestures:
+        // dismiss it before hunting the load-more control.
+        dismissKeyboard(app)
 
         let lmTrace = revealAndTap(app, "load-more-button")
         XCTAssertTrue(lmTrace.isEmpty, "load more must be reachable [\(lmTrace);\(treeDiagnostics(app))]")

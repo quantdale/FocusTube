@@ -253,7 +253,15 @@ enum FixtureMediaFactory {
 
         // Generation runs OUTSIDE the lock: it is slow (encoder startup) and
         // a held lock would serialize every transfer's tempCopy behind it.
-        let url = try generateMasterFile()
+        let url: URL
+        do {
+            url = try generateMasterFile()
+        } catch {
+            // One cold-encoder retry: a transient first-use failure on a fresh
+            // runner must not silently degrade EVERY transfer to filler bytes,
+            // which downstream offline-playing journeys read as a product bug.
+            url = try generateMasterFile()
+        }
 
         lock.lock()
         // Last-writer-wins on the rare race; both products are valid media.
@@ -270,7 +278,11 @@ enum FixtureMediaFactory {
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
-            AVVideoHeightKey: height
+            AVVideoHeightKey: height,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264BaselineAutoLevel,
+                AVVideoExpectedSourceFrameRateKey: fps
+            ]
         ])
         input.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -288,12 +300,14 @@ enum FixtureMediaFactory {
         writer.startSession(atSourceTime: .zero)
 
         for frame in 0..<frames {
-            // BOUNDED readiness wait: a wedged encoder must degrade to a
-            // thrown error (callers fall back), never hang a thread forever.
+            // BOUNDED readiness wait sized for a COLD headless software
+            // encoder (first invocation on a fresh CI runner): a wedged
+            // encoder must degrade to a thrown error (callers fall back),
+            // never hang a thread forever.
             var waited = 0
             while !input.isReadyForMoreMediaData {
                 waited += 1
-                if waited > 1500 { throw NSError(domain: "FixtureMedia", code: 5) }
+                if waited > 7_500 { throw NSError(domain: "FixtureMedia", code: 5) }
                 Thread.sleep(forTimeInterval: 0.002)
             }
             var pixelBuffer: CVPixelBuffer?
@@ -322,7 +336,7 @@ enum FixtureMediaFactory {
 
         // BOUNDED completion wait — never an unbounded semaphore block.
         var waitedMs = 0
-        while writer.status == .writing && waitedMs < 5_000 {
+        while writer.status == .writing && waitedMs < 10_000 {
             Thread.sleep(forTimeInterval: 0.01)
             waitedMs += 10
         }

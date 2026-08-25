@@ -54,22 +54,34 @@ struct VideoPageView: View {
         // materializes near-viewport rows on current iOS runtimes, which made
         // below-the-fold controls intermittently absent from both the
         // accessibility hierarchy and XCUITest queries.
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                PlayerView(coordinator: coordinator)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 240)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    PlayerView(coordinator: coordinator)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 240)
 
-                metadataSection
-                actionRow
+                    metadataSection
+                    actionRow
 
-                Divider()
+                    Divider()
 
-                downloadSection
+                    downloadSection
 
-                Divider()
+                    Divider()
 
-                commentsSection
+                    commentsSection
+                        .id("comments-section")
+                }
+            }
+            .onChange(of: replyTarget?.id) { _ in
+                // Tapping Reply must bring the composer to the user, wherever
+                // the page is currently scrolled: reply context without a
+                // visible composer reads as a dead tap.
+                guard replyTarget != nil else { return }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo("comments-section", anchor: .top)
+                }
             }
         }
         .navigationTitle("Video")

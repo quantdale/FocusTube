@@ -98,9 +98,11 @@ jobs:
           exit $RC
 
       # UI tests in their own bounded step so a hang in either bundle leaves the
-      # other bundle's verdict intact.
+      # other bundle's verdict intact. 18 minutes: the journeys perform bounded
+      # reveal loops and fixture-media generation; the historical 10-minute
+      # happy path no longer fits under 15 with four failing journeys looping.
       - name: UI tests (FocusTubeUITests)
-        timeout-minutes: 15
+        timeout-minutes: 18
         continue-on-error: true
         run: |
           mkdir -p Artifacts
