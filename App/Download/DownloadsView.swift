@@ -384,5 +384,11 @@ struct LocalPlayerSheet: View {
                 Spacer()
             }
         }
+        // Swipe-down (interactive) dismissal bypasses the Done button; stop
+        // here too so audio never continues invisibly after the surface goes.
+        // Double-stop is idempotent (Done already stopped the player).
+        .onDisappear {
+            playerCoordinator.stop()
+        }
     }
 }

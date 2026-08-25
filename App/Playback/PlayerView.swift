@@ -60,12 +60,24 @@ public struct PlayerView: View {
                 .background(.black.opacity(0.6))
                 .foregroundStyle(.white)
             default:
-                // Deterministic marker for UI journeys (HB-014): present only
-                // when the player genuinely reached a playing state.
+                // Deterministic markers for UI journeys (HB-014 + run-32828052990
+                // diagnosis). `player-playing` is present ONLY when the player
+                // genuinely reached a playing state; `player-status` always
+                // exposes the live state label so a journey failure trace can
+                // distinguish "never played" from "marker not observable".
+                // 44x44 clear hit areas keep the elements visible to the
+                // accessibility engine (a 1x1 opacity-0.001 rect was not).
+                Color.clear
+                    .frame(width: 44, height: 44)
+                    .allowsHitTesting(false)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityIdentifier("player-status")
+                    .accessibilityLabel(String(describing: coordinator.state.status))
                 if coordinator.state.status == .playing {
                     Rectangle()
                         .fill(Color.white.opacity(0.001))
-                        .frame(width: 1, height: 1)
+                        .frame(width: 44, height: 44)
+                        .allowsHitTesting(false)
                         .accessibilityIdentifier("player-playing")
                 } else {
                     EmptyView()

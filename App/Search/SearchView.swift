@@ -12,11 +12,12 @@ struct SearchView: View {
 
     @State private var queryText = ""
     @State private var selectedVideo: VideoSummary?
-    /// SwiftUI owns field focus: submit drops it deliberately (results render
-    /// unobstructed by the keyboard), and because @FocusState stays the single
-    /// source of truth the field can be re-focused by tapping it again. The
-    /// earlier UIResponder.resignFirstResponder approach desynced SwiftUI's
-    /// internal focus state on iOS 26 and broke re-focus entirely.
+    /// SwiftUI-owned field focus. Submit deliberately RETAINS focus: a
+    /// programmatic blur desynced SwiftUI's internal focus state on iOS 26 and
+    /// left the field un-refocusable by tap (evidence: runs 32828052990 /
+    /// dfb939b). Keyboard obstruction is instead resolved on the list side via
+    /// `.keyboardDismissMode(.onDragStart)` — any scroll gesture drops the
+    /// keyboard so results and Load more render full-height.
     @FocusState private var queryFieldFocused: Bool
 
     var body: some View {
@@ -85,6 +86,9 @@ struct SearchView: View {
             }
         }
         .navigationTitle("Search")
+        // Any drag over the results drops the keyboard so below-fold controls
+        // are reachable at full list height; submit keeps field focus.
+        .keyboardDismissMode(.onDragStart)
         // Pushed video page (see LibraryView note): modal presentation of
         // AVKit-hosting content is unreliable on current iOS 26 runtimes.
         .navigationDestination(item: $selectedVideo) { video in
@@ -107,13 +111,11 @@ struct SearchView: View {
     /// Single explicit-submit path shared by the keyboard (Return/Search key)
     /// and the button. Whitespace-only queries are rejected without an API call;
     /// the trimmed text is what gets submitted and recorded as a recent query.
-    /// A successful submit deliberately drops field focus through the
-    /// @FocusState binding so results render at full height; refocusing remains
-    /// a plain tap on the field (SwiftUI keeps its internal state consistent).
+    /// Field focus is intentionally retained across submits (see the
+    /// @FocusState note); scrolling the results dismisses the keyboard.
     private func submit() {
         let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        queryFieldFocused = false
         recentSearches.record(trimmed)
         Task { await store.submit(trimmed) }
     }

@@ -151,13 +151,12 @@ public struct YouTubeDataClient: YouTubeAPI {
     }
 
     public func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {
-        let request = try Self.buildRequest(baseURL: baseURL, path: "videos/rate", accessToken: accessToken, query: [
+        var request = try Self.buildRequest(baseURL: baseURL, path: "videos/rate", accessToken: accessToken, query: [
             "id": videoID,
             "rating": rating.rawValue
         ])
-        var r = request
-        r.httpMethod = "POST"
-        _ = try await perform(r)
+        request.httpMethod = "POST"
+        _ = try await perform(request)
     }
 
     // MARK: - Comment mutation (DDV2-03)

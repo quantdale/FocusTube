@@ -62,7 +62,9 @@ public final class HomeFeedStore {
             if replacing {
                 videos = page.videos
             } else {
-                videos.append(contentsOf: page.videos)
+                // Same cross-page duplicate protection as SearchStore.
+                let knownIDs = Set(videos.map(\.id))
+                videos.append(contentsOf: page.videos.filter { !knownIDs.contains($0.id) })
             }
             nextPageToken = page.nextPageToken
             error = nil

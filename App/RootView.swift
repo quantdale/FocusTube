@@ -255,8 +255,14 @@ struct LibraryView: View {
                 .accessibilityHint("Opens the saved video")
             }
             .onDelete { offsets in
-                for index in offsets {
-                    store.removeSaved(videoID: store.saved[index].videoID)
+                // Materialize the doomed rows BEFORE mutating: `store.saved`
+                // re-fetches on every access, so removing while indexing would
+                // shift subsequent offsets onto the wrong rows.
+                let doomed = offsets.compactMap { index in
+                    store.saved.indices.contains(index) ? store.saved[index] : nil
+                }
+                for item in doomed {
+                    store.removeSaved(videoID: item.videoID)
                 }
             }
         }
@@ -344,9 +350,19 @@ struct PlaylistDetailView: View {
     @State private var items: [PlaylistItemSummary] = []
     @State private var isLoading = true
     @State private var errorText: String?
+    @State private var removalError: String?
 
     var body: some View {
         List {
+            if let removalError {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(removalError).font(.caption).foregroundStyle(.secondary)
+                    Button("Try again") {
+                        removalError = nil
+                        Task { await load() }
+                    }
+                }
+            }
             if isLoading {
                 ProgressView()
             } else if let errorText {
@@ -398,12 +414,25 @@ struct PlaylistDetailView: View {
     }
 
     private func remove(_ doomed: [PlaylistItemSummary]) async {
-        guard let token = await auth.accessToken() else { return }
-        for item in doomed {
-            _ = try? await api.removeFromPlaylist(playlistItemID: item.playlistItemID, accessToken: token)
+        guard let token = await auth.accessToken() else {
+            removalError = "Sign in to manage this playlist."
+            return
         }
-        let removedIDs = Set(doomed.map(\.playlistItemID))
+        var failedIDs: Set<String> = []
+        for item in doomed {
+            do {
+                try await api.removeFromPlaylist(playlistItemID: item.playlistItemID, accessToken: token)
+            } catch {
+                failedIDs.insert(item.playlistItemID)
+            }
+        }
+        // Only rows the server actually removed leave the list; a failed
+        // delete must not fabricate local state that resurrects on re-fetch.
+        let removedIDs = Set(doomed.map(\.playlistItemID)).subtracting(failedIDs)
         items.removeAll { removedIDs.contains($0.playlistItemID) }
+        if !failedIDs.isEmpty {
+            removalError = "Some videos couldn't be removed. Try again."
+        }
     }
 }
 

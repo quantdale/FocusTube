@@ -33,6 +33,21 @@ final class YouTubeDataClientTests: XCTestCase {
         XCTAssertEqual(summaries.first?.thumbnailURL?.absoluteString, "https://t/x.jpg")
     }
 
+    func testDurationParsingSupportsLongFormVariantsAndStaysAnchored() {
+        XCTAssertEqual(VideoSummary.duration(from: "PT1H2M3S"), 3723)
+        // Day/week forms YouTube uses for >24h content.
+        XCTAssertEqual(VideoSummary.duration(from: "P1DT2H30M0S"), 95_400)
+        XCTAssertEqual(VideoSummary.duration(from: "P2W"), 1_209_600)
+        XCTAssertEqual(VideoSummary.duration(from: "PT90S"), 90)
+        // Fractional seconds floor; no fabricated precision.
+        XCTAssertEqual(VideoSummary.duration(from: "PT1M30.5S"), 90)
+        // Live/upcoming placeholders degrade to unknown duration.
+        XCTAssertNil(VideoSummary.duration(from: "P0D"))
+        // Anchored: embedded/garbage shapes never partially match.
+        XCTAssertNil(VideoSummary.duration(from: "xPT1M"))
+        XCTAssertNil(VideoSummary.duration(from: "PT"))
+    }
+
     func testUnauthorizedMapped() async {
         let client = YouTubeDataClient(performer: FakeHTTPPerformer(data: Data(), statusCode: 401))
         do { _ = try await client.fetchVideoDetails(ids: ["x"], accessToken: "tok"); XCTFail() }

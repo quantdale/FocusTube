@@ -67,7 +67,11 @@ public final class SearchStore {
         do {
             let next = try await service.search(query: query, accessToken: token, pageToken: page)
             guard generation == loadGeneration else { return }
-            results.append(contentsOf: next.videos)
+            // Pagination routinely repeats items across page boundaries; a
+            // duplicate would collide in ForEach's Identifiable identity and
+            // corrupt row reuse.
+            let knownIDs = Set(results.map(\.id))
+            results.append(contentsOf: next.videos.filter { !knownIDs.contains($0.id) })
             nextPageToken = next.nextPageToken
         } catch let err as YouTubeAPIError {
             guard generation == loadGeneration else { return }

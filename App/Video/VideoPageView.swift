@@ -32,6 +32,7 @@ struct VideoPageView: View {
     @State private var composerText = ""
     @State private var replyTarget: Comment?
     @State private var isSubmittingComment = false
+    @State private var addingToPlaylistIDs: Set<String> = []
     @State private var isDescriptionExpanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -384,9 +385,18 @@ struct VideoPageView: View {
                         ProgressView()
                     case .some(let playlists):
                         ForEach(playlists, id: \.id) { playlist in
-                            Button(playlist.title) {
+                            Button {
                                 Task { await addTo(playlist) }
+                            } label: {
+                                HStack {
+                                    Text(playlist.title)
+                                    Spacer()
+                                    if addingToPlaylistIDs.contains(playlist.id) {
+                                        ProgressView()
+                                    }
+                                }
                             }
+                            .disabled(addingToPlaylistIDs.contains(playlist.id))
                             .accessibilityIdentifier("playlist-pick-\(playlist.id)")
                         }
                     }
@@ -420,6 +430,12 @@ struct VideoPageView: View {
     }
 
     private func addTo(_ playlist: PlaylistSummary) async {
+        // Duplicate-submit guard runs BEFORE any await: YouTube permits the
+        // same video twice in one playlist, so an ungated double-tap would
+        // create real duplicate server state.
+        guard !addingToPlaylistIDs.contains(playlist.id) else { return }
+        addingToPlaylistIDs.insert(playlist.id)
+        defer { addingToPlaylistIDs.remove(playlist.id) }
         guard let token = await auth.accessToken() else {
             accountActionError = .unauthorized
             return
@@ -507,6 +523,7 @@ struct VideoPageView: View {
                 TextField(replyTarget == nil ? "Add a comment…" : "Add a reply…", text: $composerText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
+                    .disabled(isSubmittingComment)
                     .accessibilityIdentifier("comment-composer-field")
                 Button {
                     Task { await submitComment() }
@@ -517,6 +534,7 @@ struct VideoPageView: View {
                         Image(systemName: "paperplane.fill")
                     }
                 }
+                .frame(minWidth: 44, minHeight: 44)
                 .disabled(isSubmittingComment || composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel(replyTarget == nil ? "Post comment" : "Post reply")
                 .accessibilityIdentifier("comment-submit")
@@ -566,7 +584,12 @@ struct VideoPageView: View {
     }
 
     private func loadComments() async {
-        guard let token = await auth.accessToken() else { return }
+        guard let token = await auth.accessToken() else {
+            // Signed out: surface the authored degraded state instead of the
+            // fabricated "No comments yet." empty state.
+            commentsError = .unauthorized
+            return
+        }
         isLoadingComments = true
         commentsError = nil
         defer { isLoadingComments = false }
@@ -588,7 +611,13 @@ struct VideoPageView: View {
     /// prior interactions). Silent best-effort: absence of state simply hides
     /// nothing — buttons stay enabled with neutral labels.
     private func loadAccountState() async {
-        guard let token = await auth.accessToken() else { return }
+        guard let token = await auth.accessToken() else {
+            // Signed out: keep Subscribe enabled so tapping surfaces the same
+            // "Sign in to use this action." alert as Like — one consistent
+            // degraded-state contract for account actions.
+            didLoadSubscriptionState = true
+            return
+        }
         async let rating: Void = loadRating(token: token)
         async let subscription: Void = loadSubscriptionState(token: token)
         _ = await (rating, subscription)
@@ -607,6 +636,12 @@ struct VideoPageView: View {
     // MARK: - Account mutations (optimistic with explicit rollback)
 
     private func toggleLike() async {
+        // Duplicate-submit gate runs BEFORE the first await: while the token
+        // fetch is in flight the button stays tappable, and a late flag would
+        // let double taps enqueue two mutations.
+        guard !isTogglingLike else { return }
+        isTogglingLike = true
+        defer { isTogglingLike = false }
         guard let token = await auth.accessToken() else {
             accountActionError = .unauthorized
             return
@@ -614,8 +649,6 @@ struct VideoPageView: View {
         let previous = ratingState ?? .none
         let next: VideoRatingState = previous == .like ? .none : .like
         ratingState = next
-        isTogglingLike = true
-        defer { isTogglingLike = false }
         do {
             if next == .like {
                 try await accountActions.rate(videoID: video.id, rating: .like, accessToken: token)
@@ -629,42 +662,58 @@ struct VideoPageView: View {
     }
 
     private func toggleSubscription(channelID: String) async {
+        // Same pre-await duplicate-submit gate as toggleLike.
+        guard !isTogglingSubscribe else { return }
+        isTogglingSubscribe = true
+        defer { isTogglingSubscribe = false }
         guard let token = await auth.accessToken() else {
             accountActionError = .unauthorized
             return
         }
         let wasSubscribed = subscriptionLookup != nil
-        isTogglingSubscribe = true
-        defer { isTogglingSubscribe = false }
         do {
             if wasSubscribed {
                 try await accountActions.unsubscribe(subscriptionID: subscriptionLookup!.subscriptionID, accessToken: token)
                 subscriptionLookup = nil
             } else {
                 try await accountActions.subscribe(channelID: channelID, accessToken: token)
-                subscriptionLookup = try await accountActions.subscriptionState(channelID: channelID, accessToken: token)
             }
         } catch {
             subscriptionLookup = wasSubscribed ? subscriptionLookup : nil
             accountActionError = error as? YouTubeAPIError ?? .network
+            return
+        }
+        if !wasSubscribed {
+            do {
+                subscriptionLookup = try await accountActions.subscriptionState(channelID: channelID, accessToken: token)
+            } catch {
+                // The subscribe itself succeeded; only authoritative-state
+                // verification failed. Silently rendering the unsubscribed
+                // state here would invite a redundant re-subscribe against an
+                // existing server-side subscription (audit M2), so the
+                // verification failure surfaces instead.
+                accountActionError = .network
+            }
         }
     }
 
     // MARK: - Comment submission
 
     private func submitComment() async {
+        // Duplicate-submit gate runs BEFORE the first await (see toggleLike).
+        guard !isSubmittingComment else { return }
+        isSubmittingComment = true
+        defer { isSubmittingComment = false }
         guard let token = await auth.accessToken() else {
             accountActionError = .unauthorized
             return
         }
-        // Duplicate-submit prevention: the flag gates re-entry synchronously
-        // before any await, so double taps cannot fire two POSTs.
-        guard !isSubmittingComment else { return }
-        isSubmittingComment = true
-        defer { isSubmittingComment = false }
+        // Snapshot what is being posted: the field is disabled during flight,
+        // so this text is exactly what the user saw when tapping send.
+        let submittedText = composerText
         do {
             if let target = replyTarget {
-                let stored = try await commentsService.reply(to: target.id, text: composerText, accessToken: token)
+                let stored = try await commentsService.reply(to: target.id, text: submittedText, accessToken: token)
                 if let index = comments.firstIndex(where: { $0.id == target.id }) {
                     let existing = comments[index]
                     // Comment is immutable-by-design; rebuild the thread row.
@@ -680,7 +729,7 @@ struct VideoPageView: View {
                 }
                 replyTarget = nil
             } else {
-                let stored = try await commentsService.post(videoID: video.id, text: composerText, accessToken: token)
+                let stored = try await commentsService.post(videoID: video.id, text: submittedText, accessToken: token)
                 comments.insert(stored, at: 0)
             }
             composerText = ""

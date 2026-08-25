@@ -32,6 +32,8 @@ final class Journeys: XCTestCase {
     /// read these through check-run annotations without authenticated API access.
     private func treeDiagnostics(_ app: XCUIApplication) -> String {
         var facts = ["sheets=\(app.sheets.count)", "state=\(app.state.rawValue)", "keyboards=\(app.keyboards.count)"]
+        let statusProbe = app.descendants(matching: .any)["player-status"].firstMatch
+        facts.append(statusProbe.exists ? "pstate=\(statusProbe.label)" : "pstate=no")
         let probes: [(String, XCUIElement)] = [
             ("title", app.staticTexts["video-title"]),
             ("channel", app.staticTexts["video-channel"]),
@@ -54,7 +56,7 @@ final class Journeys: XCTestCase {
                          "'Close'", "Playback failed", "feed-video-row", "Window",
                          "Application", "TabBar", "NavigationBar", "downloaded-row",
                          "No downloaded videos yet.", "search-result-row", "load-more",
-                         "fixture-media-diagnostic", "search-field"]
+                         "fixture-media-diagnostic", "search-field", "player-status"]
                             .contains { line.contains($0) }
                     }
                     .prefix(40)
@@ -289,31 +291,6 @@ final class Journeys: XCTestCase {
 
     // MARK: - Journey A: shell
 
-    /// Scrolls until `id` exists, then taps it with a window-clamped
-    /// coordinate. Robust against tall cards pushing controls below the fold
-    /// and against partially-visible elements whose center lies offscreen.
-    @discardableResult
-    private func revealAndTap(_ app: XCUIApplication, _ id: String, maxSwipes: Int = 14) -> String {
-        for attempt in 0..<maxSwipes {
-            let el = app.descendants(matching: .any)[id].firstMatch
-            if el.exists {
-                let f = el.frame
-                let win = app.frame
-                if f.width > 1, f.height > 1,
-                   f.maxY <= win.maxY - 8, f.minY >= win.minY {
-                    let cx = min(max(f.midX, win.minX + 4), win.maxX - 4)
-                    let cy = min(max(f.midY, win.minY + 4), win.maxY - 4)
-                    app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-                        .withOffset(CGVector(dx: cx, dy: cy))
-                        .tap()
-                    return ""
-                }
-            }
-            scrollOnce(app, direction: .up, attempt: attempt)
-        }
-        return "not-revealed-after-\(maxSwipes)-swipes"
-    }
-
     func testShellTabsExistAndSwitchWithoutCorruption() {
         let app = launch("signed-out")
 
@@ -410,7 +387,12 @@ final class Journeys: XCTestCase {
         // keyboard must not squeeze the results list while the reveal loop
         // hunts load-more, and tapping the field again re-focuses it.
 
-        let lmTrace = revealAndTap(app, "load-more-button")
+        // Reveal via the proven interact() machinery (direction correction,
+        // stability double-read, bounded last-resort tap): revealAndTap's
+        // single-direction loop scrolled past visible targets on taller DDV2
+        // layouts (run-32828052990 trace: target parked at y=527 while rows
+        // reported negative Y) and could never converge.
+        let lmTrace = interact(app, locate: { $0.buttons["load-more-button"].firstMatch }, tap: true)
         XCTAssertTrue(lmTrace.isEmpty, "load more must be reachable [\(lmTrace);\(treeDiagnostics(app))]")
         // Second page exhausts the fixture results: the disappearing load-more
         // control is the deterministic append proof (lazy List rows far below
