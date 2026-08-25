@@ -166,21 +166,34 @@ final class DownloadFailureOwnershipTests: XCTestCase {
             mediaDirectory: URL(fileURLWithPath: "/tmp/h3-ownership-media")
         )
 
-        // v1/v2 fill both logical slots mid-flight; v3 defers into the durable
-        // queue and v4 parks behind it FIFO.
-        await service.download(videoID: "v1", title: "V1", channelTitle: "C", quality: .p720)
-        await service.download(videoID: "v2", title: "V2", channelTitle: "C", quality: .p720)
-        await service.download(videoID: "v3", title: "V3", channelTitle: "C", quality: .p720)
-        await service.download(videoID: "v4", title: "V4", channelTitle: "C", quality: .p360)
+        // v1/v2 fill both logical slots mid-flight (each download runs in its
+        // own task because service.download awaits settlement); v3 defers into
+        // the durable queue and v4 parks behind it FIFO.
+        let t1 = Task { await service.download(videoID: "v1", title: "V1", channelTitle: "C", quality: .p720) }
+        let t2 = Task { await service.download(videoID: "v2", title: "V2", channelTitle: "C", quality: .p720) }
+        try await waitUntilThrowing({
+            transport.beginCount(for: "v1-720") >= 1 && transport.beginCount(for: "v2-720") >= 1
+        }, "slot-holder transfers never started")
+
+        // Both slots are provably occupied; the next two requests must defer.
+        let t3 = Task { await service.download(videoID: "v3", title: "V3", channelTitle: "C", quality: .p720) }
+        try await waitUntilThrowing({
+            manager.queuedTasks.contains { $0.id == "v3-720" }
+        }, "v3 was not deferred into the durable queue")
+        let t4 = Task { await service.download(videoID: "v4", title: "V4", channelTitle: "C", quality: .p360) }
+        try await waitUntilThrowing({
+            manager.queuedTasks.contains { $0.id == "v4-360" }
+        }, "v4 was not parked behind FIFO precedence")
 
         // The promoted head (v3) fails every attempt (bounded automatic
         // retries re-begin it); releasing the gates lets both held slots
         // settle so promotion runs.
         transport.fail("v3-720")
         transport.releaseAll()
-
-        try await waitUntilThrowing({ transport.beginCount(for: "v3-720") >= 1 },
-                                    "promoted job was never started")
+        await t1.value
+        await t2.value
+        await t3.value
+        await t4.value
         try await waitUntilThrowing({
             manager.failedTasks.contains { $0.id == "v3-720" }
         }, "failed promotion must surface as a failed row in the Downloads projection")
