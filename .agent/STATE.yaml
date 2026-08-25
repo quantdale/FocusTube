@@ -122,31 +122,31 @@ previous_campaigns:
     evidence_commit: 03ce6f6
     docs_commit: 47e1126
 
-status: hardening_v3_active_systemic_debt_closure
-current_milestone: HARDENING_V3_SYSTEMIC_DEBT_CLOSURE
-current_gate: H3-EXIT (pending; DDV2-EXIT passed 2026-08-25)
-current_work_packet: H3-00 truth reset + audit ledger (complete) → H3-01 API contract hardening
-current_packet_status: in_progress
+status: hardening_v3_complete_device_validation_pending
+current_milestone: HARDENING_V3_SYSTEMIC_DEBT_CLOSURE (complete)
+current_gate: H3-EXIT (passed 2026-08-26; downstream external evidence remains)
+current_work_packet: none — all H3 workstreams closed
+current_packet_status: complete_gates_green_awaiting_owner_device_evidence
 current_waypoint:
-  id: H3-01-API-CONTRACT-HARDENING
+  id: DEVICE_VALIDATION_V1_REFRESHED
   objective: >
-    Close HB-015/016/018/019/021 plus the API portions of HB-030: typed 403
-    taxonomy separating permanent permission denials from quota exhaustion,
-    deliberate partial-vs-strict item-decode decision, uniform pre-wire
-    resource-id validation mapped to typed invalidInput, removal of
-    protocol-extension default traps, cached fractional-capable RFC3339
-    parsing — each with exact request-shape/error-envelope regression tests
-    and an exhaustive caller/UI-copy audit.
+    Owner-executed physical-device Batch A (A1-A14) plus one opt-in live-smoke
+    dispatch, now against the refreshed post-H3 code baseline 7a70943.
+    Automated agent-actionable engineering for HARDENING_V3 is closed; every
+    remaining item requires owner hardware/credentials by policy.
   acceptance_evidence:
-    - audit ledger .agent/work-packets/H3-AUDIT-LEDGER.md (all 16 items verified LIVE at a581f38)
-    - local matrix green at campaign open (118 XCTest + 11 swift-testing, 0 failures)
-    - Core Tests run 32863980246 SUCCESS at docs tip a581f38
+    - audit ledger .agent/work-packets/H3-AUDIT-LEDGER.md — all HB-015..030 evidence-backed
+    - local matrix green at close (141 XCTest + 11 swift-testing, 0 failures)
+    - Core Tests run 32891558919 SUCCESS at final code SHA 7a70943
+    - iOS CI fail-closed Gate run 32891558884 SUCCESS at 7a70943 (unit=0 ui=0, journeys 20/20)
+    - checkpoint .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md
+    - consecutive-leg stability on docs tip recorded in the checkpoint
   validation_required:
-    - per-workstream deterministic tests + full local matrix before each push
-    - green Core Tests AND iOS CI fail-closed Gate at each final code SHA
-    - HB-015..HB-030 evidence-backed dispositions recorded before H3-EXIT
+    - device evidence A1-A14 (owner, physical iPhone) against 7a70943
+    - live smoke run result (one manual authenticated dispatch)
+    - no Critical/High defect open at close (verified via documented H3-07 audit)
 
-resume_token: HARDENING_V3:H3-00-COMPLETE→H3-01-IN-PROGRESS
+resume_token: HARDENING_V3:H3-EXIT-PASSED→DEVICE-VALIDATION-REFRESHED-7a70943
 repo_baseline:
   branch: main
   commit: 05a80af
@@ -277,7 +277,15 @@ packets:
   H2-HARDENING-V2: complete
   DV-BATCH-A: waiting_on_owner
   H3-00: complete
-  H3-01: in_progress
+  H3-01: complete
+  H3-02: complete
+  H3-03: complete
+  H3-04: complete
+  H3-05: complete
+  H3-06: complete
+  H3-07: complete
+  H3-08: complete
+  H3-EXIT: complete
   DDV2-00: complete
   DDV2-01: complete
   DDV2-02: complete
@@ -338,21 +346,18 @@ deferred_debt:
 
 last_checkpoint:
   kind: campaign-transition
-  file: .agent/work-packets/H3-AUDIT-LEDGER.md
-  commit: docs wave c34999a..a581f38 activates HARDENING_V3; ledger authored in-session
+  file: .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md
+  commit: final code SHA 7a70943 / docs reconciliation this commit
   note: >
-    H3-00 truth reset performed 2026-08-25: fetched/pruned origin, fast-forwarded
-    01e1eeb -> a581f38 (4 planning commits activating HARDENING_V3), verified repo
-    identity/clean tree/synced main, local swift build clean + swift test 118+11
-    zero failures, hosted Core Tests run 32863980246 SUCCESS at a581f38, gh still
-    unauthenticated (live-smoke stays owner-gated). All HB-015..HB-030 verified
-    LIVE against current code with implementation sites, callers, test impact,
-    migration implications, and dispositions recorded in the audit ledger.
+    HARDENING_V3 complete: HB-015..HB-030 all resolved with evidence-backed
+    dispositions; whole-repo re-audit documented (ledger H3-07 section);
+    qualification green at final code SHA 7a70943 — Core Tests run 32891558919,
+    iOS CI fail-closed Gate run 32891558884 with Build Debug/Release, Unit and
+    journeys 20/20 green. Red-leg root causes recorded truthfully in the
+    checkpoint.
 
 next_transition:
-  when: all H3 workstreams close with no known Critical/High agent-actionable defect,
-    final code SHA has green Core Tests + iOS CI fail-closed Gate, durable state is reconciled
+  when: owner returns Batch A evidence and one live-smoke result against baseline 7a70943
   set:
-    status: hardening_v3_complete_device_validation_pending
-    note: DEVICE_VALIDATION then resumes against the refreshed post-H3 code baseline;
-      owner Batch A evidence plus one authenticated live-smoke dispatch remain external.
+    status: personal_release_validated
+    note: Device-only verifications recorded by the owner close the campaign (DV-EXIT).

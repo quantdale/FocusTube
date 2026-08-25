@@ -1,6 +1,6 @@
 # HARDENING_V3_SYSTEMIC_DEBT_CLOSURE — Campaign Packet
 
-Status: ACTIVE
+Status: COMPLETE (2026-08-26; exit evidence in .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md)
 Opened: 2026-08-25
 Planned-From: `01e1eeb2c6d14ad480631a224ba718acfe026023`
 Execution prompt: `.agent/EXECUTION_PROMPT.md`

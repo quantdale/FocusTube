@@ -367,72 +367,94 @@ out_of_campaign:
   - id: H3-01-API-CONTRACT-HARDENING
     order: 201
     gate: H3
-    status: in_progress
+    status: complete
     depends_on: [H3-00-TRUTH-RESET]
     objective: HB-015/016/018/019/021 + API parts of HB-030 — typed 403 taxonomy beyond quota/commentsDisabled, deliberate partial-vs-strict decode decision, uniform pre-wire resource-id validation, remove protocol default traps, cached fractional RFC3339 parsing, regression tests + caller/UI copy audit.
     depends_note: owns HB items recorded in the audit ledger
+    exit_evidence:
+      - commit 80e5279 — typed .forbidden taxonomy (legacy reasons + canonical RESOURCE_EXHAUSTED/PERMISSION_DENIED statuses, commentsDisabled precedence, deliberate quota fallback); tolerant skip-and-continue item decode with all-malformed-throws-decode bound and injected skip reporter wired to os.Logger; 12-shape invalidInput no-network table; YouTubeReading/YouTubeWriting decomposition with zero throwing defaults (FullStubAPI proven trap-dependent); cached thread-safe APIDate parsers incl. fractional seconds; commentThreads pageToken wire pin; out-of-range feed resume index restart pin; five UI error-label sites carry explicit non-retry .forbidden copy
+      - local swift test green at wave close
     next: H3-02-DOWNLOAD-MODEL-TRUTHFULNESS
 
   - id: H3-02-DOWNLOAD-MODEL-TRUTHFULNESS
     order: 202
     gate: H3
-    status: pending
+    status: complete
     depends_on: [H3-01-API-CONTRACT-HARDENING]
     objective: HB-017/022/023 — route download event paths through the explicit transition model (or prove/remove dead statuses), additive persisted duration for truthful failed-row storage admission, move async failure presentation to the owning surface with clear consumption semantics; re-prove queue/reconcile/offline cluster.
+    exit_evidence:
+      - commits ba67685/ec1f7a3 (+8b8345d compile fix) — dead statuses removed; every event-path write routed through legal transitions; settled-completion-is-final rule vs late failures (EventOrdering test strengthened); origin-scoped lastFailure ownership with app-target tests; plannedDurationSeconds additive persistence threaded through retry storage admission; full transition-matrix and error-rule table tests
+      - CI-break root causes from annotations recorded in checkpoint (ModelContext label, @Sendable conversion); queue promotion, relaunch/reconcile, cancel, storage accounting, migration tolerance and offline playback re-proven by existing cluster plus new tests
     next: H3-03-PERSISTENCE-ORDERING-METADATA
 
   - id: H3-03-PERSISTENCE-ORDERING-METADATA
     order: 203
     gate: H3
-    status: pending
+    status: complete
     depends_on: [H3-02-DOWNLOAD-MODEL-TRUTHFULNESS]
     objective: HB-020/025 + persistence/navigation portions of HB-029/030 — truthful SwiftData save/delete failure semantics with degraded-state signal, deterministic OfflineLibraryPolicy tie ordering, preserve channel/description metadata across Library/playlist-origin navigation additively, explicit TabView selection/restoration if audit confirms loss, edge tests for caps/ties/old-row defaults.
+    exit_evidence:
+      - commit d8de31f — total-order comparators with id tiebreakers + grouping ties (edge tests incl. reversed-input invariance, negative sizes, empty/whitespace titles); two-tier truthful persistence (rollback for durability-critical index, observable degraded flag for session data, write-through recents with context.rollback) behind injected save seam with failure-injection tests; playlistItems decode of description/thumbnail/videoOwnerChannelId wire-pinned; additive WatchHistoryEntry/SavedItem channelID+videoDescription reconstructed across navigation (SceneStorage tab restoration landed in the H3-05 commit)
     next: H3-04-RENDER-PATH-PERFORMANCE
 
   - id: H3-04-RENDER-PATH-PERFORMANCE
     order: 204
     gate: H3
-    status: pending
+    status: complete
     depends_on: [H3-03-PERSISTENCE-ORDERING-METADATA]
     objective: HB-027 — eliminate per-card full-history fetches via precomputed videoID->fraction projection, cache formatters safely, audit progress-invalidation and image/list behavior without regressing XCUITest stability or a11y contracts.
+    exit_evidence:
+      - commit 989f4af — LibraryStore.resumeFractions() single-fetch revision-memoized projection hoisted once per body in Home/Search (per-row full-table scans eliminated); card RelativeDateTimeFormatter cached MainActor-isolated; projection semantics pinned by app-target tests
     next: H3-05-UX-QUOTA-A11Y
 
   - id: H3-05-UX-QUOTA-A11Y
     order: 205
     gate: H3
-    status: pending
+    status: complete
     depends_on: [H3-04-RENDER-PATH-PERFORMANCE]
     objective: HB-024/026/028 + remaining HB-029 UX batch — tri-state quality lifecycle copy, draft-preserving reply-target switching, VoiceOver continue-watching value, bounded thumbnail failure state, duplicate-submit guards (search/playlists/sign-in), PlaylistDetail retry affordance, truthful fake-auth states, 44pt targets/decorative AX cleanup/history-row hints, unified continue-watching thresholds, controlled malformed-share error, preserve DDV2 search focus contract.
+    exit_evidence:
+      - commit 989f4af (+7a70943 fixture correction) — tri-state QualityResolutionState picker copy; per-target composer drafts (park on switch/cancel, consume on success); accessibilityValue N% watched without touching journey label contracts; nil-thumbnail bounded glyph; playlists/detail duplicate-load guards + real retry affordance; identical in-flight submit gate; sign-in re-entry guards + truthful fake-session notice; 44pt caption targets; AX-hidden chevrons; SceneStorage tab restoration; controlled share alert; thresholds unified; DDV2 retain-focus contract untouched
+      - journeys 20/20 green on qualification legs #195/#196
     next: H3-06-TEST-GAP-CLOSURE
 
   - id: H3-06-TEST-GAP-CLOSURE
     order: 206
     gate: H3
-    status: pending
+    status: complete
     depends_on: [H3-05-UX-QUOTA-A11Y]
     objective: HB-030 remainder + regressions discovered en route — commentThreads pageToken plumbing, out-of-range resume restart, ordering tie/negative/empty-title edges, recents custom-cap trim, DownloadState transition table, migration defaults, persistence failure injection, duplicate-submit races; table-driven, cheapest layer.
+    exit_evidence:
+      - commit 2087737 closes the final gap (recents custom-cap trim incl. degenerate cap=0); all other listed gaps closed inside the H3-01/H3-02/H3-03 waves with their workstreams
     next: H3-07-SYSTEMIC-REAUDIT
 
   - id: H3-07-SYSTEMIC-REAUDIT
     order: 207
     gate: H3
-    status: pending
+    status: complete
     depends_on: [H3-06-TEST-GAP-CLOSURE]
     objective: Mandatory whole-repository re-audit per EXECUTION_PROMPT H3-07 checklist; fix Critical/High immediately, bounded Medium before exit, record residual Low with evidence; document findings rather than imply them.
+    exit_evidence:
+      - commit d054070 documents 15 checklist areas with observed evidence in ledger §H3-07; no Critical/High residual; two concrete Low notes recorded
     next: H3-08-QUALIFICATION
 
   - id: H3-08-QUALIFICATION
     order: 208
     gate: H3
-    status: pending
+    status: complete
     depends_on: [H3-07-SYSTEMIC-REAUDIT]
     objective: Focused suites then full local matrix; push so Apple CI tests exact final code SHA; require green Core Tests AND genuinely green iOS CI fail-closed Gate (unit.exit=0 ui.exit=0); root-cause any red from artifacts; prefer second consecutive green leg for broad UI/harness changes; re-run secrets/focus/release-isolation checks.
+    exit_evidence:
+      - final code SHA 7a70943 — Core Tests run 32891558919 SUCCESS; iOS CI run 32891558884 SUCCESS (Build Debug/Release, Unit 141 XCTest, journeys 20/20, Gate contract self-check, genuinely green fail-closed Gate)
+      - red-leg root causes truthfully recorded in checkpoint; diagnostics hardening (aa42207) kept permanently
     next: H3-EXIT
 
   - id: H3-EXIT
     order: 209
     gate: H3-EXIT
-    status: pending
+    status: complete
     depends_on: [H3-08-QUALIFICATION]
     objective: Evidence-backed dispositions for every HB item; no known Critical/High agent-actionable defect; whole-repo audit documented; STATE/WAYPOINTS/INDEX/backlog/checkpoint reconciled; DEVICE_VALIDATION baseline refreshed to final post-H3 code SHA; Batch A + live-smoke stay pending owner evidence; execution prompt marked COMPLETE; final session-report commit pushed.
+    exit_evidence:
+      - checkpoint .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md; DEVICE_VALIDATION baseline refreshed to 7a70943; Batch A A1-A14 and one authenticated live-smoke remain pending external owner evidence
     next: DEVICE_VALIDATION_V1_REFRESHED (owner-executed)

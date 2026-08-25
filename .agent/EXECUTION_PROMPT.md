@@ -1,6 +1,15 @@
 # FocusTube Execution Prompt — HARDENING V3 Systemic Debt Closure & Release Convergence
 
-Status: ACTIVE
+Status: COMPLETE
+Completed: 2026-08-26 — final code SHA `7a70943`; Core Tests run 32891558919 SUCCESS
+and iOS CI run 32891558884 SUCCESS at that SHA (fail-closed Gate, Build Debug/Release,
+Unit 141 XCTest, journeys 20/20). All HB-015..HB-030 resolved with evidence-backed
+dispositions; whole-repository re-audit documented in
+`.agent/work-packets/H3-AUDIT-LEDGER.md` (H3-07 section). Checkpoint:
+`.agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md` (truthful red-leg root
+causes for runs #188..#195 included). DEVICE_VALIDATION baseline refreshed to 7a70943;
+Batch A A1-A14 and one authenticated opt-in live-smoke remain pending external
+owner-only evidence.
 Planned-From: `01e1eeb2c6d14ad480631a224ba718acfe026023`
 Target-Branch: `main`
 Campaign: `HARDENING_V3_SYSTEMIC_DEBT_CLOSURE`

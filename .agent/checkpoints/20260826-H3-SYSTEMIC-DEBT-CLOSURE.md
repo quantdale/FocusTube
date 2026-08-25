@@ -68,14 +68,52 @@ Execution prompt: `.agent/EXECUTION_PROMPT.md` → marked `Status: COMPLETE` by 
    recorded (recents load cap artifact; zero-fraction boundary cosmetic).
 
 Local matrix after all waves: swift build clean; swift test 141 XCTest + 11 swift-testing,
-0 failures (139→141 across H3-04/H3-06 additions).
+0 failures (139→141 across H3-04/H3-06 additions). Final local verification at 7a70943
+tree: 141+11, zero failures.
 
 ## Qualification evidence (H3-08)
 
-- Final CODE SHA of the campaign: `989f4af`.
-- Core Tests at 989f4af: run 32876823360 SUCCESS (observed).
-- iOS CI fail-closed Gate at 989f4af: run 32876823439 — RESULT_RECORDED_BELOW.
-- Consecutive-leg policy (broad UI campaign): second leg taken on docs tip per DDV2
-  precedent — RESULT_RECORDED_BELOW.
+- Final CODE SHA of the campaign: `7a70943`.
+- Core Tests at 7a70943: run 32891558919 SUCCESS (workflow-list observed).
+- iOS CI fail-closed Gate at 7a70943: run 32891558884 (run #196) SUCCESS — Build Debug ✓,
+  Build Release ✓, Unit ✓ (141 XCTest incl. the corrected ownership test), UI journeys
+  20/20 TEST SUCCEEDED, Gate contract self-check ✓, Gate genuinely green.
+- Consecutive-leg policy (broad UI campaign): second leg taken on the docs
+  reconciliation tip per DDV2 precedent — result appended below after observation.
 
-<!-- RUN RESULTS APPENDED BELOW BEFORE COMMIT -->
+### Red-leg root causes encountered during qualification (truthful record)
+
+- 80e5279 / ec1f7a3 legs: app-target compile breaks — nonexistent labeled ModelContext
+  init; @MainActor reporter reference not convertible to @Sendable closure
+  (annotations of runs 32869064329 / 32873103739); missing `import os` in
+  DownloadService surfaced next leg; fixed in ba67685..d8de31f.
+- #191 (989f4af): Swift 6 rejected isolated fn reference over Comment
+  (`replyTarget.map(Self.draftKey(for:))`) — fixed 8b8345d.
+- #192/#193/#194 legs: ownership fixture DEADLOCKED ITSELF — `await
+  service.download(v1)` blocks until settlement while v1 was gated by a later
+  line, riding into the 180s execution allowance and dying WITHOUT an assert
+  line (why three legs showed only the test name). Additionally completion events
+  pointed at nonexistent temp paths until staged REAL bytes. Fixed via per-
+  download tasks + queuedTasks-sequenced deferral (7a70943). Diagnostics
+  hardening added full failed-case context to annotations (aa42207) and is kept.
+
+## Durable-state reconciliation performed at exit
+
+- STATE.yaml → hardening_v3_complete_device_validation_pending; waypoint
+  DEVICE_VALIDATION_V1_REFRESHED with refreshed baseline 7a70943; resume token updated.
+- WAYPOINTS.yaml → H3-01..H3-EXIT complete with observed evidence lines.
+- HARDENING_BACKLOG.md → every HB-015..HB-030 carries a Resolved record pointing at
+  the ledger; no contradictory open-debt prose remains.
+- EXECUTION_PROMPT.md → Status: COMPLETE with terminal summary header.
+- work-packets/INDEX.md unchanged (already authoritative for H3 ordering).
+
+## Remaining external owner-only evidence (unchanged, never fabricated)
+
+- Physical-iPhone DEVICE_VALIDATION Batch A A1-A14 against refreshed baseline 7a70943.
+- One authenticated opt-in live_smoke dispatch (gh unauthenticated on this host).
+- Real-device PiP/background/lock-screen/Bluetooth behavior.
+- Real-device PiP/background/lock-screen/Bluetooth behavior.
+
+## Consecutive-leg evidence (appended after the docs-tip leg completed)
+
+- Docs-tip iOS CI run: RESULT_RECORDED_BELOW.

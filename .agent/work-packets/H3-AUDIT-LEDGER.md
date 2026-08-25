@@ -269,6 +269,17 @@ disposition. Dispositions update per workstream as evidence lands.
   equal-or-stronger assertions; journey-affecting UI changes keep identifier contracts stable.
 - CI plane: every code wave pushes to main; Core Tests + iOS CI Gate must be green at final SHA.
 
+## Qualification record (H3-08)
+
+- Final code SHA 7a70943: Core Tests run 32891558919 SUCCESS; iOS CI run 32891558884
+  SUCCESS (fail-closed Gate, Build Debug/Release, Unit 141 XCTest incl. corrected
+  ownership test, journeys 20/20). Local matrix at close: swift build clean;
+  swift test 141+11, 0 failures.
+- Red legs #188-#195 were each root-caused from public annotations and fixed forward;
+  the truthful trail lives in .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md.
+- Diagnostics hardening (aa42207) now surfaces full failed-case context + XCT assert
+  hits as annotations for any future red unit leg.
+
 ## H3-07 — Whole-repository systemic re-audit (documented findings)
 
 Executed 2026-08-25/26 after HB consumption, per EXECUTION_PROMPT checklist. Method:
