@@ -248,15 +248,17 @@ disposition. Dispositions update per workstream as evidence lands.
   shapes (Core isValidVideoID); otherwise ShareLink is replaced by a button
   that surfaces a controlled "Can't share this video" alert.
 
-### HB-030 (Low) — residual deterministic-test gaps — PARTIALLY FIXED (H3-01 API portions done; remainder owned by H3-06)
+### HB-030 (Low) — residual deterministic-test gaps — FIXED (H3-01 API portions + H3-06 remainder)
 - commentThreads pageToken plumbing through client (playlistItems analog tested): FIXED in H3-01
   (wire-shape test asserting videoId/pageToken params present on continuation,
   absent on first page).
 - Out-of-range numeric feed-resume index restart: FIXED in H3-01
   (testOutOfRangeResumeIndexRestartsFromFirstPlaylist pins "9|stale-token" restart).
-- OfflineLibraryPolicy negative-size/empty-title/tie cases: open -> H3-03/H3-06.
-- Recents custom maxEntries below existing count: open -> H3-06 (verify policy trim path).
-- Equal-timestamp tie ordering: open -> H3-03/H3-06.
+- Recents custom maxEntries below existing count: FIXED in H3-06 —
+  testCustomMaxEntriesBelowExistingCountTrimsOldest pins tail-trim keeping
+  newest at cap=3 and the degenerate cap=0 case.
+- Equal-timestamp tie ordering: FIXED in H3-03 (OfflineLibraryPolicy total
+  order + tests).
 - Disposition: close in H3-06 alongside regressions from H3-01..05 (table-driven, cheapest layer).
 
 ## Cross-cutting execution notes

@@ -31,6 +31,20 @@ final class SearchRecentsPolicyTests: XCTestCase {
         XCTAssertEqual(recents.last?.query, "q15", "oldest entries fall off")
     }
 
+    /// HB-030: a custom cap BELOW the current entry count must trim the tail
+    /// (oldest) while keeping the newest — the parameterized bound is real,
+    /// not decorative.
+    func testCustomMaxEntriesBelowExistingCountTrimsOldest() {
+        let seeded = (0..<10).map { entry("e\($0)", minutesAgo: $0) } // e0 newest
+        let trimmed = SearchRecentsPolicy.record(seeded, newQuery: "fresh", now: Date(), maxEntries: 3)
+        XCTAssertEqual(trimmed.map(\.query), ["fresh", "e0", "e1"])
+        XCTAssertEqual(trimmed.count, 3)
+
+        // Cap of zero degenerates to just the new query being dropped too.
+        let emptied = SearchRecentsPolicy.record(seeded, newQuery: "fresh", now: Date(), maxEntries: 0)
+        XCTAssertTrue(emptied.isEmpty)
+    }
+
     func testBlankQueriesNeverRecord() {
         var recents = [entry("keep", minutesAgo: 1)]
         let unchanged = SearchRecentsPolicy.record(recents, newQuery: "   ", now: Date())
