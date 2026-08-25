@@ -274,7 +274,7 @@ enum FixtureMediaFactory {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("focustube-fixture-media-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let width = 64, height = 64, fps = 10, frames = 15
+        let width = 64, height = 64, fps = 10, frames = 120
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
@@ -354,7 +354,10 @@ enum FixtureMediaFactory {
         // forever, so any completion poll deterministically expires with
         // Code=4 (the aebae44 regression that silently degraded every
         // transfer to filler bytes). Completion is awaited through a bounded
-        // semaphore — never an unbounded block on a wedged encoder.
+        // semaphore — never an unbounded block on a wedged encoder. The clip
+        // runs 12 s so offline journeys can OBSERVE the playing state before
+        // natural end-of-stream pauses the player (run be8e1e4: a 1.5 s clip
+        // ended before the first AX query and read as pstate=paused).
         let finished = DispatchSemaphore(value: 0)
         writer.finishWriting { finished.signal() }
         _ = finished.wait(timeout: .now() + 10)

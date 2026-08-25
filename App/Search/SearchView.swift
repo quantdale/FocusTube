@@ -15,80 +15,74 @@ struct SearchView: View {
     /// SwiftUI-owned field focus. Submit deliberately RETAINS focus: a
     /// programmatic blur desynced SwiftUI's internal focus state on iOS 26 and
     /// left the field un-refocusable by tap (evidence: runs 32828052990 /
-    /// dfb939b). Keyboard obstruction is instead resolved on the list side via
-    /// `.keyboardDismissMode(.onDragStart)` — any scroll gesture drops the
-    /// keyboard so results and Load more render full-height.
+    /// dfb939b). Keyboard obstruction is instead resolved on the scroll side:
+    /// any drag immediately drops the keyboard so results render full-height.
     @FocusState private var queryFieldFocused: Bool
 
     var body: some View {
-        List {
-            Section {
-                HStack {
-                    TextField("Search YouTube", text: $queryText)
-                        .textFieldStyle(.roundedBorder)
-                        .submitLabel(.search)
-                        .onSubmit(submit)
-                        .focused($queryFieldFocused)
-                        .accessibilityLabel("Search query")
-                        .accessibilityIdentifier("search-field")
-                    Button("Search") {
-                        submit()
-                    }
-                    .disabled(queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityIdentifier("search-submit-button")
+        // A deliberate NON-lazy scroll view (same contract as DownloadsView and
+        // the video page): personal-scale result pages make laziness worthless,
+        // while a lazy List refused to realize the below-fold Load-more row at
+        // all while the keyboard compressed the viewport (run 8ad4c69 — 18
+        // attempts, empty frame breadcrumbs). Existence equals render here.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                searchFieldRow
+
+                recentsSection
+
+                if store.isLoading {
+                    ProgressView("Searching…")
                 }
-            }
 
-            recentsSection
-
-            if store.isLoading {
-                ProgressView("Searching…")
-            }
-
-            if let error = store.error {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(errorLabel(error), systemImage: "exclamationmark.triangle")
+                if let error = store.error {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(errorLabel(error), systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                        Button("Try again") {
+                            // Retry resubmits the last EXECUTED query, not whatever
+                            // currently sits in the field.
+                            queryText = store.query
+                            submit()
+                        }
+                    }
+                } else if !store.isLoading,
+                          !store.query.isEmpty,
+                          store.results.isEmpty {
+                    Text("No results for \"\(store.query)\".")
                         .foregroundStyle(.secondary)
-                    Button("Try again") {
-                        // Retry resubmits the last EXECUTED query, not whatever
-                        // currently sits in the field.
-                        queryText = store.query
-                        submit()
+                }
+
+                ForEach(store.results) { video in
+                    Button {
+                        selectedVideo = video
+                    } label: {
+                        VideoCard(
+                            video: video,
+                            progressFraction: VideoCard.resumeFraction(videoID: video.id, history: library.history)
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("search-result-row")
                 }
-            } else if !store.isLoading,
-                      !store.query.isEmpty,
-                      store.results.isEmpty {
-                Text("No results for \"\(store.query)\".")
-                    .foregroundStyle(.secondary)
-            }
 
-            ForEach(store.results) { video in
-                Button {
-                    selectedVideo = video
-                } label: {
-                    VideoCard(
-                        video: video,
-                        progressFraction: VideoCard.resumeFraction(videoID: video.id, history: library.history)
-                    )
+                if store.nextPageToken != nil {
+                    Button {
+                        Task { await store.loadMore() }
+                    } label: {
+                        Label("Load more", systemImage: "arrow.down.circle")
+                    }
+                    .accessibilityIdentifier("load-more-button")
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("search-result-row")
             }
-
-            if store.nextPageToken != nil {
-                Button {
-                    Task { await store.loadMore() }
-                } label: {
-                    Label("Load more", systemImage: "arrow.down.circle")
-                }
-                .accessibilityIdentifier("load-more-button")
-            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
         .navigationTitle("Search")
         // Any scroll over the results immediately drops the keyboard so
-        // below-fold controls are reachable at full list height; submit keeps
-        // field focus.
+        // below-fold controls are reachable at full height; submit keeps field
+        // focus.
         .scrollDismissesKeyboard(.immediately)
         // Pushed video page (see LibraryView note): modal presentation of
         // AVKit-hosting content is unreliable on current iOS 26 runtimes.
@@ -106,6 +100,23 @@ struct SearchView: View {
                     Button("Close") { selectedVideo = nil }
                 }
             }
+        }
+    }
+
+    private var searchFieldRow: some View {
+        HStack {
+            TextField("Search YouTube", text: $queryText)
+                .textFieldStyle(.roundedBorder)
+                .submitLabel(.search)
+                .onSubmit(submit)
+                .focused($queryFieldFocused)
+                .accessibilityLabel("Search query")
+                .accessibilityIdentifier("search-field")
+            Button("Search") {
+                submit()
+            }
+            .disabled(queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .accessibilityIdentifier("search-submit-button")
         }
     }
 
@@ -132,52 +143,55 @@ struct SearchView: View {
         if !typed.isEmpty, differsFromSubmitted {
             let suggestions = recentSearches.suggestions(for: typed)
             if !suggestions.isEmpty {
-                Section("Suggestions") {
-                    ForEach(suggestions, id: \.query) { suggestion in
-                        Button {
-                            queryText = suggestion.query
-                            submit()
-                        } label: {
-                            Label(suggestion.query, systemImage: "clock.arrow.circlepath")
-                                .lineLimit(1)
-                        }
-                        .accessibilityIdentifier("search-suggestion-row")
+                sectionHeader("Suggestions")
+                ForEach(suggestions, id: \.query) { suggestion in
+                    Button {
+                        queryText = suggestion.query
+                        submit()
+                    } label: {
+                        Label(suggestion.query, systemImage: "clock.arrow.circlepath")
+                            .lineLimit(1)
                     }
+                    .accessibilityIdentifier("search-suggestion-row")
                 }
             }
         } else if !recentSearches.entries.isEmpty {
-            Section {
-                ForEach(recentSearches.entries, id: \.query) { entry in
-                    HStack {
-                        Button {
-                            queryText = entry.query
-                            submit()
-                        } label: {
-                            Label(entry.query, systemImage: "clock.arrow.circlepath")
-                                .lineLimit(1)
-                        }
-                        .accessibilityIdentifier("recent-search-row")
-                        Spacer()
-                        Button(role: .destructive) {
-                            recentSearches.remove(entry.query)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption)
-                                .frame(minWidth: 44, minHeight: 44)
-                        }
-                        .accessibilityLabel("Remove \(entry.query) from recents")
+            sectionHeader("Recent searches")
+            ForEach(recentSearches.entries, id: \.query) { entry in
+                HStack {
+                    Button {
+                        queryText = entry.query
+                        submit()
+                    } label: {
+                        Label(entry.query, systemImage: "clock.arrow.circlepath")
+                            .lineLimit(1)
                     }
+                    .accessibilityIdentifier("recent-search-row")
+                    Spacer()
+                    Button(role: .destructive) {
+                        recentSearches.remove(entry.query)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("Remove \(entry.query) from recents")
                 }
-                Button(role: .destructive) {
-                    recentSearches.clear()
-                } label: {
-                    Label("Clear search history", systemImage: "trash")
-                }
-                .accessibilityIdentifier("clear-search-history")
-            } header: {
-                Text("Recent searches")
             }
+            Button(role: .destructive) {
+                recentSearches.clear()
+            } label: {
+                Label("Clear search history", systemImage: "trash")
+            }
+            .accessibilityIdentifier("clear-search-history")
         }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(nil)
     }
 
     private func errorLabel(_ error: YouTubeAPIError) -> String {

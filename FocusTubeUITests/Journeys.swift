@@ -403,6 +403,12 @@ final class Journeys: XCTestCase {
         // single-direction loop scrolled past visible targets on taller DDV2
         // layouts (run-32828052990 trace: target parked at y=527 while rows
         // reported negative Y) and could never converge.
+        // Submit deliberately keeps field focus; like a real user, the journey
+        // explicitly dismisses the keyboard (nav-bar tap) so the reveal below
+        // operates at full list height instead of tapping through keyboard
+        // glass.
+        dismissKeyboard(app)
+
         let lmTrace = interact(app, locate: { $0.buttons["load-more-button"].firstMatch }, tap: true)
         XCTAssertTrue(lmTrace.isEmpty, "load more must be reachable [\(lmTrace);\(treeDiagnostics(app))]")
         // Second page exhausts the fixture results: the disappearing load-more
