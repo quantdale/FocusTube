@@ -311,31 +311,35 @@ out_of_campaign:
   - id: DDV2-10-A11Y-VISUAL
     order: 110
     gate: DDV2
-    status: in_progress
+    status: complete
     depends_on: [DDV2-04-VIDEO-ACTIONS-UI, DDV2-05-SETTINGS, DDV2-07-SEARCH-RECENTS, DDV2-08-LIBRARY]
     objective: Coordinated accessibility/visual integration pass over all new surfaces without regressing iOS 26 XCUITest stability work.
     exit_evidence:
       - code-level a11y sweep 2026-08-25 (labels/hints/44pt targets/status-not-color-only verified across Home/Search/Library/Downloads/Settings/video page/player)
       - reveal machinery hardened against iOS 26 scroll-synthesis failures; journeys E/G/K/L contract assertions de-coupled from gesture scrolling
-      - green iOS CI on the convergence commit (pending)
+      - green iOS CI on the convergence lineage — final Gate green at 05a80af (run 32855544105)
     next: DDV2-11-REGRESSION
 
   - id: DDV2-11-REGRESSION
     order: 111
     gate: DDV2
-    status: in_progress
+    status: complete
     depends_on: [DDV2-10-A11Y-VISUAL, DDV2-09-BACKLOG-CLOSURE]
     objective: Full regression/release qualification — full suites green, both workflows green, secrets audit, focus-mode invariant audit, docs synchronized.
     exit_evidence:
-      - Core swift test green locally 2026-08-25 (113 XCTest + 11 swift-testing)
-      - gate-contract self-check added to ios-ci.yml and verified locally
-      - green Core Tests + green iOS CI on the convergence commit (pending)
+      - Core swift test green locally 2026-08-25 (118 XCTest + 11 swift-testing at close; 0 failures throughout the campaign)
+      - gate-contract self-check added to ios-ci.yml and verified locally + in every leg
+      - Core Tests run 32855544250 SUCCESS and iOS CI run 32855544105 SUCCESS at code SHA 05a80af (fail-closed Gate, unit=0 ui=0, full journey set incl. formerly-failing L/D/I)
+      - secrets/config hygiene, Shorts firewall, autoplay-next absence, Core platform-neutrality re-verified (see checkpoint)
     next: DDV2-EXIT
 
   - id: DDV2-EXIT
     order: 112
     gate: DDV2-EXIT
-    status: pending
+    status: complete
     depends_on: [DDV2-11-REGRESSION]
     objective: Record final campaign evidence checkpoint and hand off to refreshed physical-device validation with a new code baseline.
-    exit_evidence: []
+    exit_evidence:
+      - checkpoint .agent/checkpoints/20260825-DDV2-SYSTEMIC-CONVERGENCE.md records root causes, audit findings fixed/deferred (HB-015..HB-030), exact run IDs
+      - DEVICE_VALIDATION baseline refreshed to 05a80af (42f761a NOT reused); Batch A A1-A14 and one live-smoke dispatch remain pending external owner evidence
+    next: DEVICE_VALIDATION_V1_REFRESHED (owner-executed)

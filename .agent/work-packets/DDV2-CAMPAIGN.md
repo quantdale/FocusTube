@@ -27,17 +27,17 @@ Rule: where the locked product spec requires the capability and it is technicall
 |---|---|---|
 | DDV2-00 | Truth reset: audit every claim above against code; write findings into checkpoints; open campaign state | complete |
 | DDV2-01 | Durable queued-download lifecycle (P0 correctness): queued jobs survive process death; FIFO promotion reconstructed from persisted records; no signed-URL persistence; cancel works queued; corrupt rows degrade to recoverable failure | complete |
-| DDV2-02 | Download management/storage/retry completion: queue controls UX, offline library sorting/size/channel grouping + total storage usage, retry-policy reconciliation (docs say up to 3 attempts; code ships 1), human-readable phases | pending |
-| DDV2-03 | Typed account/comment API expansion: commentThreads/comments insert, subscription resource-id retrieval for truthful unsubscribe, rating get/set/remove models | pending |
-| DDV2-04 | Video action/comment UI: rich metadata, action row (save/like/subscribe/share/download), composer with typed failure states, duplicate-submit prevention | pending |
-| DDV2-05 | Account/settings surface: profile/settings screen, sign-in/out state handling, storage link, privacy/version info | pending |
-| DDV2-06 | Shared rich video-card system + Home rebuild (thumbnail/title/channel/published/duration, accessibility, Dynamic Type, caching) | pending |
-| DDV2-07 | Search recents/rich results: persisted deduped bounded recent queries, local suggestions per keystroke (no remote calls typing), shared cards | pending |
-| DDV2-08 | Library/history/playlists/storage: continue-watching upgrades, richer additive SwiftData metadata, supported-playlists reconciliation | pending |
-| DDV2-09 | HB-013 closure (projection architecture) + HB-014 closure (local playable test fixture) if not already closed en route | pending |
-| DDV2-10 | Accessibility/visual integration pass across all new surfaces | pending |
-| DDV2-11 | Full regression/release qualification: full suites, both workflows green, secrets audit, focus-mode invariant audit, docs sync | pending |
-| DDV2-EXIT | Campaign evidence checkpoint + handoff to refreshed DEVICE_VALIDATION | pending |
+| DDV2-02 | Download management/storage/retry completion: queue controls UX, offline library sorting/size/channel grouping + total storage usage, retry-policy reconciliation (docs say up to 3 attempts; code ships 1), human-readable phases | complete |
+| DDV2-03 | Typed account/comment API expansion: commentThreads/comments insert, subscription resource-id retrieval for truthful unsubscribe, rating get/set/remove models | complete |
+| DDV2-04 | Video action/comment UI: rich metadata, action row (save/like/subscribe/share/download), composer with typed failure states, duplicate-submit prevention | complete |
+| DDV2-05 | Account/settings surface: profile/settings screen, sign-in/out state handling, storage link, privacy/version info | complete |
+| DDV2-06 | Shared rich video-card system + Home rebuild (thumbnail/title/channel/published/duration, accessibility, Dynamic Type, caching) | complete |
+| DDV2-07 | Search recents/rich results: persisted deduped bounded recent queries, local suggestions per keystroke (no remote calls typing), shared cards | complete |
+| DDV2-08 | Library/history/playlists/storage: continue-watching upgrades, richer additive SwiftData metadata, supported-playlists reconciliation | complete |
+| DDV2-09 | HB-013 closure (projection architecture) + HB-014 closure (local playable test fixture) if not already closed en route | complete |
+| DDV2-10 | Accessibility/visual integration pass across all new surfaces | complete |
+| DDV2-11 | Full regression/release qualification: full suites, both workflows green, secrets audit, focus-mode invariant audit, docs sync | complete |
+| DDV2-EXIT | Campaign evidence checkpoint + handoff to refreshed DEVICE_VALIDATION | complete (2026-08-25, baseline 05a80af; Batch A/live-smoke remain owner-executed) |
 
 Statuses are authoritative in `.agent/WAYPOINTS.yaml`; this file carries the narrative scope.
 

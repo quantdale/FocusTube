@@ -1,7 +1,7 @@
 schema_version: 2
 project: FocusTube
 plan_version: 2
-updated_at: 2026-08-25T10:20:00+08:00
+updated_at: 2026-08-25T21:30:00+08:00
 
 active_campaign:
   id: SPEC_CLOSURE_DAILY_DRIVER_V2
@@ -50,6 +50,19 @@ convergence_2026_08_25:
     the reply.
   ci_hardening: scripts/ci/verify-gate-contract.sh wired into ios-ci.yml as a
     structural regression guard asserting the fail-closed verdict restoration.
+  final_root_causes_closed_2026_08_25: >
+    The remaining red-gate layer beneath the above: (1) FixtureMediaFactory
+    lost writer.finishWriting() in the aebae44 rewrite — generation failed
+    deterministically on every runner and the opaque-filler fallback registered
+    fake completed downloads; fixed + unit-pinned (FixtureMediaTests) and the
+    fallback replaced by a typed transport failure. (2) Search submit/focus:
+    programmatic blur of any kind left the field un-refocusable by tap on this
+    runtime; contract is now retain-focus + .scrollDismissesKeyboard(.immediately)
+    over a deliberate NON-lazy results surface, with keyboard-aware harness
+    scrolling/dismissal retries. (3) Journey L's fixture clip was 1.5 s —
+    natural end-of-stream paused playback before observation; clip is 12 s and
+    the local sheet owns a dedicated PlayerCoordinator. Full detail:
+    .agent/checkpoints/20260825-DDV2-SYSTEMIC-CONVERGENCE.md.
 
 ddv2_findings_ddv2_00:
   queued_download_durability: CONFIRMED_DEFECT — capacity-deferred requests were
@@ -105,31 +118,32 @@ previous_campaigns:
     evidence_commit: 03ce6f6
     docs_commit: 47e1126
 
-status: spec_closure_daily_driver_v2_convergence
-current_milestone: SPEC_CLOSURE_DAILY_DRIVER_V2
-current_gate: DDV2-11-REGRESSION (full qualification via both workflows)
-current_work_packet: DDV2 convergence — red-gate repair + interaction/a11y hardening
-current_packet_status: fixes_landed_awaiting_ios_ci_evidence
+status: ddv2_systemic_convergence_complete_device_validation_pending
+current_milestone: SPEC_CLOSURE_DAILY_DRIVER_V2 (automated engineering complete)
+current_gate: DDV2-EXIT (passed 2026-08-25; downstream external evidence remains)
+current_work_packet: DDV2 convergence — red-gate repair + systemic audit (closed)
+current_packet_status: complete_gates_green_awaiting_owner_device_evidence
 current_waypoint:
-  id: DDV2-11_REGRESSION
+  id: DEVICE_VALIDATION_V1_REFRESHED
   objective: >
-    Restore a fully green qualification matrix after the DDV2 wave left main
-    red (iOS CI run 32712931724 at aebae44: unit=65 ui=65 behind a
-    continue-on-error display), close DDV2-08/09 remaining contracts, and
-    record release-qualification evidence.
+    Owner-executed physical-device Batch A (A1-A14) plus one opt-in live-smoke
+    dispatch, now against the refreshed post-DDV2 code baseline 05a80af.
+    Automated agent-actionable engineering for this campaign is closed; every
+    remaining item requires owner hardware/credentials by policy.
   acceptance_evidence:
-    - Core swift test green locally on Windows (113 XCTest + 11 swift-testing, 0 failures)
-    - promotion double-count fix verified against DurableQueueTests scenario trace
-    - iOS CI green on the packet commit (pending — this waypoint's gate)
+    - Core Tests run 32855544250 SUCCESS at 05a80af
+    - iOS CI run 32855544105 SUCCESS at 05a80af (fail-closed Gate green, unit=0 ui=0)
+    - full UI journey set green in the same leg incl. formerly-failing L/D/I
+    - checkpoint .agent/checkpoints/20260825-DDV2-SYSTEMIC-CONVERGENCE.md
   validation_required:
-    - device evidence A1-A14 (owner, downstream DEVICE_VALIDATION_V1)
-    - live smoke run result (one manual dispatch)
-    - no Critical/High defect open at close
+    - device evidence A1-A14 (owner, physical iPhone)
+    - live smoke run result (one manual authenticated dispatch)
+    - no Critical/High defect open at close (verified)
 
-resume_token: SPEC_CLOSURE_DAILY_DRIVER_V2:DDV2-11-REGRESSION
+resume_token: SPEC_CLOSURE_DAILY_DRIVER_V2:DDV2-EXIT-PASSED→DEVICE-VALIDATION-REFRESHED
 repo_baseline:
   branch: main
-  commit: 42f761a
+  commit: 05a80af
   note: >
     FINAL_COMPLETION_V1 closed the red-iOS-CI regression introduced with the
     fixture-journey expansion and left the full deterministic matrix green:
@@ -137,6 +151,11 @@ repo_baseline:
     (Build Debug + Build Release + Unit tests 94/0/4-skipped + UI journeys +
     Gate) at code SHA 42f761a. Windows local baseline green: swift build
     clean; swift test 74/74 zero failures.
+    SUPERSEDED 2026-08-25: the DDV2 systemic-convergence campaign landed
+    product changes; the refreshed qualification baseline is 05a80af with
+    Core Tests run 32855544250 and iOS CI run 32855544105 both SUCCESS
+    (fail-closed Gate, unit=0 ui=0). Windows local matrix green throughout
+    (118 XCTest + 11 swift-testing).
   pointer_convention: >
     Docs-only commits (STATE/checkpoints/README) do NOT require refreshing
     this baseline pointer or re-recording their own CI runs; the code
@@ -261,8 +280,9 @@ packets:
   DDV2-07: complete
   DDV2-08: complete
   DDV2-09: complete
-  DDV2-10: in_progress
-  DDV2-11: in_progress
+  DDV2-10: complete
+  DDV2-11: complete
+  DDV2-EXIT: complete
 
 blockers:
   - id: owner-device-evidence
@@ -310,14 +330,17 @@ deferred_debt:
 
 last_checkpoint:
   kind: campaign-transition
-  file: .agent/checkpoints/20260823-FINAL-COMPLETION.md
-  commit: 42f761a
+  file: .agent/checkpoints/20260825-DDV2-SYSTEMIC-CONVERGENCE.md
+  commit: 05a80af (code) / docs tip records evidence
   note: >
-    FINAL_COMPLETION_V1: two High product defects (unreachable video page on
-    iOS 26 modal presentation; non-observable LibraryStore), two Medium
-    defects (inflatable player overlay rows; host-disk-dependent fixture
-    admission), plus the docs/07 pull-to-refresh commitment, fixed and
-    validated with both workflows green at 42f761a.
+    DDV2-SYSTEMIC-CONVERGENCE: deterministic FixtureMedia Code=4 root cause
+    (missing writer.finishWriting since aebae44) fixed with unit regression
+    pins; filler fallback replaced by typed failure; search focus contract
+    settled from evidence (retain focus, scroll-dismisses keyboard, non-lazy
+    results); fixture clip lengthened so playing state is observable; local
+    player sheet owns a dedicated coordinator; audits fixed H1/H2/M1-M4/M7-M9
+    plus duration-parser day forms and account-action wire pins; HB-015..030
+    logged as deferred debt; final gates green at 05a80af.
 
 next_transition:
   when: owner returns Batch A evidence and one live-smoke result
