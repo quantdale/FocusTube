@@ -33,6 +33,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Suggested hardening action: typed `.forbidden` case + reason-string/status mapping, then dedicated UI copy; keep malformed-envelope fallback deliberate.
 - Blocks implementation: no
 
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
+
 ### HB-016 — all-or-nothing page decoding discards an entire page/batch on one anomalous item
 - Severity: Low
 - Discovered in: DDV2 systemic-convergence audit
@@ -41,6 +43,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: full-surface error instead of partial content when Google emits an unexpected shape.
 - Suggested hardening action: conscious decision to adopt skip-and-continue per-item decoding with a logged count.
 - Blocks implementation: no
+
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
 
 ### HB-017 — DownloadState has unreachable statuses and an untested transition table bypassed by event paths
 - Severity: Medium
@@ -51,6 +55,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Suggested hardening action: route event-path writes through `transition(to:)` (or delete dead cases after confirming no persisted rows carry them) and add a table test.
 - Blocks implementation: no
 
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
+
 ### HB-018 — pre-network input validation inconsistent outside comment mutation
 - Severity: Low
 - Discovered in: DDV2 systemic-convergence audit
@@ -59,6 +65,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: divergent error taxonomy for garbage input; ids normally originate from API responses so real-world likelihood is low.
 - Suggested hardening action: shared non-empty resource-id guard mapped to `.invalidInput`.
 - Blocks implementation: no
+
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
 
 ### HB-019 — YouTubeAPI protocol-extension defaults convert missing overrides into runtime failures
 - Severity: Low
@@ -69,6 +77,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Suggested hardening action: split read vs mutation protocols or drop the defaults.
 - Blocks implementation: no
 
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
+
 ### HB-020 — OfflineLibraryPolicy stability/tie-order claims exceed language guarantees
 - Severity: Low
 - Discovered in: DDV2 systemic-convergence audit
@@ -77,6 +87,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: nondeterministic ordering only in tie cases; personal-scale cosmetic.
 - Suggested hardening action: explicit tiebreakers (videoID) and drop/justify the stability claim.
 - Blocks implementation: no
+
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
 
 ### HB-021 — per-row ISO8601DateFormatter allocation; fractional-second timestamps silently nil
 - Severity: Low
@@ -87,6 +99,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Suggested hardening action: cached formatters (with/without fractional seconds).
 - Blocks implementation: no
 
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
+
 ### HB-022 — shared lastFailure alert staleness/presentation ownership
 - Severity: Medium
 - Discovered in: DDV2 systemic-convergence audit
@@ -95,6 +109,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: misleading alert context; needs a product decision about where download failures belong (Downloads surface vs global banner).
 - Suggested hardening action: present download failures where they originate (Downloads view alert/badge) and clear on presentation; keep video-page alert scoped to its own start attempts.
 - Blocks implementation: no
+
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
 
 ### HB-023 — Retry path drops durationSeconds, skipping the storage pre-check
 - Severity: Medium
@@ -105,6 +121,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Suggested hardening action: additive persisted duration field (lightweight migration) captured at enqueue, threaded through retry.
 - Blocks implementation: no
 
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
+
 ### HB-024 — download-quality section conflates resolving/failed/empty into one string
 - Severity: Low
 - Discovered in: DDV2 systemic-convergence audit
@@ -113,6 +131,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: degraded-state distinction collapse; download button correctly disabled either way.
 - Suggested hardening action: tri-state picker copy keyed off resolution lifecycle.
 - Blocks implementation: no
+
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
 
 ### HB-025 — SwiftData save failures are logged-only while UI keeps optimistic state
 - Severity: Medium
@@ -123,6 +143,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Suggested hardening action: define a degraded-persistence indicator or write-through verification before mutating UI state.
 - Blocks implementation: no
 
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
+
 ### HB-026 — composer/reply UX edges beyond the submit-guard fixes
 - Severity: Low
 - Discovered in: DDV2 systemic-convergence audit (partially fixed b9ee1e0)
@@ -131,6 +153,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: occasional input loss requiring retyping.
 - Suggested hardening action: preserve draft across reply-target switches or confirm discard.
 - Blocks implementation: no
+
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
 
 ### HB-027 — main-thread history scans per VideoCard row + per-cell formatter churn
 - Severity: Medium
@@ -141,6 +165,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Suggested hardening action: inject a precomputed videoID→fraction dictionary per render pass; cache formatters.
 - Blocks implementation: no
 
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
+
 ### HB-028 — continue-watching strip invisible to VoiceOver on Home/Search cards
 - Severity: Low
 - Discovered in: DDV2 systemic-convergence audit
@@ -149,6 +175,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: VoiceOver users cannot distinguish half-watched from unstarted cards on two of three surfaces.
 - Suggested hardening action: expose an accessibilityValue ("x% watched") on the card element without altering the natural-child label composition the journeys assert.
 - Blocks implementation: no
+
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
 
 ### HB-029 — Low app-UX batch from the convergence audits
 - Severity: Low
@@ -167,6 +195,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
   - Share fallback shares file:///? on malformed ids instead of surfacing an error.
 - Blocks implementation: no
 
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
+
 ### HB-030 — residual deterministic-test gaps
 - Severity: Low
 - Discovered in: DDV2 systemic-convergence audit
@@ -175,6 +205,8 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Impact: uncovered edge behaviors only; no known defect behind them today.
 - Suggested hardening action: add the listed cheap table cases.
 - Blocks implementation: no
+
+- Resolved 2026-08-26 (HARDENING_V3): implementation + tests landed this campaign; exact evidence and disposition recorded in .agent/work-packets/H3-AUDIT-LEDGER.md.
 
 ### HB-013 — DownloadsView re-fetches all records on every progress render
 - Severity: Low

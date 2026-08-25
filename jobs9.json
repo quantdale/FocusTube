@@ -1,0 +1,185 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 97897192118,
+      "run_id": 32876823439,
+      "workflow_name": "iOS CI",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/quantdale/FocusTube/actions/runs/32876823439",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOT-P3Js8AAAAWyyCatg",
+      "head_sha": "989f4af708c278545855bf69c3ab0570adf23f4e",
+      "url": "https://api.github.com/repos/quantdale/FocusTube/actions/jobs/97897192118",
+      "html_url": "https://github.com/quantdale/FocusTube/actions/runs/32876823439/job/97897192118",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-08-25T17:17:12Z",
+      "started_at": "2026-08-25T17:17:15Z",
+      "completed_at": "2026-08-25T17:28:07Z",
+      "name": "ios",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-08-25T17:17:16Z",
+          "completed_at": "2026-08-25T17:17:17Z"
+        },
+        {
+          "name": "Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-08-25T17:17:17Z",
+          "completed_at": "2026-08-25T17:17:19Z"
+        },
+        {
+          "name": "Select Xcode",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-08-25T17:17:19Z",
+          "completed_at": "2026-08-25T17:17:23Z"
+        },
+        {
+          "name": "Install XcodeGen",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-08-25T17:17:23Z",
+          "completed_at": "2026-08-25T17:17:58Z"
+        },
+        {
+          "name": "Test FocusTubeCore",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-08-25T17:17:58Z",
+          "completed_at": "2026-08-25T17:18:56Z"
+        },
+        {
+          "name": "Generate Xcode project",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-08-25T17:18:56Z",
+          "completed_at": "2026-08-25T17:18:56Z"
+        },
+        {
+          "name": "Resolve Swift packages",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-08-25T17:18:56Z",
+          "completed_at": "2026-08-25T17:19:26Z"
+        },
+        {
+          "name": "Select and boot simulator",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-08-25T17:19:26Z",
+          "completed_at": "2026-08-25T17:24:21Z"
+        },
+        {
+          "name": "Build (Debug)",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 9,
+          "started_at": "2026-08-25T17:24:22Z",
+          "completed_at": "2026-08-25T17:27:41Z"
+        },
+        {
+          "name": "Build (Release)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-08-25T17:27:41Z",
+          "completed_at": "2026-08-25T17:27:41Z"
+        },
+        {
+          "name": "Unit tests (FocusTubeTests)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11,
+          "started_at": "2026-08-25T17:27:41Z",
+          "completed_at": "2026-08-25T17:27:41Z"
+        },
+        {
+          "name": "UI tests (FocusTubeUITests)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 12,
+          "started_at": "2026-08-25T17:27:41Z",
+          "completed_at": "2026-08-25T17:27:41Z"
+        },
+        {
+          "name": "Publish diagnostics",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-08-25T17:27:41Z",
+          "completed_at": "2026-08-25T17:27:42Z"
+        },
+        {
+          "name": "Gate contract self-check",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-08-25T17:27:42Z",
+          "completed_at": "2026-08-25T17:27:42Z"
+        },
+        {
+          "name": "Gate",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 15,
+          "started_at": "2026-08-25T17:27:42Z",
+          "completed_at": "2026-08-25T17:27:42Z"
+        },
+        {
+          "name": "Simulator screenshot",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-08-25T17:27:42Z",
+          "completed_at": "2026-08-25T17:27:45Z"
+        },
+        {
+          "name": "Upload artifacts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17,
+          "started_at": "2026-08-25T17:27:45Z",
+          "completed_at": "2026-08-25T17:27:49Z"
+        },
+        {
+          "name": "Post Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 34,
+          "started_at": "2026-08-25T17:27:49Z",
+          "completed_at": "2026-08-25T17:27:50Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 35,
+          "started_at": "2026-08-25T17:27:50Z",
+          "completed_at": "2026-08-25T17:28:04Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/quantdale/FocusTube/check-runs/97897192118",
+      "labels": [
+        "macos-26"
+      ],
+      "runner_id": 1000004530,
+      "runner_name": "GitHub Actions 1000004530",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

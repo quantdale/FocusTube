@@ -95,7 +95,7 @@ struct VideoPageView: View {
                 } else {
                     composerDrafts[Self.topLevelDraftKey] = composerText
                 }
-                let restoredKey = newID.map(Self.draftKey(for:)) ?? Self.topLevelDraftKey
+                let restoredKey = newID.map { Self.draftKey(for: $0) } ?? Self.topLevelDraftKey
                 composerText = composerDrafts[restoredKey] ?? ""
                 // Tapping Reply must bring the composer to the user, wherever
                 // the page is currently scrolled: reply context without a
@@ -774,7 +774,7 @@ struct VideoPageView: View {
         // Snapshot what is being posted: the field is disabled during flight,
         // so this text is exactly what the user saw when tapping send.
         let submittedText = composerText
-        let submittedDraftKey = replyTarget.map(Self.draftKey(for:)) ?? Self.topLevelDraftKey
+        let submittedDraftKey = replyTarget.map { Self.draftKey(for: $0.id) } ?? Self.topLevelDraftKey
         do {
             if let target = replyTarget {
                 let stored = try await commentsService.reply(to: target.id, text: submittedText, accessToken: token)
