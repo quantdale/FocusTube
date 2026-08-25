@@ -48,17 +48,25 @@ final class DownloadFailureOwnershipTests: XCTestCase {
 
     /// Routes each task id to its own transport behavior so one manager can
     /// gate slot-holders while failing a promoted job deterministically.
+    /// Completion events point at REAL staged temp files (the coordinator's
+    /// finalization validates existence+size on the host filesystem).
     private final class RoutedTransport: DownloadTransport, @unchecked Sendable {
         private let lock = NSLock()
         private var gated: Set<String> = []
         private var failing: Set<String> = []
         private var beginsByTask: [String: Int] = [:]
-        let tempLocation = URL(fileURLWithPath: "/tmp/h3-ownership-temp.mp4")
 
         func gate(_ taskID: String) { lock.withLock { gated.insert(taskID) } }
         func fail(_ taskID: String) { lock.withLock { failing.insert(taskID) } }
         func releaseAll() { lock.withLock { gated.removeAll() } }
         func beginCount(for taskID: String) -> Int { lock.withLock { beginsByTask[taskID, default: 0] } }
+
+        private func stagedTemp(for taskID: String) -> URL {
+            let url = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("h3-ownership-\(taskID)-\(UUID().uuidString).bin")
+            try? Data([0x01]).write(to: url)
+            return url
+        }
 
         func begin(_ request: DownloadRequest, onEvent: @escaping @Sendable (DownloadEvent) -> Void) async {
             lock.withLock { beginsByTask[request.id, default: 0] += 1 }
@@ -73,7 +81,7 @@ final class DownloadFailureOwnershipTests: XCTestCase {
             while lock.withLock({ gated.contains(request.id) }) {
                 try? await Task.sleep(nanoseconds: 10_000_000)
             }
-            onEvent(.completed(tempLocation: tempLocation, component: 0))
+            onEvent(.completed(tempLocation: stagedTemp(for: request.id), component: 0))
         }
 
         func cancel(taskID: String) async {
