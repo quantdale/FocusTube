@@ -4,14 +4,18 @@ import Foundation
 /// deterministic: given the persisted tasks and a filesystem check, it derives
 /// the corrected post-relaunch state without touching networking or storage.
 public enum DownloadReconciler {
-    /// - `downloading` / `finalizing` / `resolving` / `validating` / `muxing` /
-    ///   `waitingForRetry` / `reResolving` from a previous launch cannot resume
-    ///   mid-transfer and are marked interrupted (retryable).
+    /// - `downloading` / `finalizing` / `resolving` / `validating` / `muxing`
+    ///   from a previous launch cannot resume mid-transfer and are marked
+    ///   interrupted (retryable).
     /// - `completed` is verified against the filesystem; a missing or
     ///   zero-byte final file becomes a validation failure (finalization
     ///    itself requires existence AND size > 0, so reconciliation must not
     ///    settle a truncated file as playable).
     /// - `queued` / `paused` / `failed` / `idle` are left unchanged.
+    ///
+    /// Legacy rows persisted with statuses that no longer exist in the enum
+    /// (removed dead cases) decode to `.failed` via DownloadRecord's rawValue
+    /// fallback and remain retryable.
     public static func reconcile(
         _ tasks: [DownloadTask],
         fileExists: (URL) -> Bool,
@@ -20,8 +24,7 @@ public enum DownloadReconciler {
         tasks.map { task in
             var updated = task
             switch task.state.status {
-            case .downloading, .finalizing, .resolving, .validating,
-                 .muxing, .waitingForRetry, .reResolving:
+            case .downloading, .finalizing, .resolving, .validating, .muxing:
                 var state = task.state
                 state.status = .failed
                 state.error = .interrupted

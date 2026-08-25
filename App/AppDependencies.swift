@@ -73,7 +73,9 @@ final class AppDependencies {
 
     /// HB-016 non-silent requirement: partial page decodes report skipped-item
     /// counts through the platform logger at the composition boundary.
-    private static func reportSkippedItems(endpoint: String, count: Int) {
+    /// `nonisolated`: decode happens on arbitrary executors inside the
+    /// Sendable client, and `os.Logger` is thread-safe.
+    private nonisolated static func reportSkippedItems(endpoint: String, count: Int) {
         Logger(subsystem: "com.quantdale.FocusTube", category: "youtube-client")
             .warning("\(count, privacy: .public) malformed item(s) skipped in \(endpoint, privacy: .public)")
     }

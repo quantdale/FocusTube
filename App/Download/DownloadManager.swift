@@ -451,7 +451,8 @@ public final class DownloadManager {
         _ request: DownloadRequest,
         requiredBytes: Int64 = 0,
         queuedMetadata: QueuedDownloadMetadata? = nil,
-        bypassQueuePrecedence: Bool = false
+        bypassQueuePrecedence: Bool = false,
+        plannedDurationSeconds: TimeInterval? = nil
     ) async -> DownloadTask {
         startingIDs.insert(request.id)
 
@@ -516,8 +517,34 @@ public final class DownloadManager {
             admitted.apply(DownloadState(status: .resolving))
         }
         upsertRecord(admitted)
+        storePlannedDuration(taskID: request.id, seconds: plannedDurationSeconds)
         refreshProjections()
         return task
+    }
+
+    /// HB-023: persists the planning duration captured at enqueue so failed-row
+    /// retries can re-run storage admission truthfully. Additive optional on
+    /// the record; legacy rows read nil and keep the skip-pre-check behavior.
+    private func storePlannedDuration(taskID: String, seconds: TimeInterval?) {
+        guard let seconds else { return }
+        do {
+            guard let record = try fetchRecordsOrThrow().first(where: { $0.id == taskID }) else { return }
+            record.plannedDurationSeconds = seconds
+            saveContext()
+        } catch {
+            Self.logger.fault("Record fetch failed while storing planned duration (\(error.localizedDescription))")
+        }
+    }
+
+    /// The persisted planning duration for a failed row's retry; nil when
+    /// unknown (legacy row or pre-HB-023 record).
+    public func plannedDurationSeconds(taskID: String) -> TimeInterval? {
+        do {
+            return try fetchRecordsOrThrow().first(where: { $0.id == taskID })?.plannedDurationSeconds
+        } catch {
+            Self.logger.fault("Record fetch failed while reading planned duration (\(error.localizedDescription))")
+            return nil
+        }
     }
 
     public func begin(_ taskID: String) async {
@@ -559,7 +586,7 @@ public final class DownloadManager {
     public var activeTasks: [DownloadTask] {
         records.filter { status in
             switch status.state.status {
-            case .queued, .downloading, .paused, .validating, .muxing, .finalizing, .waitingForRetry, .resolving, .reResolving:
+            case .queued, .downloading, .paused, .validating, .muxing, .finalizing, .resolving:
                 return true
             default:
                 return false

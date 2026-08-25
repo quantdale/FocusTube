@@ -107,6 +107,8 @@ final class DownloadService {
     private let mediaDirectory: URL
     private let retryPolicy = DownloadRetryPolicy.default
 
+    private static let settlementLogger = Logger(subsystem: "com.quantdale.FocusTube", category: "download-service")
+
     public init(
         extractor: MediaExtracting = YouTubeKitMediaExtractor(),
         downloadManager: DownloadManager,
@@ -264,18 +266,31 @@ final class DownloadService {
                 outcome = .failed(.requestedQualityUnavailable)
             }
         }
-        await finish(outcome: outcome, videoID: videoID, title: title, channelTitle: channelTitle, quality: quality)
+        await finish(
+            outcome: outcome,
+            videoID: videoID,
+            title: title,
+            channelTitle: channelTitle,
+            quality: quality,
+            origin: origin
+        )
     }
 
     /// Single presentation point for a finished run: registers finalized media
     /// or surfaces the typed failure, then promotes queued work if a slot
-    /// freed. `lastFailure` is only ever written here, from local outcomes.
+    /// freed. HB-022 ownership rule: `lastFailure` is written ONLY for
+    /// user-requested starts, so it can never carry a stale queue-promotion or
+    /// background-settlement failure onto an unrelated video page. Promotion
+    /// and reattached-path failures present where they belong — the Downloads
+    /// surface's failed section (typed error + Retry row), which reads the
+    /// persisted record projection.
     private func finish(
         outcome: RunOutcome,
         videoID: String,
         title: String,
         channelTitle: String,
-        quality: DownloadQuality
+        quality: DownloadQuality,
+        origin: Origin
     ) async {
         // Any settled run (including defer/abandon/timeout) releases its
         // promotion reservation; real slots remain accounted by records.
@@ -294,7 +309,16 @@ final class DownloadService {
                 channelTitle: channelTitle
             ))
         case let .failed(error):
-            fail(videoID: videoID, title: title, quality: quality, error: error)
+            // HB-022: only user-visible start attempts own the alert surface.
+            // Queue promotions fail visibly as failed download rows instead.
+            if origin == .userRequest {
+                fail(videoID: videoID, title: title, quality: quality, error: error)
+            } else {
+                let taskID = "\(videoID)-\(quality.rawValue)"
+                Self.settlementLogger.info(
+                    "Promoted download \(taskID, privacy: .public) failed: \(error.rawValue, privacy: .public)"
+                )
+            }
         case .timedOut:
             // Timed out while still transferring: not a failure. The transfer
             // continues; its record and UI projection settle via events.
@@ -347,7 +371,8 @@ final class DownloadService {
                 channelTitle: channelTitle,
                 durationSeconds: durationSeconds
             ),
-            bypassQueuePrecedence: origin == .queuePromotion
+            bypassQueuePrecedence: origin == .queuePromotion,
+            plannedDurationSeconds: durationSeconds > 0 ? durationSeconds : nil
         )
         if enqueued.state.status == .failed {
             return .failed(enqueued.state.error ?? .storageRefused)

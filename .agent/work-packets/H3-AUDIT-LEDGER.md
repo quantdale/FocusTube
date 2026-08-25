@@ -53,7 +53,7 @@ disposition. Dispositions update per workstream as evidence lands.
   all-malformed-throws-decode, pre-existing whole-payload malformed suite still
   green unchanged.
 
-### HB-017 (Medium) — DownloadState dead statuses + untested transition table bypassed — LIVE
+### HB-017 (Medium) — DownloadState dead statuses + untested transition table bypassed — FIXED (H3-02)
 - Code: DownloadState.swift:74-104 table exists; DownloadCoordinator writes status directly at
   cancel (:138 apply), `.failed` event (:264), complete() (:426), fail() (:435); begin()/finalize()
   use transition(to:). No event path ever enters `.waitingForRetry`/`.reResolving` (grep-verified);
@@ -63,9 +63,21 @@ disposition. Dispositions update per workstream as evidence lands.
 - Tests: no DownloadState table tests exist (only PlaybackState).
 - Migration: persisted rows could carry dead rawValues only if they ever were written — never were;
   safe to deprecate/remove after confirming zero writers, or route writes through transitions.
-- Disposition: fix in H3-02 — make coordinator event-path writes go through legal transitions,
-  add full transition-table test, remove/justify dead statuses (keep Codable decode tolerance for
-  old rows).
+- Disposition: FIXED in H3-02 — (1) dead `.waitingForRetry`/`.reResolving`
+  statuses REMOVED (never written by any event path since WP-005;
+  reconciler/cancel-guards/labels/active-filter updated; legacy persisted
+  rawValues degrade via DownloadRecord's nil->.failed fallback, retryable as
+  before); `.paused` retained (modeled + reconciler-handled concept).
+  (2) ALL coordinator event-path writes route through legal transitions:
+  cancel, .failed event handler, complete(), fail(); attach()/enqueue()
+  documented as INITIALIZATION, exempt from the table.
+  (3) NEW product-truth rule encoded + tested: a settled completion is FINAL —
+  late/duplicate transport failures can no longer regress registered playable
+  media into failed rows. The old last-terminal-wins expectation in
+  EventOrderingTests pinned exactly this defect class; rewritten to assert
+  serialization-without-regression — a strengthening against the drift.
+  Tests: full transition-matrix table test, error rules, rejected-transition
+  immutability, coordinator late-failure/cancel/fail pins.
 
 ### HB-018 (Low) — inconsistent pre-network resource-id validation — FIXED (H3-01)
 - Code: YouTubeDataClient subscribe(:137)/unsubscribe(:147)/rateVideo(:153)/findMySubscription(:203)/
@@ -108,26 +120,38 @@ disposition. Dispositions update per workstream as evidence lands.
   now parse instead of silently nil'ing. Test: plain + .250Z fractional both yield
   non-nil dates through fetchVideoDetails.
 
-### HB-022 (Medium) — shared lastFailure alert ownership — LIVE
+### HB-022 (Medium) — shared lastFailure alert ownership — FIXED (H3-02)
 - Code: DownloadService.lastFailure written from finish()/fail() for ANY settled run including queue
   promotions and background settlements; sole presenter VideoPageView.swift:97-100 (alert).
 - Impact path: failure raised while Downloads/front-of-house settles -> next pushed video page pops
   stale unrelated alert.
 - Tests: DownloadServiceTests assert lastFailure content (service-level contract stays valid);
   presentation ownership changes are UI-level.
-- Disposition: fix in H3-02 — download failures present where they originate (Downloads surface
-  badge/alert consuming-and-clearing), video-page alert scoped to its own start attempts; define
-  clearing semantics + deterministic tests.
+- Disposition: FIXED in H3-02 — `lastFailure` is written ONLY for user-requested
+  starts (origin threaded through run/runOnce/finish); queue-promotion failures
+  log via os.Logger and surface where they belong: the Downloads failed section
+  (persisted record projection, typed error, Retry row). The video-page alert
+  can therefore never pop with a stale failure from an unrelated promoted or
+  background settlement. VideoPageView presenter unchanged; acknowledgeFailure
+  unchanged. Tests (app target): promoted-failure leaves lastFailure nil while
+  failedTasks contains the row; user-request failure still writes it.
 
-### HB-023 (Medium) — retry drops durationSeconds, skipping storage pre-check — LIVE
+### HB-023 (Medium) — retry drops durationSeconds, skipping storage pre-check — FIXED (H3-02)
 - Code: DownloadsView.swift:202-210 Retry calls download(...) without durationSeconds -> 0 ->
   StorageEstimator.requiredBytes == 0 -> pre-check skipped (DownloadService.runOnce:337-341 documents
   skip). DownloadRecord persists duration ONLY inside queuedMetadataData (:96-108); failed rows of
   non-queued origin have none.
 - Migration: additive optional persisted field (lightweight SwiftData migration), old rows nil ->
   synthesize from queuedMetadata when present else estimate-unknown (status quo behavior).
-- Disposition: fix in H3-02 — persist duration additively at enqueue, thread through retry; regression
-  test failed-row retry performs storage admission when duration known.
+- Disposition: FIXED in H3-02 — additive `plannedDurationSeconds: Double?` on
+  DownloadRecord (lightweight migration; legacy rows read nil and keep the
+  historical unknown-duration behavior), captured at enqueue via
+  manager.enqueue(plannedDurationSeconds:), exposed via
+  plannedDurationSeconds(taskID:), and threaded through DownloadsView Retry ->
+  service.download(durationSeconds:) so failed-row retries re-run storage
+  admission truthfully. No signed URLs persisted. Tests (app target):
+  persist/read-back roundtrip; legacy-row nil; duration-carrying attempt on an
+  always-full volume refuses typed storageRefused BEFORE any transfer begins.
 
 ### HB-024 (Low) — download-quality tri-state collapse — LIVE
 - Code: VideoPageView.loadQualities:568-584 sets qualities=[] both before resolution completes and on

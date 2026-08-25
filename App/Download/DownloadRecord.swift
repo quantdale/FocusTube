@@ -31,6 +31,12 @@ final class DownloadRecord {
     /// are synthesized from the row's own fields at restore. Deliberately
     /// carries no media URLs; queued rows persist empty components.
     var queuedMetadataData: Data?
+    /// HB-023 (additive, lightweight migration): the duration captured at
+    /// enqueue time so failed-row RETRIES re-run storage admission truthfully
+    /// instead of estimating zero and skipping the free-space pre-check.
+    /// Legacy rows read nil; retry then keeps the historical unknown-duration
+    /// behavior.
+    var plannedDurationSeconds: Double?
 
     init(task: DownloadTask) {
         self.id = task.id

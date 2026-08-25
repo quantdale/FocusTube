@@ -7,8 +7,6 @@ public enum DownloadStatus: String, Codable, Sendable, Hashable {
     case validating
     case muxing
     case finalizing
-    case waitingForRetry
-    case reResolving
     case completed
     case failed
 }
@@ -80,7 +78,7 @@ public struct DownloadState: Sendable, Hashable {
         case (.queued, .downloading), (.queued, .failed):
             return true
         case (.downloading, .paused), (.downloading, .validating),
-             (.downloading, .waitingForRetry), (.downloading, .failed):
+             (.downloading, .failed):
             return true
         case (.paused, .downloading), (.paused, .failed):
             return true
@@ -89,10 +87,6 @@ public struct DownloadState: Sendable, Hashable {
         case (.muxing, .finalizing), (.muxing, .failed):
             return true
         case (.finalizing, .completed), (.finalizing, .failed):
-            return true
-        case (.waitingForRetry, .downloading), (.waitingForRetry, .failed):
-            return true
-        case (.reResolving, .queued), (.reResolving, .failed):
             return true
         case (.failed, .idle), (.failed, .queued), (.failed, .resolving):
             return true

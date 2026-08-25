@@ -21,7 +21,7 @@ struct DownloadsView: View {
     /// rejects cancel transitions out of those phases so a final file is never
     /// corrupted mid-write — so the row button hides for them.
     private static let cancellableStatuses: Set<DownloadStatus> = [
-        .queued, .downloading, .paused, .waitingForRetry, .reResolving
+        .queued, .downloading, .paused
     ]
 
     var body: some View {
@@ -201,11 +201,17 @@ struct DownloadsView: View {
                         let metadata = downloadManager.presentationMetadata(taskID: task.id)
                         Button("Retry") {
                             Task {
+                                // HB-023: retry re-uses the persisted planned
+                                // duration so storage admission re-runs
+                                // truthfully; unknown durations (legacy rows)
+                                // keep today's skip-the-pre-check behavior.
+                                let duration = downloadManager.plannedDurationSeconds(taskID: task.id)
                                 await downloadService.download(
                                     videoID: task.videoID,
                                     title: metadata?.title ?? task.videoID,
                                     channelTitle: metadata?.channelTitle ?? "",
-                                    quality: quality
+                                    quality: quality,
+                                    durationSeconds: duration ?? 0
                                 )
                             }
                         }
@@ -333,8 +339,6 @@ struct DownloadsView: View {
         case .validating: return "Validating"
         case .muxing: return "Combining tracks"
         case .finalizing: return "Finishing"
-        case .waitingForRetry: return "Retrying"
-        case .reResolving: return "Refreshing link"
         case .completed: return "Completed"
         case .failed: return "Failed"
         }

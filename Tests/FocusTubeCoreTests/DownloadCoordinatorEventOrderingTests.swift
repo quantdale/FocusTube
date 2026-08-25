@@ -117,7 +117,12 @@ final class DownloadCoordinatorEventOrderingTests: XCTestCase {
 
     // MARK: - completed/failed ordering across in-flight finalization
 
-    func testFailedBehindInFlightFinalizationAppliesAfterCompletionSettles() async {
+    /// HB-017 semantics: a failure delivered BEHIND an in-flight finalization
+    /// still serializes through the event chain (it can never interleave with
+    /// or preempt the parked finalization), but once completion has settled,
+    /// the completion is FINAL — validated, published media is never regressed
+    /// to a failed row by a late/duplicate transport failure.
+    func testLateFailureBehindInFlightFinalizationSerializesButCannotRegressCompletion() async {
         let gate = ValidationGate()
         let journal = StatusJournal()
         let coordinator = DownloadCoordinator(
@@ -155,14 +160,13 @@ final class DownloadCoordinatorEventOrderingTests: XCTestCase {
         await completing.value
         await failing.value
 
-        // Applied strictly in arrival order: completion settled first and the
-        // late failure landed last. An unordered implementation would let the
-        // failure slip past the parked finalization and then be clobbered by
-        // its settled `.completed` state.
+        // Applied strictly in arrival order: completion settled first; the
+        // late failure was serialized behind it and then correctly ignored —
+        // a validated, published download cannot regress to failed (HB-017).
         let task = await coordinator.task("ordered")
-        XCTAssertEqual(task?.state.status, .failed)
-        XCTAssertEqual(task?.state.error, .transportFailed)
-        XCTAssertEqual(journal.recorded, [.completed, .failed])
+        XCTAssertEqual(task?.state.status, .completed)
+        XCTAssertNil(task?.state.error)
+        XCTAssertEqual(journal.recorded, [.completed])
     }
 
     private func waitFor(

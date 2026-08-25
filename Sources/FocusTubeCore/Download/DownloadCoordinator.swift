@@ -88,6 +88,9 @@ public actor DownloadCoordinator {
     /// Re-registers an externally-initiated (e.g. relaunched background session)
     /// task so its completion events drive the same state machine. `taskID` is
     /// the single source of truth: the stored task's id equals `taskID`.
+    /// The direct `DownloadState(status:)` here is INITIALIZATION of a task
+    /// that never existed in memory before — not a transition between
+    /// observable states — so the transition table does not apply.
     public func attach(taskID: String, request: DownloadRequest) {
         guard tasks[taskID] == nil else { return }
         var task = DownloadTask(
@@ -132,10 +135,16 @@ public actor DownloadCoordinator {
 
     public func cancel(_ taskID: String) async {
         guard let task = tasks[taskID],
-              [.queued, .downloading, .paused, .waitingForRetry, .reResolving].contains(task.state.status) else { return }
+              [.queued, .downloading, .paused].contains(task.state.status) else { return }
         await transport.cancel(taskID: taskID)
         var updated = task
-        updated.apply(DownloadState(status: .failed, error: .cancelled))
+        // All guarded sources have legal .failed edges in the transition table
+        // (HB-017): cancellation is an ordinary modeled transition, never a
+        // bypass.
+        var cancelledState = updated.state
+        try? cancelledState.transition(to: .failed)
+        cancelledState.error = .cancelled
+        updated.apply(cancelledState)
         tasks[taskID] = updated
         removeComponentTemps(taskID)
         // Only an actively transferring task can have written toward the
@@ -260,8 +269,13 @@ public actor DownloadCoordinator {
             }
 
         case let .failed(error):
+            // A settled completion is FINAL: a late transport failure after
+            // genuine completion must not regress registered playable media
+            // into a failed row (HB-017). Transports emit one terminal per
+            // task; anything arriving after .completed is noise.
+            guard task.state.status != .completed else { return }
             var state = task.state
-            state.status = .failed
+            try? state.transition(to: .failed)
             state.error = error
             task.apply(state)
             tasks[taskID] = task
@@ -423,7 +437,7 @@ public actor DownloadCoordinator {
 
     private func complete(task: inout DownloadTask) {
         var completed = task.state
-        completed.status = .completed
+        try? completed.transition(to: .completed)
         completed.bytesDownloaded = completed.totalBytes
         completed.error = nil
         task.apply(completed)
@@ -432,7 +446,9 @@ public actor DownloadCoordinator {
 
     private func fail(task: inout DownloadTask, with error: DownloadError) {
         var state = task.state
-        state.status = .failed
+        // Finalize-path failures always originate from validating/muxing/
+        // finalizing, all of which carry legal .failed edges (HB-017).
+        try? state.transition(to: .failed)
         state.error = error
         task.apply(state)
         tasks[task.id] = task
