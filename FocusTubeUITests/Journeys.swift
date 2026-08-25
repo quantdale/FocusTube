@@ -47,16 +47,17 @@ final class Journeys: XCTestCase {
             guard el.exists else { facts.append("\(name)=no"); continue }
             facts.append(el.isHittable ? "\(name)=hit" : "\(name)=flat")
         }
-        let interesting = app.debugDescription
-            .split(separator: "\n")
-            .filter { line in
-                ["Sheet", "Alert", "video-title", "download-button", "save-toggle",
-                 "'Close'", "Playback failed", "feed-video-row", "Window",
-                 "Application", "TabBar", "NavigationBar", "downloaded-row",
-                 "No downloaded videos yet.", "search-result-row", "load-more"]
-                    .contains { line.contains($0) }
-            }
-            .prefix(40)
+                let interesting = app.debugDescription
+                    .split(separator: "\n")
+                    .filter { line in
+                        ["Sheet", "Alert", "video-title", "download-button", "save-toggle",
+                         "'Close'", "Playback failed", "feed-video-row", "Window",
+                         "Application", "TabBar", "NavigationBar", "downloaded-row",
+                         "No downloaded videos yet.", "search-result-row", "load-more",
+                         "fixture-media-diagnostic", "search-field"]
+                            .contains { line.contains($0) }
+                    }
+                    .prefix(40)
         return "FACTS{\(facts.joined(separator: ","))} TREE{\(interesting.joined(separator: " ~ "))}"
     }
 
@@ -195,16 +196,19 @@ final class Journeys: XCTestCase {
             if current.exists {
                 let f = current.frame
                 if visible(f) {
-                    // Classic double-read stability: two reads ~0.6s apart that
-                    // agree mean fling deceleration has finished. Requiring
-                    // agreement with the PRE-scroll frame kept failing when
-                    // momentum outlived the wait, so a visible target could
-                    // never "settle" and the loop exhausted its attempts.
+                    // Tolerance double-read stability: two reads ~0.6s apart
+                    // within 1pt of each other mean deceleration finished.
+                    // Exact equality never converged on lazy List rows, whose
+                    // frames keep micro-adjusting after every fling.
                     RunLoop.main.run(until: Date().addingTimeInterval(0.6))
                     let recheckA = locate(app)
                     RunLoop.main.run(until: Date().addingTimeInterval(0.3))
                     let recheckB = locate(app)
-                    if recheckA.exists, recheckB.exists, recheckA.frame == recheckB.frame, visible(recheckB.frame) {
+                    func near(_ a: CGRect, _ b: CGRect) -> Bool {
+                        abs(a.minX - b.minX) < 1 && abs(a.minY - b.minY) < 1
+                            && abs(a.maxX - b.maxX) < 1 && abs(a.maxY - b.maxY) < 1
+                    }
+                    if recheckA.exists, recheckB.exists, near(recheckA.frame, recheckB.frame), visible(recheckB.frame) {
                         settled = recheckB
                         break
                     }

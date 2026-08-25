@@ -409,16 +409,14 @@ final class ScriptedDownloadTransport: DownloadTransport, @unchecked Sendable {
                 let temp = try FixtureMediaFactory.tempCopy(for: request.id, component: component)
                 onEvent(.completed(tempLocation: temp, component: component))
             } catch {
-                // Generation failure degrades to filler bytes — but the exact
-                // encoder error is EMBEDDED in the fallback bytes so it surfaces
-                // through the Downloads row size in journey diagnostics (the
-                // only telemetry channel readable without authenticated API
-                // access). A 4-byte row means "unknown"; anything larger names
-                // the failure.
-                let message = "ENCFAIL\(Foundation.Date().timeIntervalSince1970):\(error)"
+                // Generation failure degrades to filler bytes; the exact error
+                // is stashed for the DEBUG diagnostic surface in DownloadsView
+                // (journey failure trees read it without authenticated API
+                // access).
+                UserDefaults.standard.set("\(error)", forKey: "fixture.media.enc-failure")
                 let temp = FileManager.default.temporaryDirectory
                     .appendingPathComponent("fixture-\(request.id)#\(component).bin")
-                try? Data(message.utf8).write(to: temp)
+                try? Data([0xFF, 0xFF, 0xFF, 0xFF]).write(to: temp)
                 onEvent(.completed(tempLocation: temp, component: component))
             }
         }

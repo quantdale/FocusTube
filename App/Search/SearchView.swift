@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import FocusTubeCore
 
 struct SearchView: View {
@@ -101,12 +100,9 @@ struct SearchView: View {
     /// Single explicit-submit path shared by the keyboard (Return/Search key)
     /// and the button. Whitespace-only queries are rejected without an API call;
     /// the trimmed text is what gets submitted and recorded as a recent query.
-    /// A successful submit drops field focus (first responder resign) so the
-    /// results list renders unobstructed by the keyboard.
     private func submit() {
         let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         recentSearches.record(trimmed)
         Task { await store.submit(trimmed) }
     }

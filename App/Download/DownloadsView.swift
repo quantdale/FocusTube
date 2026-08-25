@@ -251,6 +251,18 @@ struct DownloadsView: View {
             if summaries.isEmpty {
                 emptyText("No downloaded videos yet.")
             }
+
+            #if DEBUG
+            // Fixture-harness telemetry: surfaces the runtime media-generator
+            // error inside journey diagnostics (DEBUG builds only).
+            if let encFailure = UserDefaults.standard.string(forKey: "fixture.media.enc-failure") {
+                Text("fixture-media: \(encFailure)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .accessibilityIdentifier("fixture-media-diagnostic")
+            }
+            #endif
         }
     }
 
