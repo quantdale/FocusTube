@@ -11,6 +11,10 @@ struct AccountSettingsView: View {
     let library: LibraryStore
 
     @Environment(\.dismiss) private var dismiss
+    /// HB-029 sign-in re-entry guard.
+    @State private var isSigningIn = false
+    /// HB-029 truthful degraded-state notice (fake/test sessions).
+    @State private var signInNotice: String?
 
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -59,18 +63,43 @@ struct AccountSettingsView: View {
                     .accessibilityIdentifier("settings-signed-out")
                 Button {
                     Task {
+                        // HB-029: re-entry guard; a fake session cannot
+                        // produce real tokens, so say so instead of silently
+                        // no-op'ing.
+                        let isLive = auth is GoogleSignInAuthSession
+                        if !isLive {
+                            signInNotice = "Sign-in isn't available in this session."
+                            return
+                        }
+                        guard !isSigningIn else { return }
+                        isSigningIn = true
+                        defer { isSigningIn = false }
                         if await (auth as? GoogleSignInAuthSession)?.signIn() == true {
+                            signInNotice = nil
                             await store.restore()
                         }
                     }
                 } label: {
-                    Label("Sign in with Google", systemImage: "person.crop.circle.badge.checkmark")
+                    if isSigningIn {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Signing in…")
+                        }
+                    } else {
+                        Label("Sign in with Google", systemImage: "person.crop.circle.badge.checkmark")
+                    }
                 }
+                .disabled(isSigningIn)
                 .accessibilityIdentifier("settings-sign-in")
             }
             Text("Sign out keeps your local history, saves, and downloaded videos on this device.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let signInNotice {
+                Text(signInNotice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

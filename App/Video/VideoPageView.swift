@@ -14,6 +14,8 @@ struct VideoPageView: View {
     let library: LibraryStore
 
     @State private var qualities: [DownloadQuality] = []
+    /// HB-024: truthful lifecycle for the download-quality surface.
+    @State private var qualityResolutionState: QualityResolutionState = .resolving
     @State private var selectedQuality: DownloadQuality?
     @State private var comments: [Comment] = []
     @State private var commentsDisabled = false
@@ -31,6 +33,12 @@ struct VideoPageView: View {
     @State private var accountActionError: YouTubeAPIError?
     @State private var composerText = ""
     @State private var replyTarget: Comment?
+    /// HB-026: per-target composer drafts. Switching reply targets (or
+    /// returning to top-level) preserves what the user typed instead of
+    /// silently destroying it; drafts clear only on successful submit.
+    @State private var composerDrafts: [String: String] = [:]
+    /// HB-029: controlled error when the id cannot form a shareable URL.
+    @State private var shareErrorShown = false
     @State private var isSubmittingComment = false
     @State private var addingToPlaylistIDs: Set<String> = []
     @State private var isDescriptionExpanded = false
@@ -79,7 +87,16 @@ struct VideoPageView: View {
                         .id("comments-section")
                 }
             }
-            .onChange(of: replyTarget?.id) { _ in
+            .onChange(of: replyTarget?.id) { oldID, newID in
+                // HB-026: park the draft under the OLD target and restore the
+                // new target's parked draft (nil = top-level composer).
+                if let oldID {
+                    composerDrafts[Self.draftKey(for: oldID)] = composerText
+                } else {
+                    composerDrafts[Self.topLevelDraftKey] = composerText
+                }
+                let restoredKey = newID.map(Self.draftKey(for:)) ?? Self.topLevelDraftKey
+                composerText = composerDrafts[restoredKey] ?? ""
                 // Tapping Reply must bring the composer to the user, wherever
                 // the page is currently scrolled: reply context without a
                 // visible composer reads as a dead tap.
@@ -102,6 +119,14 @@ struct VideoPageView: View {
             Button("OK", role: .cancel) {}
         } message: { failure in
             Text(failure.userMessage)
+        }
+        .alert(
+            "Can't share this video",
+            isPresented: $shareErrorShown
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The video link couldn't be built from its identifier, so sharing is unavailable.")
         }
         .alert(
             "Couldn't complete action",
@@ -217,6 +242,8 @@ struct VideoPageView: View {
                 }
             }
             .font(.caption.weight(.medium))
+            // HB-029: caption-styled text buttons still need a 44pt target.
+            .frame(minHeight: 44, alignment: .leading)
             .accessibilityIdentifier("description-toggle")
         }
     }
@@ -340,15 +367,33 @@ struct VideoPageView: View {
     }
 
     private var shareButton: some View {
-        ShareLink(
-            item: URL(string: "https://youtu.be/\(video.id)") ?? URL(fileURLWithPath: "/"),
-            subject: Text(video.title)
-        ) {
-            Label("Share", systemImage: "square.and.arrow.up")
-                .labelStyle(.titleAndIcon)
+        Group {
+            if let shareURL {
+                ShareLink(item: shareURL, subject: Text(video.title)) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("share-button")
+            } else {
+                // HB-029: malformed ids surface a controlled error instead of
+                // sharing file:/// garbage.
+                Button {
+                    shareErrorShown = true
+                } label: {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("share-button")
+            }
         }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("share-button")
+    }
+
+    /// A well-formed watch URL exists only for valid YouTube id shapes.
+    private var shareURL: URL? {
+        guard DownloadRequest.isValidVideoID(video.id) else { return nil }
+        return URL(string: "https://youtu.be/\(video.id)")
     }
 
     @State private var showPlaylistPicker = false
@@ -460,7 +505,7 @@ struct VideoPageView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Download quality")
                 .font(.headline)
-            DownloadQualityPickerView(available: qualities, selection: $selectedQuality)
+            DownloadQualityPickerView(available: qualities, selection: $selectedQuality, state: qualityResolutionState)
             Text("Pick a quality, then tap Download above. Downloads never exceed your choice.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -518,9 +563,12 @@ struct VideoPageView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Button("Cancel") {
+                        // Draft is parked by onChange when the target clears;
+                        // nothing is destroyed here.
                         replyTarget = nil
                     }
                     .font(.caption)
+                    .frame(minHeight: 44)
                 }
             }
             HStack {
@@ -551,10 +599,12 @@ struct VideoPageView: View {
             Text(comment.author).font(.caption.bold())
             Text(comment.text)
             Button("Reply") {
+                // Draft for the incoming target is restored by onChange;
+                // the current text is parked, never discarded.
                 replyTarget = comment
-                composerText = ""
             }
             .font(.caption)
+            .frame(minHeight: 44)
             .accessibilityIdentifier("reply-button-\(comment.id)")
             ForEach(comment.replies) { reply in
                 Text("↳ \(reply.author): \(reply.text)")
@@ -570,21 +620,30 @@ struct VideoPageView: View {
     // MARK: - Data loading
 
     private func loadQualities() async {
+        // HB-024 tri-state: resolving → loaded (possibly genuinely empty) or
+        // failed, so the picker copy never conflates the three.
+        qualityResolutionState = .resolving
         // Reuse the coordinator's extraction when it belongs to this video;
         // only fall back to a second extraction if playback never resolved.
         let resolved: ResolvedMedia?
         if let cached = coordinator.lastResolvedMedia, cached.videoID == video.id {
             resolved = cached
         } else {
-            resolved = try? await YouTubeKitMediaExtractor().resolve(videoID: video.id)
+            do {
+                resolved = try await YouTubeKitMediaExtractor().resolve(videoID: video.id)
+            } catch {
+                resolved = nil
+            }
         }
         guard let resolved else {
             qualities = []
+            qualityResolutionState = .failed
             return
         }
         let picker = DownloadQualityPicker()
         qualities = picker.availableQualities(from: resolved)
         selectedQuality = qualities.first
+        qualityResolutionState = .loaded
     }
 
     private func loadComments() async {
@@ -715,6 +774,7 @@ struct VideoPageView: View {
         // Snapshot what is being posted: the field is disabled during flight,
         // so this text is exactly what the user saw when tapping send.
         let submittedText = composerText
+        let submittedDraftKey = replyTarget.map(Self.draftKey(for:)) ?? Self.topLevelDraftKey
         do {
             if let target = replyTarget {
                 let stored = try await commentsService.reply(to: target.id, text: submittedText, accessToken: token)
@@ -737,10 +797,18 @@ struct VideoPageView: View {
                 comments.insert(stored, at: 0)
             }
             composerText = ""
+            // A successfully posted draft is consumed; no stale copy lingers.
+            composerDrafts.removeValue(forKey: submittedDraftKey)
         } catch {
             accountActionError = error as? YouTubeAPIError ?? .network
         }
     }
+
+    // MARK: - Composer drafts (HB-026)
+
+    private static let topLevelDraftKey = "__top__"
+
+    private static func draftKey(for commentID: String) -> String { "reply:\(commentID)" }
 
     // MARK: - Copy helpers
 

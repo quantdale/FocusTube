@@ -119,6 +119,28 @@ final class LibraryStore {
         }
     }
 
+    /// HB-027 render-path fix: ONE full-history fetch per mutation generation,
+    /// projected to a videoID→resume-fraction map that card rows index in O(1).
+    /// Previously every visible VideoCard triggered its own complete-table
+    /// fetch per body evaluation (N rows ⇒ N scans per render, re-run on every
+    /// progress tick). Memoized against the mutation `revision`, so playback
+    /// progress invalidation costs at most one fetch per surface per tick.
+    public func resumeFractions() -> [String: Double] {
+        if fractionProjectionRevision == revision { return fractionProjection }
+        var map: [String: Double] = [:]
+        for entry in history {
+            guard !entry.completed,
+                  let duration = entry.durationSeconds, duration > 0 else { continue }
+            map[entry.videoID] = min(max(entry.lastPositionSeconds / Double(duration), 0), 1)
+        }
+        fractionProjection = map
+        fractionProjectionRevision = revision
+        return map
+    }
+
+    private var fractionProjection: [String: Double] = [:]
+    private var fractionProjectionRevision = -1
+
     /// Removes one history entry. A missing entry or failed fetch is a no-op.
     public func removeHistory(videoID: String) {
         guard case let entry? = (try? historyEntryOrThrow(videoID)) else { return }

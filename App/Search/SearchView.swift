@@ -53,13 +53,16 @@ struct SearchView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                // HB-027: one projection fetch per body evaluation, not one
+                // full-history scan per card row.
+                let resumeFractions = library.resumeFractions()
                 ForEach(store.results) { video in
                     Button {
                         selectedVideo = video
                     } label: {
                         VideoCard(
                             video: video,
-                            progressFraction: VideoCard.resumeFraction(videoID: video.id, history: library.history)
+                            progressFraction: resumeFractions[video.id]
                         )
                     }
                     .buttonStyle(.plain)
@@ -115,7 +118,10 @@ struct SearchView: View {
             Button("Search") {
                 submit()
             }
-            .disabled(queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(
+                queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || (store.isLoading && queryText.trimmingCharacters(in: .whitespacesAndNewlines) == store.query)
+            )
             .accessibilityIdentifier("search-submit-button")
         }
     }
@@ -125,9 +131,14 @@ struct SearchView: View {
     /// the trimmed text is what gets submitted and recorded as a recent query.
     /// Field focus is intentionally retained across submits (see the
     /// @FocusState note); scrolling the results dismisses the keyboard.
+    /// HB-029: an identical query already in flight is dropped BEFORE any
+    /// work — repeated identical submits must not burn search quota. A
+    /// DIFFERENT query always supersedes (generation guard in the store
+    /// keeps state safety).
     private func submit() {
         let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if store.isLoading, trimmed == store.query { return }
         recentSearches.record(trimmed)
         Task { await store.submit(trimmed) }
     }

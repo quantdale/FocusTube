@@ -35,18 +35,25 @@ struct VideoCard: View {
         Color.clear
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .overlay {
-                AsyncImage(url: video.thumbnailURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            // Graceful degradation is handled by the failure
-                            // branch; a loaded image simply fills the slot.
-                    case .failure:
-                        failedThumbnail
-                    default:
-                        loadingThumbnail
+                if video.thumbnailURL == nil {
+                    // HB-029: a missing legacy thumbnail URL must reach a
+                    // bounded failure glyph, not spin forever (AsyncImage
+                    // never leaves .empty for a nil URL).
+                    failedThumbnail
+                } else {
+                    AsyncImage(url: video.thumbnailURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                // Graceful degradation is handled by the failure
+                                // branch; a loaded image simply fills the slot.
+                        case .failure:
+                            failedThumbnail
+                        default:
+                            loadingThumbnail
+                        }
                     }
                 }
             }
@@ -62,7 +69,7 @@ struct VideoCard: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if let fraction = progressFraction, fraction > 0.01, fraction < 0.99 {
+                if let fraction = progressFraction, fraction > 0, fraction < 1 {
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {
                             Rectangle().fill(.black.opacity(0.35))
@@ -74,6 +81,13 @@ struct VideoCard: View {
                     .frame(height: 4)
                 }
             }
+            // HB-028: VoiceOver users hear how much of the video they have
+            // already watched. Natural-child label composition stays intact —
+            // this only ADDS a value on the card container.
+            .accessibilityElement(children: .contain)
+            .accessibilityValue(
+                progressFraction.map { "\(Int(($0 * 100).rounded()))% watched" } ?? ""
+            )
             .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
@@ -107,12 +121,20 @@ struct VideoCard: View {
         return String(format: "%d:%02d", minutes, secs)
     }
 
-    static func relativePublished(_ date: Date?) -> String? {
-        guard let date else { return nil }
+    /// Cached relative-date formatter (HB-027): constructing one per card per
+    /// render was pure churn. MainActor-isolated because only view bodies call
+    /// this and RelativeDateTimeFormatter is not Sendable.
+    @MainActor private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         formatter.dateTimeStyle = .named
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return formatter
+    }()
+
+    @MainActor
+    static func relativePublished(_ date: Date?) -> String? {
+        guard let date else { return nil }
+        return Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
 
     static func accessibilityLabel(for video: VideoSummary) -> String {
@@ -121,13 +143,5 @@ struct VideoCard: View {
             parts.append("Duration \(duration)")
         }
         return parts.compactMap { $0.isEmpty ? nil : $0 }.joined(separator: ", ")
-    }
-
-    /// Local continue-watching indicator: the resume fraction from persisted
-    /// history, only for genuinely in-progress entries. Purely local — no API.
-    static func resumeFraction(videoID: String, history: [WatchHistoryEntry]) -> Double? {
-        guard let entry = history.first(where: { $0.videoID == videoID }), !entry.completed else { return nil }
-        guard let duration = entry.durationSeconds, duration > 0 else { return nil }
-        return min(max(entry.lastPositionSeconds / Double(duration), 0), 1)
     }
 }

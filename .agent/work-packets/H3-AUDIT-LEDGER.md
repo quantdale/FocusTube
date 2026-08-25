@@ -158,11 +158,15 @@ disposition. Dispositions update per workstream as evidence lands.
   persist/read-back roundtrip; legacy-row nil; duration-carrying attempt on an
   always-full volume refuses typed storageRefused BEFORE any transfer begins.
 
-### HB-024 (Low) — download-quality tri-state collapse — LIVE
+### HB-024 (Low) — download-quality tri-state collapse — FIXED (H3-05)
 - Code: VideoPageView.loadQualities:568-584 sets qualities=[] both before resolution completes and on
   extraction failure; picker copy reads single "no qualities" string either way.
-- Disposition: fix in H3-05 — tri-state lifecycle (resolving / failed / genuinely-empty) driving picker
-  copy; button disabled-state preserved.
+- Disposition: FIXED in H3-05 — QualityResolutionState (resolving/failed/
+  loaded) drives DownloadQualityPickerView copy: "Checking downloadable
+  qualities…" / "Couldn't check… Try reopening this video." / genuinely-empty
+  "No downloadable qualities for this video"; loaded-with-results renders the
+  segmented picker as before. Download button stays disabled until loaded with
+  results. Extraction failure now do/catch-typed instead of try? collapse.
 
 ### HB-025 (Medium) — SwiftData save failures logged-only while UI keeps optimistic state — FIXED (H3-03)
 - Code: LibraryStore.save():287-293 logs fault; RecentSearchStore.persist():76-86 logs fault and keeps
@@ -182,50 +186,67 @@ disposition. Dispositions update per workstream as evidence lands.
   Tests (app target): rollback-on-insert/update + flag lifecycle; history
   session-usability-with-signal; recents write-through gating for record/clear.
 
-### HB-026 (Low) — reply-target switch destroys draft — LIVE
+### HB-026 (Low) — reply-target switch destroys draft — FIXED (H3-05)
 - Code: VideoPageView replyTarget set at :550-551 clears composerText unconditionally; submit success
   path :713-735 clears properly.
-- Disposition: fix in H3-05 — preserve per-target draft or explicit discard confirmation; deterministic
-  view-model-level tests where possible.
+- Disposition: FIXED in H3-05 — per-target draft store (top-level sentinel +
+  reply:<commentID> keys). Switching targets parks the current text under the
+  outgoing key and restores the incoming target's parked draft; Cancel parks
+  rather than discards; only successful submit consumes the draft.
+  onChange(of: replyTarget?.id) uses the iOS 17 two-parameter form.
 
-### HB-027 (Medium) — per-card history scans + formatter churn — LIVE
+### HB-027 (Medium) — per-card history scans + formatter churn — FIXED (H3-04)
 - Code: RootView.swift:493 and SearchView.swift:62 call VideoCard.resumeFraction(videoID:history:
   library.history) inside row builders; library.history is a computed FULL-TABLE fetch evaluated per
   row per body evaluation; VideoCard.relativePublished constructs RelativeDateTimeFormatter per card
   per render (:110-116).
-- Disposition: fix in H3-04 — compute videoID->fraction projection once per owning store/render pass;
-  cache formatters (thread-safe usage on MainActor); verify progress invalidation does not rescan.
+- Disposition: FIXED in H3-04 — LibraryStore.resumeFractions() computes a
+  videoID→fraction map in ONE history fetch, memoized against the mutation
+  revision (progress ticks cost at most one fetch per surface per generation);
+  RootView Home and SearchView hoist the projection once per body and index it
+  O(1) per row — the N-rows⇒N-full-table-scans pattern is gone. The old
+  VideoCard.resumeFraction(videoID:history:) helper is removed with its exact
+  semantics preserved and pinned by app-target tests (in-progress+duration
+  only, clamp bounds, invalidation on write/completion/delete).
+  VideoCard.relativePublished now uses a cached MainActor-isolated
+  RelativeDateTimeFormatter instead of per-card-per-render construction.
 
-### HB-028 (Low) — continue-watching invisible to VoiceOver on cards — LIVE
+### HB-028 (Low) — continue-watching invisible to VoiceOver on cards — FIXED (H3-05)
 - Code: VideoCard progress strip :64-76 decoration-only; comment :30-31 explicitly keeps natural
   children exposed (journey contracts depend on it).
-- Disposition: fix in H3-05 — add accessibilityValue("x% watched") on the thumbnail/card element
-  WITHOUT collapsing natural-child label composition; verify journeys unaffected.
+- Disposition: FIXED in H3-05 — thumbnail container exposes an accessibilityValue
+  "N% watched" when a resume fraction exists, via children: .contain so the
+  natural title/channel children (and the journey label contracts) stay intact.
+  Thresholds unified: card strip visibility is now any progress in (0,1),
+  matching Library rows' !completed semantics (previously 0.01..0.99 band vs >0).
 
-### HB-029 (Low batch) — multiple UX edges — PARTIALLY FIXED (persistence/navigation portions in H3-03; remainder owned by H3-05)
-- AsyncImage(nil URL) spins forever: VideoCard.thumbnail uses AsyncImage(url:) — nil URL never leaves
-  .empty phase (failure branch only covers real-URL failures). Fix: bounded placeholder/failure glyph
-  for nil URL.
-- Playlist-origin summaries drop channelID/description: FIXED in H3-03 —
-  PlaylistItemSummary gained additive optional videoDescription/thumbnailURL/
-  channelID (init defaults keep fakes compiling); fetchPlaylistItems decodes
-  snippet.description / thumbnails.medium / videoOwnerChannelId (wire test
-  pins them); PlaylistDetailView reconstructs VideoSummary with those fields;
-  WatchHistoryEntry/SavedItem gained additive channelID/videoDescription
-  (lightweight migration), populated at recordProgress/save call sites and used
-  by RootView summary(from:) reconstruction — Subscribe and description
-  More/Less survive Library/playlist-origin navigation; legacy rows degrade nil.
-- Playlists load lacks generation token: verify exact site during H3-05; add pre-await duplicate gate.
-- PlaylistDetailView load-error has NO retry affordance: RootView.swift:367-368 renders Text(errorText)
-  only (removalError DOES have Try again). Fix: real retry affordance + stale-response protection.
-- Search submit enabled during flight: SearchView submit path lacks pre-await disable (generation guard
-  holds correctness, quota burns). Fix with bounded duplicate-submit gate.
-- Sign-in buttons lack re-entry guards; Settings sign-in silent no-op under fake sessions: RootView:459,
-  AccountSettingsView:62 call signIn directly. Fix guards + truthful degraded states.
-- Sub-44pt targets/decorative chevrons/history-row hints: sweep during H3-05.
-- Continue-watching thresholds differ: VideoCard (0.01..0.99) vs Library rows (>0). Unify.
-- TabView no selection binding/restoration: RootView TabView {:23 has no selection. Make explicit.
-- Share fallback file:///: VideoPageView:340 `?? URL(fileURLWithPath: "/")`. Controlled error instead.
+### HB-029 (Low batch) — multiple UX edges — FIXED (H3-03 persistence/navigation + H3-05 remainder)
+- AsyncImage(nil URL) spins forever: FIXED in H3-05 — nil legacy thumbnailURL
+  renders the bounded failure glyph directly (AsyncImage never leaves .empty
+  for nil URLs); real-URL failures keep their existing glyph branch.
+- Playlists load lacks generation token: FIXED in H3-05 — check-and-set
+  isLoadingPlaylists guard BEFORE first await coalesces overlapping taps;
+  PlaylistDetailView gets its own loadInFlight guard (presentation-only
+  isLoading starts true to avoid empty-state flash).
+- PlaylistDetailView load-error retry: FIXED in H3-05 — real Try again button
+  beside the error text (matches removalError affordance).
+- Search submit enabled during flight: FIXED in H3-05 — identical query while
+  in flight is dropped before recording/submitting AND the button disables;
+  different queries always supersede (store generation guard keeps safety).
+- Sign-in re-entry guards + truthful fake-session states: FIXED in H3-05 —
+  Home and Settings sign-in buttons disable with "Signing in…" during flight;
+  non-Google (fake) sessions show "Sign-in isn't available in this session."
+  instead of silent no-op.
+- Sub-44pt targets/decorative chevrons/history-row hints: FIXED in H3-05 —
+  description More/Less, composer Cancel, and per-comment Reply buttons get
+  minHeight 44; both decorative chevrons are accessibilityHidden; history/saved
+  rows already carried identifiers+hints (verified).
+- Continue-watching thresholds differ: UNIFIED in H3-05 (see HB-028).
+- TabView no selection/restoration: FIXED in H3-05 — @SceneStorage-backed
+  selection binding with tags on all four tabs.
+- Share fallback file:///: FIXED in H3-05 — shareURL built only from valid id
+  shapes (Core isValidVideoID); otherwise ShareLink is replaced by a button
+  that surfaces a controlled "Can't share this video" alert.
 
 ### HB-030 (Low) — residual deterministic-test gaps — PARTIALLY FIXED (H3-01 API portions done; remainder owned by H3-06)
 - commentThreads pageToken plumbing through client (playlistItems analog tested): FIXED in H3-01

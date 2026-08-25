@@ -19,8 +19,13 @@ struct RootView: View {
     private var downloadService: DownloadService { dependencies.downloadService }
     private var backgroundMedia: BackgroundMediaCoordinator { dependencies.backgroundMedia }
 
+    /// HB-029: explicit tab selection persisted across scene restoration.
+    @SceneStorage("FocusTube.selectedTab") private var selectedTab = 0
+
     var body: some View {
-        TabView {
+        // HB-029: explicit selection binding with scene storage — the user's
+        // tab survives scene restoration instead of always resetting to Home.
+        TabView(selection: $selectedTab) {
             NavigationStack {
                 HomeFeedView(
                     store: homeStore,
@@ -32,6 +37,7 @@ struct RootView: View {
                 )
             }
             .tabItem { Label("Home", systemImage: "house") }
+            .tag(0)
 
             NavigationStack {
                 SearchView(
@@ -45,6 +51,7 @@ struct RootView: View {
                 )
             }
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
+            .tag(1)
 
             NavigationStack {
                 DownloadsView(
@@ -54,6 +61,7 @@ struct RootView: View {
                 )
             }
             .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
+            .tag(2)
 
             NavigationStack {
                 LibraryView(
@@ -65,6 +73,7 @@ struct RootView: View {
                 )
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
+            .tag(3)
         }
         .task {
             // The coordinator is created once in init; re-appearance only
@@ -91,6 +100,9 @@ struct LibraryView: View {
     @State private var selectedSummary: VideoSummary?
     @State private var playlistsState: PlaylistsLoadState = .idle
     @State private var selectedPlaylist: PlaylistSummary?
+    /// HB-029: duplicate-load guard — a fast double-tap on Show/Try-again
+    /// must not issue two quota-costing playlists.list calls.
+    @State private var isLoadingPlaylists = false
 
     private var accountActions: AccountActionsService { AccountActionsService(api: api) }
 
@@ -228,6 +240,7 @@ struct LibraryView: View {
                         Image(systemName: "chevron.right")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -311,6 +324,7 @@ struct LibraryView: View {
                             Image(systemName: "chevron.right")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
                         }
                     }
                     .accessibilityIdentifier("playlist-row-\(playlist.id)")
@@ -320,11 +334,15 @@ struct LibraryView: View {
     }
 
     private func loadPlaylists() async {
+        // HB-029: check-and-set BEFORE any await; overlapping taps coalesce.
+        guard !isLoadingPlaylists else { return }
         guard let token = await auth.accessToken() else {
             playlistsState = .failed("Sign in to see your playlists.")
             return
         }
+        isLoadingPlaylists = true
         playlistsState = .loading
+        defer { isLoadingPlaylists = false }
         do {
             playlistsState = .loaded(try await accountActions.playlists(accessToken: token))
         } catch let error as YouTubeAPIError {
@@ -353,6 +371,9 @@ struct PlaylistDetailView: View {
 
     @State private var items: [PlaylistItemSummary] = []
     @State private var isLoading = true
+    /// HB-029 duplicate-load guard (presentation-only `isLoading` starts true
+    /// so the first frame never flashes the empty state).
+    @State private var loadInFlight = false
     @State private var errorText: String?
     @State private var removalError: String?
 
@@ -370,7 +391,12 @@ struct PlaylistDetailView: View {
             if isLoading {
                 ProgressView()
             } else if let errorText {
-                Text(errorText).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(errorText).foregroundStyle(.secondary)
+                    Button("Try again") {
+                        Task { await load() }
+                    }
+                }
             } else if items.isEmpty {
                 Text("This playlist is empty.").foregroundStyle(.secondary)
             } else {
@@ -407,17 +433,21 @@ struct PlaylistDetailView: View {
     }
 
     private func load() async {
+        guard !loadInFlight else { return }
         guard let token = await auth.accessToken() else {
             errorText = "Sign in to see this playlist."
             isLoading = false
             return
         }
+        loadInFlight = true
         isLoading = true
-        defer { isLoading = false }
+        defer { loadInFlight = false }
         do {
             items = try await api.fetchPlaylistItems(playlistID: playlist.id, accessToken: token)
+            isLoading = false
         } catch {
             errorText = "Couldn't load this playlist."
+            isLoading = false
         }
     }
 
@@ -456,6 +486,7 @@ private struct HomeFeedView: View {
 
     @State private var selectedVideo: VideoSummary?
     @State private var showSettings = false
+    @State private var isSigningIn = false
 
     var body: some View {
         List {
@@ -465,14 +496,27 @@ private struct HomeFeedView: View {
                 // once authenticated.
                 Button {
                     Task {
+                        // HB-029 sign-in re-entry guard.
+                        guard !isSigningIn else { return }
+                        isSigningIn = true
+                        defer { isSigningIn = false }
                         if await (auth as? GoogleSignInAuthSession)?.signIn() == true {
                             await store.restore()
                             await store.load()
                         }
                     }
                 } label: {
-                    Label("Sign in with Google", systemImage: "person.crop.circle.badge.checkmark")
+                    if isSigningIn {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Signing in…")
+                        }
+                    } else {
+                        Label("Sign in with Google", systemImage: "person.crop.circle.badge.checkmark")
+                    }
                 }
+                .disabled(isSigningIn)
+                .accessibilityIdentifier("google-sign-in-button")
             }
             if store.isLoading {
                 ProgressView("Loading feed…")
@@ -493,13 +537,16 @@ private struct HomeFeedView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("home-empty")
             }
+            // HB-027: one projection fetch per body evaluation, not one
+            // full-history scan per card row.
+            let resumeFractions = library.resumeFractions()
             ForEach(store.videos) { video in
                 Button {
                     selectedVideo = video
                 } label: {
                     VideoCard(
                         video: video,
-                        progressFraction: VideoCard.resumeFraction(videoID: video.id, history: library.history)
+                        progressFraction: resumeFractions[video.id]
                     )
                 }
                 .buttonStyle(.plain)
