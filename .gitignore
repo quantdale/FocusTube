@@ -53,3 +53,4 @@ ci-logs.zip
 ci-*.json
 ci-*.zip
 tmp_*.py
+"diag80.zip"  
