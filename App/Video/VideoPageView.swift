@@ -61,12 +61,16 @@ struct VideoPageView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 240)
 
-                    metadataSection
+                    metadataHeader
                     actionRow
 
                     Divider()
 
                     downloadSection
+
+                    Divider()
+
+                    descriptionSection
 
                     Divider()
 
@@ -85,6 +89,7 @@ struct VideoPageView: View {
             }
         }
         .navigationTitle("Video")
+        .navigationBarTitleDisplayMode(.inline)
         .alert(
             "Download failed",
             isPresented: Binding(
@@ -148,7 +153,11 @@ struct VideoPageView: View {
 
     // MARK: - Metadata
 
-    private var metadataSection: some View {
+    /// Compact title + channel/duration line directly under the player. The
+    /// long-form description is deliberately demoted below the primary actions
+    /// (DDV2-08): interactions belong in the first viewport, not behind a wall
+    /// of text.
+    private var metadataHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(video.title).font(.headline)
                 .accessibilityIdentifier("video-title")
@@ -171,6 +180,15 @@ struct VideoPageView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal)
+        .padding(.top, 12)
+    }
+
+    /// Collapsible long-form description, demoted below the primary actions.
+    private var descriptionSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
             descriptionBlock
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -135,13 +135,20 @@ final class Journeys: XCTestCase {
         start.press(forDuration: 0.05, thenDragTo: end)
     }
 
-    /// Performs one scroll attempt: a container-scoped moderate PAN. Element
-    /// velocity flings overshoot the whole scroll range and app-level gestures
-    /// land on the player/card layer; the named container plus fixed-span pan
-    /// is the only combination that moved content predictably in CI evidence.
+    /// Performs one scroll attempt. CI evidence across three runs: only
+    /// container-scoped velocity swipes actually move content on this runtime —
+    /// moderate coordinate pans produce zero movement, and app-level gestures
+    /// land on the player/card layer. Velocity flings traverse a large range,
+    /// which is why the video page now keeps its primary actions inside the
+    /// first viewport (product-side fix) instead of relying on mid-page
+    /// scrolling.
     private func scrollOnce(_ app: XCUIApplication, direction: SwipeDirection, attempt: Int) {
         let container = largestScrollContainer(app)
-        dragScroll(app, frame: container?.frame ?? app.frame, direction: direction)
+        if let container {
+            if direction == .up { container.element.swipeUp(velocity: .fast) } else { container.element.swipeDown(velocity: .fast) }
+        } else {
+            dragScroll(app, frame: app.frame, direction: direction)
+        }
     }
 
     /// Reveals an element fully inside the visible window (with a safety
