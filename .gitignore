@@ -58,3 +58,7 @@ ci-*.json
 ci-*.zip
 tmp_*.py
 "diag80.zip"  
+".agent/*.py" 
+"*.html" 
+"steps*.json" 
+"w?.html"
