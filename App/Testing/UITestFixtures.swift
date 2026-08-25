@@ -285,10 +285,13 @@ enum FixtureMediaFactory {
             ]
         ])
         input.expectsMediaDataInRealTime = false
+        // H.264 encoders reliably accept 420v planar buffers; the earlier BGRA
+        // configuration silently failed to encode on the CI runner (every
+        // transfer degraded to the 4-byte filler fallback).
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
             sourcePixelBufferAttributes: [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
                 kCVPixelBufferWidthKey as String: width,
                 kCVPixelBufferHeightKey as String: height
             ]
@@ -321,10 +324,22 @@ enum FixtureMediaFactory {
                 throw NSError(domain: "FixtureMedia", code: 2)
             }
             CVPixelBufferLockBaseAddress(buffer, [])
-            if let base = CVPixelBufferGetBaseAddress(buffer) {
-                // Alternating dark/light frames give visible playback motion.
-                let gray: UInt8 = frame.isMultiple(of: 2) ? 40 : 200
-                memset(base, Int32(gray), CVPixelBufferGetDataSize(buffer))
+            if let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) {
+                // Alternating dark/light luma gives visible playback motion;
+                // neutral chroma (128) keeps the frame gray.
+                let y: UInt8 = frame.isMultiple(of: 2) ? 40 : 200
+                let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+                let height0 = CVPixelBufferGetHeightOfPlane(buffer, 0)
+                for row in 0..<height0 {
+                    memset(base.advanced(by: row * stride), Int32(y), stride)
+                }
+            }
+            if let chroma = CVPixelBufferGetBaseAddressOfPlane(buffer, 1) {
+                let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
+                let height1 = CVPixelBufferGetHeightOfPlane(buffer, 1)
+                for row in 0..<height1 {
+                    memset(chroma.advanced(by: row * stride), 128, stride)
+                }
             }
             CVPixelBufferUnlockBaseAddress(buffer, [])
             let time = CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(fps))

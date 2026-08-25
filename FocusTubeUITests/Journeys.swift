@@ -195,18 +195,21 @@ final class Journeys: XCTestCase {
             if current.exists {
                 let f = current.frame
                 if visible(f) {
-                    // Require the SAME frame again after a real runloop gap;
-                    // two immediate reads can share one cached snapshot.
-                    RunLoop.main.run(until: Date().addingTimeInterval(0.4))
-                    let recheck = locate(app)
-                    if recheck.exists, recheck.frame == f {
-                        settled = recheck
+                    // Classic double-read stability: two reads ~0.6s apart that
+                    // agree mean fling deceleration has finished. Requiring
+                    // agreement with the PRE-scroll frame kept failing when
+                    // momentum outlived the wait, so a visible target could
+                    // never "settle" and the loop exhausted its attempts.
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+                    let recheckA = locate(app)
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+                    let recheckB = locate(app)
+                    if recheckA.exists, recheckB.exists, recheckA.frame == recheckB.frame, visible(recheckB.frame) {
+                        settled = recheckB
                         break
                     }
-                    // Visible but not yet stable (push animation, quality load,
-                    // keyboard settle): NEVER scroll a visible target away —
-                    // full-range flings would throw it out of the band and
-                    // start a top/bottom oscillation. Just re-read next pass.
+                    // Visible but still moving: NEVER scroll a visible target
+                    // away — full-range flings would throw it out of the band.
                 } else if f.height > 0 {
                     if f.maxY < win.midY {
                         scrollOnce(app, direction: .down, attempt: swipes)
@@ -221,6 +224,7 @@ final class Journeys: XCTestCase {
                 // Degenerate frame: cell realized but not laid out yet.
             } else {
                 scrollOnce(app, direction: .up, attempt: swipes)
+                RunLoop.main.run(until: Date().addingTimeInterval(0.9))
             }
             swipes += 1
         }
