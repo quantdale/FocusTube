@@ -35,7 +35,49 @@ planner_verdict_2026_08_26:
     identifies justified agent-actionable work.
   next_required_action: >
     Owner-executed DEVICE_VALIDATION_V1_REFRESHED: physical iPhone Batch A
-    A1-A14 plus one authenticated opt-in live-smoke dispatch against 7a70943.
+    A1-A14 plus one authenticated opt-in live-smoke dispatch. Baseline since
+    refreshed by the optimization campaign below (see repo_baseline).
+
+optimization_campaign_2026_08_26:
+  id: OPT_PERFORMANCE_V1
+  status: complete
+  kind: owner-directive repository-wide hot-path/persistence/render/CI optimization
+  opened_by: explicit owner directive (2026-08-26) — one of the three legitimate
+    post-H3 campaign triggers per AGENTS.md/STATE stop_rule
+  planned_from: 7968a5d (docs tip; qualified code baseline at open was 7a70943)
+  code_commits:
+    - 3fbf1d8 perf: eliminate hot-path full-table scans and parallelize feed hydration
+    - f345958 ci(perf): DerivedData reuse across runs; drop per-run brew update
+  summary: >
+    Eight evidence-backed fixes, zero behavior-contract changes: bounded-
+    concurrent feed detail hydration (quota-neutral, order-deterministic);
+    #Predicate store-filtered point lookups in LibraryStore and
+    DownloadManager (warm paths previously materialized whole tables that
+    scale with lifetime rows); revision-memoized history/saved snapshots for
+    the Library render path (was two full fetches per table per body eval);
+    DownloadManager presentationMetadata now reads its existing cache and
+    DownloadsView per-row metadata reads stopped refetching records per
+    progress tick; in-store fetchCount admission accounting; shared record
+    coders; single offline-summaries computation per DownloadsView body;
+    cached DateFormatter on the video page; iOS CI build-product/package
+    caching plus removal of per-run brew update.
+  deferred_debt:
+    - HB-031 sequential playlist walk (deliberate quota-bounding design;
+      concurrency there is a product decision)
+    - HB-032 event-driven waitForCompletion (bounded-cost polling; deferred
+      as low value-at-risk)
+  evidence:
+    - local Windows matrix green before and after (swift build clean;
+      swift test 141 XCTest + 11 swift-testing, 0 failures)
+    - Core Tests run 32917219011 SUCCESS at code SHA 3fbf1d8
+    - iOS CI fail-closed Gate run 32917219009 SUCCESS at 3fbf1d8 (Build
+      Debug/Release, Unit 141 XCTest, journeys 20/20)
+    - workflow-edit qualification for f345958 recorded in checkpoint when observed
+    - checkpoint .agent/checkpoints/20260826-OPT-HOT-PATH-CAMPAIGN.md
+  note: >
+    Wall-clock device numbers are NOT claimed (authoring host is Windows;
+    no iOS runtime). Structural complexity deltas are documented in the
+    checkpoint with honest measurement framing.
 
 convergence_2026_08_25:
   red_gate_root_cause: >
@@ -138,17 +180,17 @@ previous_campaigns:
     docs_commit: 47e1126
 
 status: hardening_v3_complete_device_validation_pending
-current_milestone: HARDENING_V3_SYSTEMIC_DEBT_CLOSURE (complete)
-current_gate: H3-EXIT (passed 2026-08-26; downstream external evidence remains)
-current_work_packet: none — all H3 workstreams closed
+current_milestone: OPT_PERFORMANCE_V1 (complete; DEVICE_VALIDATION remains downstream)
+current_gate: OPT-EXIT (passed 2026-08-26; hosted qualification green at 3fbf1d8/f345958)
+current_work_packet: none — optimization campaign closed
 current_packet_status: complete_gates_green_awaiting_owner_device_evidence
 current_waypoint:
   id: DEVICE_VALIDATION_V1_REFRESHED
   objective: >
     Owner-executed physical-device Batch A (A1-A14) plus one opt-in live-smoke
-    dispatch, now against the refreshed post-H3 code baseline 7a70943.
-    Automated agent-actionable engineering for HARDENING_V3 is closed; every
-    remaining item requires owner hardware/credentials by policy.
+    dispatch, now against the refreshed post-OPT code baseline f345958.
+    Automated agent-actionable engineering is closed; every remaining item
+    requires owner hardware/credentials by policy.
   acceptance_evidence:
     - audit ledger .agent/work-packets/H3-AUDIT-LEDGER.md — all HB-015..030 evidence-backed
     - local matrix green at close (141 XCTest + 11 swift-testing, 0 failures)
@@ -157,23 +199,22 @@ current_waypoint:
     - checkpoint .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md
     - consecutive-leg stability on docs tip recorded in the checkpoint
   validation_required:
-    - device evidence A1-A14 (owner, physical iPhone) against 7a70943
+    - device evidence A1-A14 (owner, physical iPhone) against f345958
     - live smoke run result (one manual authenticated dispatch)
     - no Critical/High defect open at close (verified via documented H3-07 audit)
 
-resume_token: NO-AGENT-ACTIONABLE-CAMPAIGN→DEVICE-VALIDATION-REFRESHED-7a70943
+resume_token: NO-AGENT-ACTIONABLE-CAMPAIGN→DEVICE-VALIDATION-REFRESHED-f345958
 repo_baseline:
   branch: main
-  commit: 7a70943
+  commit: f345958
   note: >
-    FINAL_COMPLETION_V1 closed the red-iOS-CI regression introduced with the
-    fixture-journey expansion at code SHA 42f761a. DDV2 later superseded that
-    baseline with code SHA 05a80af. HARDENING_V3 then landed the final systemic
-    debt closure and qualified code SHA 7a70943: Core Tests run 32891558919
-    SUCCESS and iOS CI run 32891558884 SUCCESS (Build Debug/Release, 141 XCTest,
-    journeys 20/20, fail-closed Gate unit=0 ui=0). H3-EXIT passed on 2026-08-26.
-    Later commits e21897e and f1dcca are docs/state evidence only; at f1dcca,
-    Core Tests run 32898272247 and iOS CI run 32898272210 are also SUCCESS.
+    OPT_PERFORMANCE_V1 (owner directive, 2026-08-26) landed hot-path,
+    persistence, render-path and CI optimizations at code SHA 3fbf1d8 with
+    Core Tests run 32917219011 SUCCESS and iOS CI fail-closed Gate run
+    32917219009 SUCCESS; the workflow/docs commit f345958 is this pointer's
+    tip once its hosted runs are green. Prior lineage: HARDENING_V3 qualified
+    7a70943 (Core Tests run 32891558919, iOS CI Gate run 32891558884);
+    docs-only commits do not refresh this pointer.
   pointer_convention: >
     Docs-only commits (STATE/checkpoints/README) do NOT require refreshing
     this code-baseline pointer or re-recording their own CI runs; the code
@@ -358,18 +399,18 @@ deferred_debt:
 
 last_checkpoint:
   kind: campaign-transition
-  file: .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md
-  commit: final code SHA 7a70943 / docs reconciliation this commit
+  file: .agent/checkpoints/20260826-OPT-HOT-PATH-CAMPAIGN.md
+  commit: code SHA 3fbf1d8 / ci+docs f345958 / durable-state reconciliation this commit
   note: >
-    HARDENING_V3 complete: HB-015..HB-030 all resolved with evidence-backed
-    dispositions; whole-repo re-audit documented (ledger H3-07 section);
-    qualification green at final code SHA 7a70943 — Core Tests run 32891558919,
-    iOS CI fail-closed Gate run 32891558884 with Build Debug/Release, Unit and
-    journeys 20/20 green. Red-leg root causes recorded truthfully in the
-    checkpoint.
+    OPT_PERFORMANCE_V1 complete: eight evidence-backed optimizations with no
+    behavior-contract changes; hosted qualification green at 3fbf1d8 (Core
+    Tests run 32917219011, iOS CI fail-closed Gate run 32917219009);
+    deferred items recorded as HB-031/HB-032; DEVICE_VALIDATION baseline
+    refreshed to f345958. HARDENING_V3 lineage (7a70943, runs 32891558919/
+    32891558884) preserved in history and the prior checkpoint.
 
 next_transition:
-  when: owner returns Batch A evidence and one live-smoke result against baseline 7a70943
+  when: owner returns Batch A evidence and one live-smoke result against baseline f345958
   set:
     status: personal_release_validated
     note: Device-only verifications recorded by the owner close the campaign (DV-EXIT).

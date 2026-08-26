@@ -6,10 +6,11 @@ coordinator_owns_status: true
 # complete (IC-EXIT on 16ad839; H2-EXIT evidence on 2c7646d, see
 # .agent/checkpoints/20260822-H2-recovery.md). The waypoints below remain the
 # historical implementation map. SPEC_CLOSURE_DAILY_DRIVER_V2 completed its exit
-# 2026-08-25 (code baseline 05a80af). The active campaign is now HARDENING_V3
-# (planner-activated 2026-08-25); its waypoints are appended at the end of this
-# file. .agent/STATE.yaml remains authoritative for current reality.
-campaign: HARDENING_V3_SYSTEMIC_DEBT_CLOSURE (active)
+# 2026-08-25 (code baseline 05a80af). HARDENING_V3 completed its exit 2026-08-26
+# (qualified code baseline 7a70943). OPT_PERFORMANCE_V1 (owner directive)
+# completed 2026-08-26; its waypoints are appended at the end of this file.
+# .agent/STATE.yaml remains authoritative for current reality.
+campaign: none active (HARDENING_V3 and OPT_PERFORMANCE_V1 both complete)
 
 waypoints:
   - id: WP-000-BOOTSTRAP
@@ -456,5 +457,68 @@ out_of_campaign:
     depends_on: [H3-08-QUALIFICATION]
     objective: Evidence-backed dispositions for every HB item; no known Critical/High agent-actionable defect; whole-repo audit documented; STATE/WAYPOINTS/INDEX/backlog/checkpoint reconciled; DEVICE_VALIDATION baseline refreshed to final post-H3 code SHA; Batch A + live-smoke stay pending owner evidence; execution prompt marked COMPLETE; final session-report commit pushed.
     exit_evidence:
-      - checkpoint .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md; DEVICE_VALIDATION baseline refreshed to 7a70943; Batch A A1-A14 and one authenticated live-smoke remain pending external owner evidence
+      - checkpoint .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md; DEVICE_VALIDATION baseline refreshed to 7a70943 at H3 close (later refreshed to f345958 by OPT_PERFORMANCE_V1); Batch A A1-A14 and one authenticated live-smoke remain pending external owner evidence
+    next: DEVICE_VALIDATION_V1_REFRESHED (owner-executed)
+
+# --- OPT_PERFORMANCE_V1 (opened 2026-08-26, explicit owner directive) ---
+# Narrative scope: .agent/checkpoints/20260826-OPT-HOT-PATH-CAMPAIGN.md.
+# Deferred debt recorded as HB-031/HB-032 in .agent/HARDENING_BACKLOG.md.
+
+  - id: OPT-00-BASELINE
+    order: 300
+    gate: OPT
+    status: complete
+    depends_on: []
+    objective: Reconcile durable state against the owner optimization directive;
+      establish local Windows baseline and hosted qualification reference before
+      edits.
+    exit_evidence:
+      - local swift build clean; swift test 141 XCTest + 11 swift-testing, 0 failures
+      - prior hosted green reference at docs tip 7968a5d (runs 32913220230/32913220247)
+    next: OPT-01-HOT-PATHS
+
+  - id: OPT-01-HOT-PATHS
+    order: 301
+    gate: OPT
+    status: complete
+    depends_on: [OPT-00-BASELINE]
+    objective: Eliminate hot-path full-table scans (LibraryStore point lookups,
+      DownloadManager record lookups/counting), memoize Library render snapshots,
+      make DownloadsView metadata reads cache-backed, dedupe offline summaries,
+      cache video-page formatter and record coders, and parallelize feed detail
+      hydration with bounded fan-out while keeping output-order determinism and
+      quota cost identical.
+    exit_evidence:
+      - commit 3fbf1d8 — all listed changes plus strengthened/new tests
+        (FeedScriptedAPI lock hardening; out-of-order-completion ordering pin)
+      - local matrix green post-change (141 XCTest + 11 swift-testing)
+      - Core Tests run 32917219011 SUCCESS and iOS CI fail-closed Gate run
+        32917219009 SUCCESS at 3fbf1d8 (Build Debug/Release, journeys 20/20)
+    next: OPT-02-CI-EFFICIENCY
+
+  - id: OPT-02-CI-EFFICIENCY
+    order: 302
+    gate: OPT
+    status: complete
+    depends_on: [OPT-01-HOT-PATHS]
+    objective: Cut per-run CI waste — cache DerivedData build products/package
+      checkouts across runs via a workspace-local derived-data path; drop the
+      per-run brew update — without touching the fail-closed Gate contract.
+    exit_evidence:
+      - commit f345958 — additive workflow edits; verify-gate-contract.sh passes
+      - hosted run for f345958 observed green (recorded in STATE.yaml evidence)
+      - docs/04 hydration policy documented; HB-031/HB-032 deferred with rationale
+    next: OPT-EXIT
+
+  - id: OPT-EXIT
+    order: 303
+    gate: OPT-EXIT
+    status: complete
+    depends_on: [OPT-02-CI-EFFICIENCY]
+    objective: Durable reconciliation — checkpoint with honest measurement framing
+      (no fabricated device numbers), backlog deferrals, STATE/WAYPOINTS refresh,
+      DEVICE_VALIDATION baseline pointer moved to f345958.
+    exit_evidence:
+      - checkpoint .agent/checkpoints/20260826-OPT-HOT-PATH-CAMPAIGN.md
+      - repo_baseline.commit = f345958 in STATE.yaml
     next: DEVICE_VALIDATION_V1_REFRESHED (owner-executed)
