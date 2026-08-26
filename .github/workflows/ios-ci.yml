@@ -30,9 +30,21 @@ jobs:
 
       - name: Install XcodeGen
         run: |
-          brew update
           brew install xcodegen
           xcodegen --version
+
+      # Reuse compiled products and resolved packages between runs. Keyed on
+      # the project-generation inputs; restore-keys fall back to the latest
+      # cache so source-only changes keep their built dependencies.
+      - name: Cache build products and packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            DerivedData/Build
+            DerivedData/SourcePackages
+          key: ios-build-${{ runner.os }}-${{ hashFiles('project.yml', 'Package.swift', 'Config/*.xcconfig') }}
+          restore-keys: |
+            ios-build-${{ runner.os }}-
 
       - name: Test FocusTubeCore
         run: swift test
@@ -41,7 +53,7 @@ jobs:
         run: xcodegen generate
 
       - name: Resolve Swift packages
-        run: xcodebuild -resolvePackageDependencies -project FocusTube.xcodeproj -scheme FocusTube
+        run: xcodebuild -resolvePackageDependencies -derivedDataPath "${{ github.workspace }}/DerivedData" -project FocusTube.xcodeproj -scheme FocusTube
 
       - name: Select and boot simulator
         run: |
@@ -55,7 +67,7 @@ jobs:
         run: |
           mkdir -p Artifacts
           set -o pipefail
-          xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-build.log
+          xcodebuild build             -derivedDataPath "${{ github.workspace }}/DerivedData"             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-build.log
 
       # Release configuration must compile independently (RELEASE_CONFIDENCE_V1
       # Wave 13): proves optimization settings, the absence of DEBUG-only test
@@ -63,7 +75,7 @@ jobs:
       - name: Build (Release)
         run: |
           set -o pipefail
-          xcodebuild build             -project FocusTube.xcodeproj             -scheme FocusTube             -configuration Release             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-release.log
+          xcodebuild build             -derivedDataPath "${{ github.workspace }}/DerivedData"             -project FocusTube.xcodeproj             -scheme FocusTube             -configuration Release             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-release.log
 
       # App-hosted unit tests, bounded per test so one hung test cannot eat the
       # job. A watchdog emits the last observed test line as an annotation while
@@ -79,7 +91,7 @@ jobs:
         run: |
           mkdir -p Artifacts
           set -o pipefail
-          xcodebuild test             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -only-testing:FocusTubeTests             -test-timeouts-enabled YES             -default-test-execution-time-allowance 180             -resultBundlePath Artifacts/UnitTests.xcresult             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-unit.log &
+          xcodebuild test             -derivedDataPath "${{ github.workspace }}/DerivedData"             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -only-testing:FocusTubeTests             -test-timeouts-enabled YES             -default-test-execution-time-allowance 180             -resultBundlePath Artifacts/UnitTests.xcresult             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-unit.log &
           XPID=$!
           LAST=""
           COUNT=0
@@ -107,7 +119,7 @@ jobs:
         run: |
           mkdir -p Artifacts
           set -o pipefail
-          xcodebuild test             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -only-testing:FocusTubeUITests             -test-timeouts-enabled YES             -default-test-execution-time-allowance 180             -resultBundlePath Artifacts/UITests.xcresult             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-ui.log &
+          xcodebuild test             -derivedDataPath "${{ github.workspace }}/DerivedData"             -project FocusTube.xcodeproj             -scheme FocusTube             -destination "platform=iOS Simulator,id=${FOCUSTUBE_SIMULATOR_UDID}"             -only-testing:FocusTubeUITests             -test-timeouts-enabled YES             -default-test-execution-time-allowance 180             -resultBundlePath Artifacts/UITests.xcresult             CODE_SIGNING_ALLOWED=NO 2>&1 | tee Artifacts/xcodebuild-ui.log &
           XPID=$!
           LAST=""
           COUNT=0

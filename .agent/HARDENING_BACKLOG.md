@@ -345,3 +345,21 @@ This file is the parking lot for nonblocking Medium/Low quality work discovered 
 - Blocks implementation: no
 - Partially resolved 2026-08-21: `.muxing-*` orphan sweep implemented in reconcileOnLaunch (DownloadManager.sweepMuxingOrphans); layout divergence resolved by accepted ADR-0006 (per-quality layout is authoritative); empty Media/<id>/<quality>/ dirs pruned on delete/reconcile; silent context.save() failures now log via os.Logger in LibraryStore/DownloadManager; VolumeStorage logs failed capacity queries; duplicate per-page extraction removed (PlayerCoordinator.lastResolvedMedia reused by the video page's quality picker). History-write ordering intentionally left last-write-wins: a value-monotonic guard would break persisting legitimate manual rewinds, and the per-tick reorder window is bounded by the 5s observer cadence.
 - Resolved 2026-08-22 (commit 03ce6f6): remaining sub-items closed. Transport-held closures no longer retain the coordinator ([weak self] in DownloadCoordinator.begin) and per-event unstructured Tasks were replaced with lock-guarded completion-node chains that preserve strict arrival order (regression-tested in DownloadCoordinatorEventOrderingTests). BackgroundMediaCoordinator re-registration removes only its own addTarget tokens instead of removeTarget(nil). AppDependencies in-memory ModelContainer fallback no longer try!s (logged fault + do/catch ladder, fatal last resort with context). DownloadRecord components decode failures log via os.Logger and never emit payload bytes. PlayerCoordinator deinit teardown assumption stands as documented: the instance lives for the app lifetime under AppDependencies ownership, so no teardown path exists to get wrong.
+
+### HB-031 — subscription feed playlist walk is strictly sequential across playlists
+- Severity: Low
+- Discovered in: 2026-08-26 optimization campaign (owner directive)
+- Area: Sources/FocusTubeCore/YouTube/YouTubeAPI.swift default `fetchSubscriptionFeed`
+- Evidence/reproduction: the playlistItems walk visits subscriptions one at a time (up to two pages each) before pausing at the continuation point; with many subscriptions this serializes N×(1..2) round trips before any content renders.
+- Impact: cold-start latency scales linearly with subscription count; detail-hydration batches are ALREADY concurrent (this campaign), so the walk is now the remaining serial segment.
+- Suggested hardening action: deliberately NOT taken — the pause-point semantics ARE the quota-bounding design (a concurrent walk would fetch pages beyond the pause point and consume extra quota units per load). Redesigning it is a product/quota-policy decision that needs an explicit directive plus a redesigned continuation contract, not a mechanical optimization.
+- Blocks implementation: no
+
+### HB-032 — waitForCompletion polls the coordinator every 500 ms
+- Severity: Low
+- Discovered in: 2026-08-26 optimization campaign (owner directive)
+- Area: App/Download/DownloadManager.swift waitForCompletion
+- Evidence/reproduction: the settle wait loops on a 500 ms sleep + coordinator.task(id) actor hop until terminal state or the 600 s timeout.
+- Impact: bounded idle wakeups (≤4/s per transferring job, ≤2 jobs) — negligible CPU, but an event-driven continuation keyed off the existing onTaskSettled path would eliminate them entirely.
+- Suggested hardening action: replace polling with per-task continuations resumed from applyLive/cancel settlement points, keeping the current CancellationError and timeout-return-current-task contracts; requires careful re-proof of the durability-sensitive settle cluster, so deferred as low value-at-risk.
+- Blocks implementation: no

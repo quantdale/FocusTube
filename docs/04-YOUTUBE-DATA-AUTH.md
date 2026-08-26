@@ -45,7 +45,7 @@ Build Home from deliberate subscription data instead of attempting to recreate Y
 1. retrieve authenticated subscriptions;
 2. identify channel uploads sources;
 3. fetch recent uploads efficiently;
-4. hydrate metadata/durations in batches where possible;
+4. hydrate metadata/durations in batches where possible — batches (50 ids, the `videos.list` wire cap) fetch through a bounded sliding-window task group (width 4) so large first pages cost roughly one round trip instead of one per batch; total quota units are unchanged because every batch is fetched regardless, and output order stays identical to input order regardless of batch completion order. The playlistItems walk itself remains strictly sequential ON PURPOSE: its pause-point continuation semantics are what bound per-load quota;
 5. apply ShortFormPolicy before display;
 6. merge/sort by publish time;
 7. cache the resulting feed locally;
