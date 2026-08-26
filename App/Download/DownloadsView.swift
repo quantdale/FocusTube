@@ -34,8 +34,9 @@ struct DownloadsView: View {
                 activeSection
                 queuedSection
                 failedSection
-                offlineHeaderSection
-                offlineContentSections
+                let summaries = offlineSummaries(from: store.downloaded)
+                offlineHeaderSection(summaries)
+                offlineContentSections(summaries)
             }
             .padding(.horizontal)
             .padding(.top, 8)
@@ -223,20 +224,25 @@ struct DownloadsView: View {
 
     // MARK: - Offline library
 
-    private var offlineSummaries: [OfflineMediaSummary] {
-        store.downloaded.map { media in
+    /// Projects the persisted download index into neutral policy summaries.
+    /// The body evaluates this ONCE and threads the snapshot through both the
+    /// header and content sections; each previously fetched the whole index
+    /// separately per body evaluation (redundant work re-run on every
+    /// progress-tick invalidation).
+    private func offlineSummaries(from media: [DownloadedMedia]) -> [OfflineMediaSummary] {
+        media.map { entry in
             OfflineMediaSummary(
-                id: media.id,
-                title: media.title,
-                channelTitle: media.channelTitle ?? "",
-                resolution: media.resolution,
-                sizeBytes: media.sizeBytes,
-                createdAt: media.createdAt
+                id: entry.id,
+                title: entry.title,
+                channelTitle: entry.channelTitle ?? "",
+                resolution: entry.resolution,
+                sizeBytes: entry.sizeBytes,
+                createdAt: entry.createdAt
             )
         }
     }
 
-    private var offlineHeaderSection: some View {
+    private func offlineHeaderSection(_ summaries: [OfflineMediaSummary]) -> some View {
         section("Downloaded") {
             Picker("Sort by", selection: $sortOrder) {
                 Text("Newest").tag(OfflineLibraryPolicy.SortOrder.newestFirst)
@@ -246,7 +252,6 @@ struct DownloadsView: View {
             .pickerStyle(.menu)
             .accessibilityIdentifier("downloads-sort-picker")
 
-            let summaries = offlineSummaries
             let total = OfflineLibraryPolicy.totalBytes(summaries)
             Text("Offline storage: \(OfflineLibraryPolicy.formattedFileSize(total)) · \(summaries.count) video\(summaries.count == 1 ? "" : "s")")
                 .font(.caption)
@@ -272,8 +277,7 @@ struct DownloadsView: View {
     }
 
     @ViewBuilder
-    private var offlineContentSections: some View {
-        let summaries = offlineSummaries
+    private func offlineContentSections(_ summaries: [OfflineMediaSummary]) -> some View {
         switch sortOrder {
         case .byChannelThenNewest:
             ForEach(OfflineLibraryPolicy.groupedByChannel(summaries), id: \.channel) { group in

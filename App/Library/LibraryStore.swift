@@ -141,6 +141,37 @@ final class LibraryStore {
     private var fractionProjection: [String: Double] = [:]
     private var fractionProjectionRevision = -1
 
+    /// Render-path snapshot for the Library surface: ONE full-history fetch per
+    /// mutation generation, shared by every section that reads history. The
+    /// continue-watching and recent-history sections previously each triggered
+    /// their own complete-table SwiftData fetch on EVERY body evaluation; with
+    /// this memoization a re-render costs at most one fetch per mutation
+    /// revision and section filtering runs over the in-memory array.
+    public func historySnapshot() -> [WatchHistoryEntry] {
+        _ = revision
+        if historySnapshotRevision == revision { return historySnapshotCache }
+        historySnapshotCache = history
+        historySnapshotRevision = revision
+        return historySnapshotCache
+    }
+
+    private var historySnapshotCache: [WatchHistoryEntry] = []
+    private var historySnapshotRevision = -1
+
+    /// Same one-fetch-per-revision contract as `historySnapshot()`, for the
+    /// Saved section which previously fetched the full table twice per body
+    /// evaluation (once for the empty check, once for the rows).
+    public func savedSnapshot() -> [SavedItem] {
+        _ = revision
+        if savedSnapshotRevision == revision { return savedSnapshotCache }
+        savedSnapshotCache = saved
+        savedSnapshotRevision = revision
+        return savedSnapshotCache
+    }
+
+    private var savedSnapshotCache: [SavedItem] = []
+    private var savedSnapshotRevision = -1
+
     /// Removes one history entry. A missing entry or failed fetch is a no-op.
     public func removeHistory(videoID: String) {
         guard case let entry? = (try? historyEntryOrThrow(videoID)) else { return }
@@ -337,16 +368,32 @@ final class LibraryStore {
 
     // MARK: - Helpers
 
+    /// Store-filtered point lookups. Every one of these runs on warm paths
+    /// (playback progress ticks every 5 s, video-page opens, per-row metadata
+    /// reads), so each fetches only the matching row instead of materializing
+    /// the whole table and scanning it in memory.
     private func historyEntryOrThrow(_ videoID: String) throws -> WatchHistoryEntry? {
-        try context.fetch(FetchDescriptor<WatchHistoryEntry>()).first { $0.videoID == videoID }
+        var descriptor = FetchDescriptor<WatchHistoryEntry>(
+            predicate: #Predicate { $0.videoID == videoID }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
     }
 
     private func savedItemOrThrow(_ videoID: String) throws -> SavedItem? {
-        try context.fetch(FetchDescriptor<SavedItem>()).first { $0.videoID == videoID }
+        var descriptor = FetchDescriptor<SavedItem>(
+            predicate: #Predicate { $0.videoID == videoID }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
     }
 
     private func downloadedEntryOrThrow(_ id: String) throws -> DownloadedMedia? {
-        try context.fetch(FetchDescriptor<DownloadedMedia>()).first { $0.id == id }
+        var descriptor = FetchDescriptor<DownloadedMedia>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
     }
 
     // MARK: - Persistence / filesystem hygiene

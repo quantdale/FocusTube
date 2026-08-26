@@ -812,11 +812,18 @@ struct VideoPageView: View {
 
     // MARK: - Copy helpers
 
-    private static func publishedLabel(_ date: Date) -> String {
+    /// Cached medium-date formatter: constructing a DateFormatter per body
+    /// evaluation was pure allocation churn on a re-rendering detail page.
+    @MainActor private static let publishedFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    @MainActor
+    private static func publishedLabel(_ date: Date) -> String {
+        Self.publishedFormatter.string(from: date)
     }
 
     private func commentsErrorLabel(_ error: YouTubeAPIError) -> String {

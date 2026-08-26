@@ -48,15 +48,24 @@ final class DownloadRecord {
         self.totalBytes = task.state.totalBytes
         self.errorRaw = task.state.error?.rawValue
         self.createdAt = Date()
-        self.componentsData = (try? JSONEncoder().encode(task.components)) ?? Data()
+        self.componentsData = (try? Self.coder.encode(task.components)) ?? Data()
     }
+
+    /// Shared component-payload coders. Allocation used to happen on every
+    /// projection pass (`records` maps every persisted row through
+    /// `downloadTask` → `components`), so each enqueue paid one decoder
+    /// allocation per lifetime download row. All call sites are main-actor
+    /// composition paths, so sharing is race-free in practice;
+    /// `nonisolated(unsafe)` mirrors the documented APIDate pattern.
+    private nonisolated(unsafe) static let coder = JSONEncoder()
+    private nonisolated(unsafe) static let decoder = JSONDecoder()
 
     /// Degrades to an empty list on an undecodable payload (e.g. schema drift
     /// after an app update), but logs the failure instead of swallowing it.
     /// The payload itself is never logged — component JSON contains source URLs.
     var components: [DownloadComponent] {
         do {
-            return try JSONDecoder().decode([DownloadComponent].self, from: componentsData)
+            return try Self.decoder.decode([DownloadComponent].self, from: componentsData)
         } catch {
             Self.logger.error("Components decode failed (\(error.localizedDescription)); treating as empty")
             return []
@@ -102,7 +111,7 @@ final class DownloadRecord {
     var queuedMetadata: QueuedDownloadMetadata? {
         guard let data = queuedMetadataData else { return nil }
         do {
-            return try JSONDecoder().decode(QueuedDownloadMetadata.self, from: data)
+            return try Self.decoder.decode(QueuedDownloadMetadata.self, from: data)
         } catch {
             Self.logger.error("Queued metadata decode failed (\(error.localizedDescription)); treating as legacy")
             return nil
@@ -110,7 +119,7 @@ final class DownloadRecord {
     }
 
     func applyQueuedMetadata(_ metadata: QueuedDownloadMetadata) {
-        self.queuedMetadataData = try? JSONEncoder().encode(metadata)
+        self.queuedMetadataData = try? Self.coder.encode(metadata)
     }
 
     private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "download-record")

@@ -368,7 +368,7 @@ public final class DownloadManager {
     private func persistQueuedState(_ task: DownloadTask, metadata: QueuedDownloadMetadata?) {
         do {
             let emptyComponents = Data("[]".utf8)
-            if let existing = try fetchRecordsOrThrow().first(where: { $0.id == task.id }) {
+            if let existing = try recordOrThrow(id: task.id) {
                 existing.apply(task)
                 existing.componentsData = emptyComponents
                 existing.bytesDownloaded = 0
@@ -409,25 +409,32 @@ public final class DownloadManager {
     /// parked intentions with no transfer, so a stranded queue delays
     /// promotion via the FIFO precedence rule but can never permanently
     /// consume the concurrency budget (DDV2-01).
+    ///
+    /// Counted in-store (`fetchCount`) instead of materializing every row:
+    /// records persist forever once a download completes, so this warm path
+    /// (every enqueue and promotion attempt) must not scale with lifetime
+    /// download history.
     public func activeLogicalCounts() -> (active: Int, queued: Int) {
         let queuedStatus = DownloadStatus.queued.rawValue
-        var active = 0
-        var queued = 0
-        for record in fetchRecords() {
-            if record.statusRaw == queuedStatus {
-                queued += 1
-            } else if !Self.terminalStatuses.contains(record.statusRaw) {
-                active += 1
-            }
+        let completedStatus = DownloadStatus.completed.rawValue
+        let failedStatus = DownloadStatus.failed.rawValue
+        let idleStatus = DownloadStatus.idle.rawValue
+        do {
+            let activeDescriptor = FetchDescriptor<DownloadRecord>(
+                predicate: #Predicate {
+                    $0.statusRaw != queuedStatus && $0.statusRaw != completedStatus
+                        && $0.statusRaw != failedStatus && $0.statusRaw != idleStatus
+                }
+            )
+            let queuedDescriptor = FetchDescriptor<DownloadRecord>(
+                predicate: #Predicate { $0.statusRaw == queuedStatus }
+            )
+            return (try context.fetchCount(activeDescriptor), try context.fetchCount(queuedDescriptor))
+        } catch {
+            Self.logger.fault("Record count failed during admission accounting (\(error.localizedDescription)); treating as empty")
+            return (0, 0)
         }
-        return (active, queued)
     }
-
-    private static let terminalStatuses: Set<String> = [
-        DownloadStatus.completed.rawValue,
-        DownloadStatus.failed.rawValue,
-        DownloadStatus.idle.rawValue
-    ]
 
     /// Upserts the record for `task`; retries/re-resolutions reuse the same
     /// request id, and duplicate SwiftData records would corrupt
@@ -435,7 +442,7 @@ public final class DownloadManager {
     /// risking an insert.
     private func upsertRecord(_ task: DownloadTask) {
         do {
-            if let existing = try fetchRecordsOrThrow().first(where: { $0.id == task.id }) {
+            if let existing = try recordOrThrow(id: task.id) {
                 existing.apply(task)
             } else {
                 context.insert(DownloadRecord(task: task))
@@ -528,8 +535,9 @@ public final class DownloadManager {
     private func storePlannedDuration(taskID: String, seconds: TimeInterval?) {
         guard let seconds else { return }
         do {
-            guard let record = try fetchRecordsOrThrow().first(where: { $0.id == taskID }) else { return }
+            guard let record = try recordOrThrow(id: taskID) else { return }
             record.plannedDurationSeconds = seconds
+            plannedDurationCache[taskID] = .known(seconds)
             saveContext()
         } catch {
             Self.logger.fault("Record fetch failed while storing planned duration (\(error.localizedDescription))")
@@ -538,14 +546,30 @@ public final class DownloadManager {
 
     /// The persisted planning duration for a failed row's retry; nil when
     /// unknown (legacy row or pre-HB-023 record).
+    /// Memoized per task id (the value is written once at enqueue and never
+    /// changes): the failed section reads this during row rendering, so each
+    /// render must not re-fetch the records table.
     public func plannedDurationSeconds(taskID: String) -> TimeInterval? {
+        if case let .known(seconds)? = plannedDurationCache[taskID] {
+            return seconds
+        }
         do {
-            return try fetchRecordsOrThrow().first(where: { $0.id == taskID })?.plannedDurationSeconds
+            let seconds = try recordOrThrow(id: taskID)?.plannedDurationSeconds
+            plannedDurationCache[taskID] = .known(seconds)
+            return seconds
         } catch {
             Self.logger.fault("Record fetch failed while reading planned duration (\(error.localizedDescription))")
             return nil
         }
     }
+
+    /// Memoization cell for `plannedDurationSeconds`: `.known(nil)` caches a
+    /// legacy-row "unknown" so repeated renders never re-query it.
+    private enum PlannedDurationEntry {
+        case known(TimeInterval?)
+    }
+
+    private var plannedDurationCache: [String: PlannedDurationEntry] = [:]
 
     public func begin(_ taskID: String) async {
         await coordinator.begin(taskID) { [weak self] task in
@@ -568,7 +592,7 @@ public final class DownloadManager {
                settled.state.status == .completed || settled.state.status == .failed {
                 onTaskSettled?(settled)
             }
-        } else if let record = try? fetchRecordsOrThrow().first(where: { $0.id == taskID }),
+        } else if let record = try? recordOrThrow(id: taskID),
                   record.statusRaw == DownloadStatus.queued.rawValue {
             context.delete(record)
             saveContext()
@@ -694,6 +718,18 @@ public final class DownloadManager {
         try context.fetch(FetchDescriptor<DownloadRecord>())
     }
 
+    /// Store-filtered single-record lookup. Record lookups by id run on every
+    /// enqueue/event-sync/metadata path, and rows accumulate for the app's
+    /// lifetime, so each lookup filters in-store instead of materializing the
+    /// whole table to scan it in memory.
+    private func recordOrThrow(id: String) throws -> DownloadRecord? {
+        var descriptor = FetchDescriptor<DownloadRecord>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
     /// Non-decisional convenience: for display/diagnostic reads where an
     /// empty result is safe. Decision paths use `fetchRecordsOrThrow`.
     private func fetchRecords() -> [DownloadRecord] {
@@ -710,7 +746,7 @@ public final class DownloadManager {
     /// with real titles instead of the videoID placeholder.
     public func setPresentationMetadata(taskID: String, title: String, channelTitle: String) {
         do {
-            guard let record = try fetchRecordsOrThrow().first(where: { $0.id == taskID }) else { return }
+            guard let record = try recordOrThrow(id: taskID) else { return }
             record.applyPresentationMetadata(title: title, channelTitle: channelTitle)
             metadataCache[taskID] = (title, channelTitle)
             saveContext()
@@ -727,7 +763,17 @@ public final class DownloadManager {
     /// reconciliation degrades them to a typed failure.
     public func persistedQueuedJobs() -> [RestoredQueuedJob] {
         let queuedStatus = DownloadStatus.queued.rawValue
-        let jobs: [RestoredQueuedJob] = fetchRecords().compactMap { record in
+        let queuedRecords: [DownloadRecord]
+        do {
+            let descriptor = FetchDescriptor<DownloadRecord>(
+                predicate: #Predicate { $0.statusRaw == queuedStatus }
+            )
+            queuedRecords = try context.fetch(descriptor)
+        } catch {
+            Self.logger.fault("Record fetch failed while restoring the durable queue (\(error.localizedDescription)); treating as empty")
+            return []
+        }
+        let jobs: [RestoredQueuedJob] = queuedRecords.compactMap { record in
             guard record.statusRaw == queuedStatus else { return nil }
             guard DownloadRequest.isValidVideoID(record.videoID),
                   DownloadQuality(rawValue: record.resolution) != nil else { return nil }
@@ -751,7 +797,7 @@ public final class DownloadManager {
     /// queued row behind forever. Synchronous on the main actor; called with
     /// the admission slot already held, so no concurrent writer can exist.
     public func clearStaleQueuedRecord(_ taskID: String) {
-        guard let record = try? fetchRecordsOrThrow().first(where: { $0.id == taskID }),
+        guard let record = try? recordOrThrow(id: taskID),
               record.statusRaw == DownloadStatus.queued.rawValue else { return }
         context.delete(record)
         saveContext()
@@ -779,16 +825,28 @@ public final class DownloadManager {
     /// Lookup of stored presentation metadata; nil when the record is unknown.
     /// `title` itself may be nil for legacy rows created before the additive
     /// fields existed — callers fall back to the videoID.
+    ///
+    /// Served from the enqueue-time cache when present (HB-013); a miss does
+    /// ONE store-filtered row fetch and backfills the cache. Unknown ids are
+    /// never cached negatively: a record could still be inserted later by the
+    /// admission path. DownloadsView reads this per rendered row, so before
+    /// this memoization every progress tick re-fetched the records table once
+    /// per visible row.
     public func presentationMetadata(taskID: String) -> (title: String?, channelTitle: String?)? {
+        if let cached = metadataCache[taskID] {
+            return cached
+        }
         let record: DownloadRecord?
         do {
-            record = try fetchRecordsOrThrow().first(where: { $0.id == taskID })
+            record = try recordOrThrow(id: taskID)
         } catch {
             Self.logger.fault("Record fetch failed while reading presentation metadata (\(error.localizedDescription))")
             return nil
         }
         guard let record else { return nil }
-        return (record.title, record.channelTitle)
+        let metadata = (record.title, record.channelTitle)
+        metadataCache[taskID] = metadata
+        return metadata
     }
 
     private func fileExists(_ url: URL) -> Bool {
@@ -803,7 +861,7 @@ public final class DownloadManager {
     private func syncRecord(_ taskID: String) async {
         let record: DownloadRecord?
         do {
-            record = try fetchRecordsOrThrow().first(where: { $0.id == taskID })
+            record = try recordOrThrow(id: taskID)
         } catch {
             Self.logger.fault("Record fetch failed during sync (\(error.localizedDescription)); skipping persistence")
             return

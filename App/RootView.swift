@@ -184,7 +184,7 @@ struct LibraryView: View {
 
     private var continueWatchingSection: some View {
         Section("Continue watching") {
-            let inProgress = store.history.filter { !$0.completed }
+            let inProgress = store.historySnapshot().filter { !$0.completed }
             if inProgress.isEmpty {
                 Text("Nothing in progress.")
                     .foregroundStyle(.secondary)
@@ -219,7 +219,7 @@ struct LibraryView: View {
 
     private var historySection: some View {
         Section("Watch history") {
-            let recent = Array(store.history.prefix(20))
+            let recent = Array(store.historySnapshot().prefix(20))
             if recent.isEmpty {
                 Text("No watch history yet.")
                     .foregroundStyle(.secondary)
@@ -254,11 +254,12 @@ struct LibraryView: View {
 
     private var savedSection: some View {
         Section("Saved") {
-            if store.saved.isEmpty {
+            let savedItems = store.savedSnapshot()
+            if savedItems.isEmpty {
                 Text("No saved videos yet.")
                     .foregroundStyle(.secondary)
             }
-            ForEach(store.saved, id: \.videoID) { item in
+            ForEach(savedItems, id: \.videoID) { item in
                 Button {
                     open(Self.summary(from: item))
                 } label: {
@@ -271,11 +272,10 @@ struct LibraryView: View {
                 .accessibilityHint("Opens the saved video")
             }
             .onDelete { offsets in
-                // Materialize the doomed rows BEFORE mutating: `store.saved`
-                // re-fetches on every access, so removing while indexing would
-                // shift subsequent offsets onto the wrong rows.
+                // Materialize the doomed rows BEFORE mutating: removing while
+                // indexing would shift subsequent offsets onto the wrong rows.
                 let doomed = offsets.compactMap { index in
-                    store.saved.indices.contains(index) ? store.saved[index] : nil
+                    savedItems.indices.contains(index) ? savedItems[index] : nil
                 }
                 for item in doomed {
                     store.removeSaved(videoID: item.videoID)

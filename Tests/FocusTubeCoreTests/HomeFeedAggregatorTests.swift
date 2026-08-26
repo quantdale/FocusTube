@@ -47,18 +47,23 @@ private struct StubYouTubeAPI: YouTubeReading {
     }
 }
 
-// Class (not struct) so playlist/detail calls can be recorded for assertions;
-// @unchecked Sendable is safe here because tests exercise calls sequentially.
-// Deliberately does NOT implement `fetchSubscriptionFeed`, so calls exercise
-// the protocol's default aggregation implementation under test.
+// Class so playlist/detail calls can be recorded for assertions.
+// @unchecked Sendable with an internal lock: the concurrent detail-hydration
+// batches record from multiple tasks, while the playlist walk itself remains
+// sequential. Deliberately does NOT implement `fetchSubscriptionFeed`, so
+// calls exercise the protocol's default aggregation implementation under test.
 private final class FeedScriptedAPI: YouTubeReading, @unchecked Sendable {
     let playlistIDs: [String]
     /// Pages served per playlist in call order; exhausted playlists serve empty pages.
     var pagesByPlaylist: [String: [(ids: [String], nextPageToken: String?)]] = [:]
     var detailsByID: [String: VideoSummary] = [:]
+    /// Artificial per-batch delay applied by `fetchVideoDetails` (keyed by the
+    /// batch's first id) to force out-of-order completion in tests.
+    var detailDelayByIDPrefix: [String: UInt64] = [:]
     private(set) var playlistCalls: [(playlistID: String, pageToken: String?)] = []
     private(set) var detailBatches: [[String]] = []
     private var pageCursors: [String: Int] = [:]
+    private let lock = NSLock()
 
     init(playlistIDs: [String]) {
         self.playlistIDs = playlistIDs
@@ -67,16 +72,22 @@ private final class FeedScriptedAPI: YouTubeReading, @unchecked Sendable {
     func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] { playlistIDs }
 
     func fetchPlaylistVideoIDs(playlistID: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
-        playlistCalls.append((playlistID, pageToken))
-        let pages = pagesByPlaylist[playlistID] ?? []
-        let index = pageCursors[playlistID] ?? 0
-        pageCursors[playlistID] = index + 1
+        let (pages, index) = lock.withLock {
+            playlistCalls.append((playlistID, pageToken))
+            let pages = pagesByPlaylist[playlistID] ?? []
+            let index = pageCursors[playlistID] ?? 0
+            pageCursors[playlistID] = index + 1
+            return (pages, index)
+        }
         guard index < pages.count else { return (ids: [], nextPageToken: nil) }
         return pages[index]
     }
 
     func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] {
-        detailBatches.append(ids)
+        if let delayNanos = ids.first.flatMap({ detailDelayByIDPrefix[$0] }), delayNanos > 0 {
+            try? await Task.sleep(nanoseconds: delayNanos)
+        }
+        lock.withLock { detailBatches.append(ids) }
         return ids.compactMap { detailsByID[$0] }
     }
 
@@ -156,11 +167,39 @@ final class HomeFeedAggregatorTests: XCTestCase {
         let page = try await api.fetchSubscriptionFeed(accessToken: "tok", pageToken: nil)
 
         // 105 ids exceed videos.list's ~50-id cap: three batches, concatenated in order.
-        XCTAssertEqual(api.detailBatches.map { $0.count }, [50, 50, 5])
-        XCTAssertEqual(api.detailBatches.flatMap { $0 }, pl1 + pl2)
-        XCTAssertEqual(page.videos.map { $0.id }, pl1 + pl2)
+        XCTAssertEqual(api.detailBatches.map { $0.count }.sorted(), [5, 50, 50])
+        XCTAssertEqual(api.detailBatches.flatMap { $0 }.sorted(), (pl1 + pl2).sorted())
+        XCTAssertEqual(page.videos.map { $0.id }, pl1 + pl2, "output must stay in input order regardless of batch completion order")
         XCTAssertNil(page.nextPageToken)
         XCTAssertEqual(api.playlistCalls.map { "\($0.playlistID)|\($0.pageToken ?? "nil")" }, ["PL1|nil", "PL2|nil"])
+    }
+
+    /// Concurrent hydration must never let a fast LATER batch's results land
+    /// before a slow EARLIER batch's results: output order equals input order
+    /// even when completion order is deliberately inverted.
+    func testDetailHydrationPreservesInputOrderUnderOutOfOrderCompletion() async throws {
+        let early = (0..<50).map { String(format: "early-%03d", $0) }
+        let late = (0..<30).map { String(format: "late-%03d", $0) }
+        let mid = (0..<30).map { String(format: "mid-%03d", $0) }
+        let all = early + late + mid
+        let api = FeedScriptedAPI(playlistIDs: ["PX"])
+        api.pagesByPlaylist = ["PX": [(ids: all, nextPageToken: nil)]]
+        for id in all {
+            api.detailsByID[id] = summary(id: id, duration: 600)
+        }
+        // First batch (early) is deliberately the SLOWEST; later batches finish
+        // first and would corrupt concatenation if results were appended on
+        // completion instead of placed by index.
+        api.detailDelayByIDPrefix = [
+            "early": 150_000_000,
+            "late": 0,
+            "mid": 0
+        ]
+
+        let page = try await api.fetchSubscriptionFeed(accessToken: "tok", pageToken: nil)
+
+        XCTAssertEqual(api.detailBatches.count, 3, "all three batches must be requested")
+        XCTAssertEqual(page.videos.map { $0.id }, all, "slow first batch must not reorder or drop earlier results")
     }
 
     func testSubscriptionFeedCapsPagesPerPlaylistAndResumesFromToken() async throws {

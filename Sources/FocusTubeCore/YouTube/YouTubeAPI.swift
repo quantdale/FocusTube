@@ -141,6 +141,63 @@ private func normalizedToken(_ token: String?) -> String? {
     return token
 }
 
+/// Tuning constants for subscription-feed detail hydration.
+private enum FeedHydrationPolicy {
+    /// `videos.list` rejects larger id= lists with HTTP 400.
+    static let batchSize = 50
+    /// Sliding-window width for concurrent detail hydration. Bounded so a
+    /// very large first load cannot burst dozens of simultaneous requests;
+    /// four keeps several round trips overlapped without aggressive fan-out.
+    static let maxConcurrentBatches = 4
+}
+
+/// Fetches detail batches through a sliding-window task group so at most
+/// `FeedHydrationPolicy.maxConcurrentBatches` requests are ever in flight.
+/// Results come back indexed by their batch position, so concatenation order
+/// equals input order regardless of completion order. A failing batch fails
+/// the whole page (and cancels siblings), matching the previous sequential
+/// error contract.
+fileprivate func fetchDetailBatchesConcurrently<T: YouTubeReading>(
+    _ batches: [[String]],
+    accessToken: String,
+    api: T
+) async throws -> [[VideoSummary]] {
+    guard batches.count > 1 else {
+        var only: [[VideoSummary]] = []
+        for batch in batches {
+            only.append(try await api.fetchVideoDetails(ids: batch, accessToken: accessToken))
+        }
+        return only
+    }
+    var results = [[VideoSummary]?](repeating: nil, count: batches.count)
+    try await withThrowingTaskGroup(
+        of: (index: Int, videos: [VideoSummary]).self
+    ) { group in
+        var nextToDispatch = 0
+        let initialWindow = min(FeedHydrationPolicy.maxConcurrentBatches, batches.count)
+        while nextToDispatch < initialWindow {
+            let index = nextToDispatch
+            nextToDispatch += 1
+            let batch = batches[index]
+            group.addTask {
+                (index, try await api.fetchVideoDetails(ids: batch, accessToken: accessToken))
+            }
+        }
+        for try await (index, videos) in group {
+            results[index] = videos
+            if nextToDispatch < batches.count {
+                let dispatchedIndex = nextToDispatch
+                nextToDispatch += 1
+                let batch = batches[dispatchedIndex]
+                group.addTask {
+                    (dispatchedIndex, try await api.fetchVideoDetails(ids: batch, accessToken: accessToken))
+                }
+            }
+        }
+    }
+    return results.compactMap { $0 }
+}
+
 extension YouTubeReading {
     /// Convenience overload fetching the first feed page.
     public func fetchSubscriptionFeed(accessToken: String) async throws -> SubscriptionFeedPage {
@@ -155,6 +212,12 @@ extension YouTubeReading {
     /// continuation token; unrecognized or stale tokens restart from the first
     /// playlist. Detail hydration chunks ids into batches of 50 because
     /// `videos.list` rejects larger id= lists with HTTP 400.
+    ///
+    /// Hydration batches run with bounded concurrency: every batch would be
+    /// fetched regardless, so total quota cost is unchanged — only wall-clock
+    /// latency collapses from one round trip per batch toward roughly one
+    /// round trip overall. Output order remains exactly input order no matter
+    /// which batch completes first (results are placed by batch index).
     public func fetchSubscriptionFeed(accessToken: String, pageToken: String?) async throws -> SubscriptionFeedPage {
         let playlists = try await fetchSubscriptionUploadsPlaylistIDs(accessToken: accessToken)
 
@@ -188,16 +251,13 @@ extension YouTubeReading {
         guard !ids.isEmpty else { return SubscriptionFeedPage(videos: [], nextPageToken: continuation) }
 
         var summaries: [VideoSummary] = []
-        var batch: [String] = []
-        for id in ids {
-            batch.append(id)
-            if batch.count == 50 {
-                summaries.append(contentsOf: try await fetchVideoDetails(ids: batch, accessToken: accessToken))
-                batch.removeAll(keepingCapacity: true)
-            }
+        summaries.reserveCapacity(ids.count)
+        let batches = stride(from: 0, to: ids.count, by: FeedHydrationPolicy.batchSize).map { batchStart in
+            Array(ids[batchStart..<min(batchStart + FeedHydrationPolicy.batchSize, ids.count)])
         }
-        if !batch.isEmpty {
-            summaries.append(contentsOf: try await fetchVideoDetails(ids: batch, accessToken: accessToken))
+        let batchResults = try await fetchDetailBatchesConcurrently(batches, accessToken: accessToken, api: self)
+        for batchVideos in batchResults {
+            summaries.append(contentsOf: batchVideos)
         }
         return SubscriptionFeedPage(videos: summaries, nextPageToken: continuation)
     }
