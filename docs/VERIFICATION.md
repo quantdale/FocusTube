@@ -34,7 +34,7 @@ The Node 20 deprecation was the only remaining CI warning; it is being fixed on 
 
 ## Re-qualified at `23b0d2f` (2026-10-16 ~05:30 PHT)
 `main` tip `23b0d2f` (PR #5 squash, test-only, on top of `09a7ee3` PR #3 and `7e650e0` PR #4) was checked as follows:
-- `23b0d2f` push: Core Tests ✅ (run 38806288519); iOS CI run 38806288520 on push (see PR #6 checks for the green rerun on this base).
+- `23b0d2f` push: Core Tests ✅ (run 38806288519); iOS CI ✅ (run 38806288520, 25m51s, full Gate).
 - Core Tests ✅ on PR #3 (runs 38801410890 and 38801416935).
 - iOS CI ✅ on PR #3 (run 38801417134, 32m40s, full Gate including UI tests).
 - PR #4 (`7e650e0`): Core ✅ and iOS CI ✅ (run 38797704060).
