@@ -246,9 +246,13 @@ final class YouTubeDataClientTests: XCTestCase {
             return id.components(separatedBy: ",")
         }
         XCTAssertEqual(idLists.count, 2, "61 ids must split into multiple videos.list calls")
-        XCTAssertEqual(idLists[0].count, 50)
-        XCTAssertEqual(idLists[1].count, 11)
-        XCTAssertEqual(idLists.flatMap { $0 }, ids)
+        // Detail batches are fetched concurrently, so request arrival order is
+        // nondeterministic. Order batches by their first id's position before
+        // asserting chunk shape and coverage.
+        let position = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
+        let orderedLists = idLists.sorted { (position[$0.first ?? ""] ?? .max) < (position[$1.first ?? ""] ?? .max) }
+        XCTAssertEqual(orderedLists.map(\.count), [50, 11])
+        XCTAssertEqual(orderedLists.flatMap { $0 }, ids)
         XCTAssertEqual(feed.videos.count, 122) // each scripted response decodes all 61 items
     }
 

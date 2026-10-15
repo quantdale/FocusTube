@@ -21,3 +21,9 @@
 Real OAuth, Data API mutations, live YouTubeKit extraction, background
 URLSession under suspension, PiP, lock screen, headset, and storage
 reclamation.
+
+## Flake fix verification (2026-10-15, branch `fix/flaky-subscription-feed-order`)
+| Step | Command | Result |
+|------|---------|--------|
+| Test core | `swift test` | ✅ 141 XCTest + 11 swift-testing, 0 failures |
+| Flake probe | `swift test --skip-build --filter testSubscriptionFeedChunksVideosListBeyondIDCap` ×40 | ✅ 0/40 failed (was 10/40) |

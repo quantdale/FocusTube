@@ -55,3 +55,9 @@ backend.
    a `fatalError` last-resort fallback in `AppDependencies`, a stale dated
    narrative in `docs/13-ROADMAP.md`, and five parallel agent-adapter
    directories.
+
+## Update 2026-10-15 — flake fix (branch `fix/flaky-subscription-feed-order`)
+Item 1 above is fixed in the test only: `testSubscriptionFeedChunksVideosListBeyondIDCap` now
+orders the captured `videos.list` batches by their first id before asserting
+`[50, 11]` chunking and full id coverage. Production code is unchanged. It already
+places batch results by index (`fetchDetailBatchesConcurrently`).
