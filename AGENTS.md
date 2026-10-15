@@ -175,3 +175,8 @@ If there is no active agent-actionable campaign and only owner-only device/accou
 Implementation M0–M8, DDV2 spec closure, and HARDENING_V3 are complete. `H3-EXIT` passed on the qualified code SHA `7a70943`; the later commits through `f1dcca` are durable-state/docs reconciliation only. The H3 whole-repository audit recorded no residual Critical/High findings and only two bounded Low notes that do not justify another campaign.
 
 Current downstream work is `DEVICE_VALIDATION_V1_REFRESHED`: physical iPhone Batch A A1–A14 plus one authenticated opt-in live-smoke dispatch. Those checks must use real owner evidence and must not be fabricated or converted into speculative code churn. A new coding campaign requires new evidence-backed defects, an explicit new product directive, or a future planner audit that identifies justified agent-actionable work.
+## Blocker rule (standing, 2026-10-16)
+A blocker never stops the work. When you hit one (CI not running, approvals, secrets, hardware):
+1. Log it at the top of `docs/BLOCKERS.md` under **Needs Michael (morning queue)**. Give the exact one-to-two-line fix, the links, and what it unblocks.
+2. Use safe, free workarounds: local `swift build`/`swift test` evidence, and keep PRs open with follow-up branches stacked on them. Merge only when CI is green. Never merge anything that needs runtime proof we do not have.
+3. Move on to the next unblocked task.

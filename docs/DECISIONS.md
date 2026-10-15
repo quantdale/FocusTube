@@ -26,3 +26,5 @@ Moved `actions/checkout` from v4 to v7, `actions/cache` from v4 to v6, and `acti
 from v4 to v7. The v4 majors target Node 20, which is deprecated, and the runner forces them onto Node 24.
 None of the inputs we use changed. The `aws/tap` untrusted-tap warning did not appear
 in the 2026-10-15 iOS CI run (38761375821), so this change makes no Homebrew change.
+## 2026-10-16 — Blockers never stop work
+This is the standing rule recorded in `AGENTS.md`. Log the blocker in the BLOCKERS morning queue, work around it safely, merge only when CI is green, and continue.
