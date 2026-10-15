@@ -30,7 +30,7 @@ reclamation.
 
 ## PR #1 merged (2026-10-16 03:2x PHT)
 `main` tip `8448140`: PR #1 checks were Core ✅ ×2 and iOS CI ✅ (26m59s, full Gate, UI tests).
-The Node 20 deprecation was the only remaining CI warning; it is being fixed on `ci/node24-actions`.
+The Node 20 deprecation was the only remaining CI warning; it was fixed by the actions v7 bump (PR #4, `7e650e0`).
 
 ## Re-qualified at `23b0d2f` (2026-10-16 ~05:30 PHT)
 `main` tip `23b0d2f` (PR #5 squash, test-only, on top of `09a7ee3` PR #3 and `7e650e0` PR #4) was checked as follows:

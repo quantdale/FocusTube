@@ -31,3 +31,11 @@ This is the standing rule recorded in `AGENTS.md`. Log the blocker in the BLOCKE
 ## 2026-10-16 — `aws/tap` warning and the `AppDependencies` fatalError
 - `aws/tap`: the warning did not appear in the iOS CI logs for runs 38761375821 and 38797704060, so no change was made. Reopen only if the warning comes back.
 - `AppDependencies.production()` keeps its `fatalError`, which runs only if the *in-memory* `ModelContainer` also fails. To replace it, the app would need a degraded launch UI with no SwiftData. That path cannot be exercised on CI or Linux; it needs runtime proof on a device. Under the merge rule we do not merge it until device validation is possible. The item is deferred, not dropped.
+
+## 2026-10-16 — Agent-adapter dirs are kept, not consolidated (closes P4)
+`.agents/skills/goal/SKILL.md`, `.claude/commands/goal.md`, `.opencode/commands/goal.md`
+and `.kimi-code/AGENTS.md` are tiny `/goal` shims. Each tool finds them only at its own
+fixed path, so they can't be merged into one directory without breaking discovery
+(symlinks are unreliable on the Windows authoring host). All four already defer to the
+one canonical source: root `AGENTS.md` plus `.agent/` (the fifth dir). Rule: change the
+behavior in `.agent/`; edit a shim only if its pointer text changes.

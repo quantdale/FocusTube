@@ -61,3 +61,6 @@ Item 1 above is fixed in the test only: `testSubscriptionFeedChunksVideosListBey
 orders the captured `videos.list` batches by their first id before asserting
 `[50, 11]` chunking and full id coverage. Production code is unchanged. It already
 places batch results by index (`fetchDetailBatchesConcurrently`).
+
+## Update 2026-10-16 — final agent audit
+Everything in item 5 is closed. CI warnings were fixed in PR #4, and `aws/tap` plus the `fatalError` were handled by decision in PR #6. The adapter dirs are kept by decision (DECISIONS, P4). `.agent/STATE.yaml` `repo_baseline` and `resume_token` now point at the qualified `23b0d2f`. The remaining work is owner-only: M1, M2, M4, M5.
