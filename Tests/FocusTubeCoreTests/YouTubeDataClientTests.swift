@@ -544,21 +544,37 @@ private final class LockedFlag: @unchecked Sendable {
     }
 }
 
-// Class (not struct) so `index` can advance across sequential scripted requests;
-// @unchecked Sendable is safe here because requests are awaited sequentially.
+// Class (not struct) so `index` can advance across scripted requests.
+// Feed hydration issues requests concurrently (3fbf1d8), so all mutable state
+// is guarded by `lock`; an unguarded append/index race crashed xctest with
+// SIGTRAP on macOS CI (run 38817976196).
 private final class ScriptedPerformer: HTTPPerforming, @unchecked Sendable {
-    var responses: [(Data, Int)]
-    private(set) var requests: [URLRequest] = []
+    private let lock = NSLock()
+    private let responses: [(Data, Int)]
+    private var _requests: [URLRequest] = []
     private var index = 0
+
+    var requests: [URLRequest] {
+        lock.lock(); defer { lock.unlock() }
+        return _requests
+    }
 
     init(responses: [(Data, Int)]) {
         self.responses = responses
     }
 
-    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        requests.append(request)
-        let (data, status) = responses[min(index, responses.count - 1)]
+    private func record(_ request: URLRequest) -> (Data, Int) {
+        lock.lock(); defer { lock.unlock() }
+        _requests.append(request)
+        let next = responses[min(index, responses.count - 1)]
         index += 1
+        return next
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let next = record(request)
+        let data = next.0
+        let status = next.1
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
         return (data, response)
     }
