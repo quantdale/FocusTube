@@ -35,7 +35,7 @@ backend.
 | OPT_PERFORMANCE_V1 | Done; its flaky test was fixed in PR #1 |
 | Device validation (Batch A) | **Not done**; owner-only |
 | Live authenticated smoke | **Not done**; owner-only |
-| Open GitHub issues/PRs | PR #5 (DownloadRetryPolicy tests), as of 2026-10-16 |
+| Open GitHub issues/PRs | PR #6 (this baseline doc), as of 2026-10-16 |
 | Latest checked `main` (`23b0d2f`, PRs #1–#5 merged 2026-10-16 PHT) | Core Tests ✅; iOS CI ✅ (full Gate on PR #3, run 38801417134). This is the qualified baseline |
 
 ## Top 5 issues
