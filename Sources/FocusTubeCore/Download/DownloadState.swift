@@ -57,7 +57,6 @@ public struct DownloadState: Sendable, Hashable {
         case invalidTransition
     }
 
-    @discardableResult
     public mutating func transition(to next: DownloadStatus) throws(TransitionError) {
         guard isValid(next: next, from: status) else {
             throw TransitionError.invalidTransition
