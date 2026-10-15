@@ -188,7 +188,7 @@ current_waypoint:
   id: DEVICE_VALIDATION_V1_REFRESHED
   objective: >
     Owner-executed physical-device Batch A (A1-A14) plus one opt-in live-smoke
-    dispatch, now against the refreshed post-OPT code baseline f345958.
+    dispatch, now against the refreshed code baseline 23b0d2f (re-qualified 2026-10-16).
     Automated agent-actionable engineering is closed; every remaining item
     requires owner hardware/credentials by policy.
   acceptance_evidence:
@@ -199,14 +199,19 @@ current_waypoint:
     - checkpoint .agent/checkpoints/20260826-H3-SYSTEMIC-DEBT-CLOSURE.md
     - consecutive-leg stability on docs tip recorded in the checkpoint
   validation_required:
-    - device evidence A1-A14 (owner, physical iPhone) against f345958
+    - device evidence A1-A14 (owner, physical iPhone) against 23b0d2f or newer
     - live smoke run result (one manual authenticated dispatch)
     - no Critical/High defect open at close (verified via documented H3-07 audit)
 
-resume_token: NO-AGENT-ACTIONABLE-CAMPAIGN→DEVICE-VALIDATION-REFRESHED-f345958
+resume_token: NO-AGENT-ACTIONABLE-CAMPAIGN→DEVICE-VALIDATION-REFRESHED-23b0d2f
 repo_baseline:
   branch: main
-  commit: f345958
+  commit: 23b0d2f
+  requalified_2026_10_16: >
+    Re-qualified at 23b0d2f (PR #5 squash; PRs #1-#5 incl. B1 flaky-test fix
+    8448140 and actions v7 bump): Core Tests run 38806288519 SUCCESS, iOS CI
+    full-Gate run 38806288520 SUCCESS. Docs tip 47515e4 (PR #6) is docs-only
+    and does not move this pointer. See docs/VERIFICATION.md.
   note: >
     OPT_PERFORMANCE_V1 (owner directive, 2026-08-26) landed hot-path,
     persistence, render-path and CI optimizations at code SHA 3fbf1d8 with
@@ -410,7 +415,7 @@ last_checkpoint:
     32891558884) preserved in history and the prior checkpoint.
 
 next_transition:
-  when: owner returns Batch A evidence and one live-smoke result against baseline f345958
+  when: owner returns Batch A evidence and one live-smoke result against baseline 23b0d2f or newer
   set:
     status: personal_release_validated
     note: Device-only verifications recorded by the owner close the campaign (DV-EXIT).

@@ -6,8 +6,8 @@ started in this pass.
 
 ## Where the project stands
 Milestones M0–M8 plus the DDV2, HARDENING_V3, and OPT_PERFORMANCE_V1 campaigns
-are recorded as complete. Qualified code SHA: `7a70943`. Later code commits:
-`3fbf1d8` (perf) and `f345958` (CI). `main` tip: `86516e0`.
+are recorded as complete. Qualified code SHA (re-qualified 2026-10-16): `23b0d2f`. `main` tip:
+`47515e4` (docs-only). Older lineage: `7a70943` → `3fbf1d8` (perf) → `f345958` (CI).
 
 ## Definition of feature-complete (V1)
 V1 is feature-complete only when all of these are true:
@@ -36,7 +36,7 @@ Current status: items 1–4 are unverified (owner-only), and item 5 is
 | P1 | Owner `DEVICE_VALIDATION_V1_REFRESHED`: Batch A A1–A14 | owner (Mac + iPhone) | See MAC_FINALIZATION_CHECKLIST.md |
 | P1 | One authenticated live-smoke dispatch (`ios-ci.yml`, `live_smoke=true`) | owner | Checks that YouTubeKit 0.4.8 still extracts against current YouTube |
 | P2 | Triage any Batch A failures (Batch B re-test) | agent | Fix only evidence-backed defects |
-| P2 | CI maintenance: Node 20 action deprecation (checkout/cache/upload-artifact v4 to current), Homebrew tap-trust warning | agent | Warnings today; they could turn into failures |
+| ✅ P2 | (Done in PR #4: actions on v7; `aws/tap` warning absent, see DECISIONS) CI maintenance: Node 20 action deprecation (checkout/cache/upload-artifact v4 to current), Homebrew tap-trust warning | agent | Warnings today; they could turn into failures |
 | P3 | YouTubeKit pin review: 0.4.8 is from Aug 2026; check upstream if live smoke fails | agent | Locked: upgrade only with evidence |
 | P3 | HB-031 (sequential playlist walk) / HB-032 (polling settle) | product decision / agent | Deferred by design |
-| P4 | (13-ROADMAP narrative refreshed 2026-10-16; dir consolidation still open) Repo hygiene: consolidate agent-adapter dirs, refresh the stale narrative in `docs/13-ROADMAP.md` ("Active now — INTEGRATION_COMPLETION_V1") | agent | Low |
+| ✅ P4 | (Closed 2026-10-16: narrative refreshed; adapter dirs kept by decision, see DECISIONS) Repo hygiene: consolidate agent-adapter dirs, refresh the stale narrative in `docs/13-ROADMAP.md` ("Active now — INTEGRATION_COMPLETION_V1") | agent | Low |
