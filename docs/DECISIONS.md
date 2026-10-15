@@ -20,3 +20,9 @@
   requires an ADR.
 - D4: "Feature-complete" is defined as spec jobs on device + green and
   non-flaky CI (see ROADMAP.md), not just CI green.
+
+## 2026-10-16 — CI actions moved to Node 24 majors
+Moved `actions/checkout` from v4 to v7, `actions/cache` from v4 to v6, and `actions/upload-artifact`
+from v4 to v7. The v4 majors target Node 20, which is deprecated, and the runner forces them onto Node 24.
+None of the inputs we use changed. The `aws/tap` untrusted-tap warning did not appear
+in the 2026-10-15 iOS CI run (38761375821), so this change makes no Homebrew change.
