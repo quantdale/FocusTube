@@ -35,8 +35,8 @@ backend.
 | OPT_PERFORMANCE_V1 | Done; its flaky test was fixed in PR #1 |
 | Device validation (Batch A) | **Not done**; owner-only |
 | Live authenticated smoke | **Not done**; owner-only |
-| Open GitHub issues/PRs | None (checked 2026-10-15) |
-| Latest checked `main` (`8448140`, PR #1 merged 2026-10-16 PHT) | Core Tests ✅; iOS CI ✅ (full Gate on the PR) |
+| Open GitHub issues/PRs | PR #6 (this baseline doc), as of 2026-10-16 |
+| Latest checked `main` (`23b0d2f`, PRs #1–#5 merged 2026-10-16 PHT) | Core Tests ✅ (run 38806288519); iOS CI ✅ (full Gate, push run 38806288520). This is the qualified baseline |
 
 ## Top 5 issues
 1. **Flaky core test on `main`** (`YouTubeDataClientTests.testSubscriptionFeedChunksVideosListBeyondIDCap`).

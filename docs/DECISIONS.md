@@ -28,3 +28,6 @@ None of the inputs we use changed. The `aws/tap` untrusted-tap warning did not a
 in the 2026-10-15 iOS CI run (38761375821), so this change makes no Homebrew change.
 ## 2026-10-16 — Blockers never stop work
 This is the standing rule recorded in `AGENTS.md`. Log the blocker in the BLOCKERS morning queue, work around it safely, merge only when CI is green, and continue.
+## 2026-10-16 — `aws/tap` warning and the `AppDependencies` fatalError
+- `aws/tap`: the warning did not appear in the iOS CI logs for runs 38761375821 and 38797704060, so no change was made. Reopen only if the warning comes back.
+- `AppDependencies.production()` keeps its `fatalError`, which runs only if the *in-memory* `ModelContainer` also fails. To replace it, the app would need a degraded launch UI with no SwiftData. That path cannot be exercised on CI or Linux; it needs runtime proof on a device. Under the merge rule we do not merge it until device validation is possible. The item is deferred, not dropped.
