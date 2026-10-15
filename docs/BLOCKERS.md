@@ -1,5 +1,13 @@
 # BLOCKERS — Phase 1 Assessment
 
+## Needs Michael (morning queue)
+| # | What | Exact fix | Unblocks |
+|---|------|-----------|----------|
+| M1 | Device validation, Batch A A1–A14 | Run `docs/MAC_FINALIZATION_CHECKLIST.md` on a Mac with the iPhone | V1 criteria 1–3 and PERSONAL_RELEASE |
+| M2 | Authenticated live smoke | On the Actions tab, dispatch `ios-ci.yml` with `live_smoke=true` (it needs your Google token secrets) | V1 criterion 4 and the YouTubeKit 0.4.8 viability check |
+| M3 | (Resolved 2026-10-16) CI jobs blocked by a billing/spending limit | Repo made public; CI runs again | — |
+
+
 | ID | Blocker | Severity | Owner | Unblock |
 |----|---------|----------|-------|---------|
 | B1 | ✅ **Resolved 2026-10-16 (PR #1, `8448140`)**: `main` iOS CI was red because of a flaky ordering assertion in `YouTubeDataClientTests.testSubscriptionFeedChunksVideosListBeyondIDCap` (introduced with `3fbf1d8`) | High (gate integrity) | agent | Make the assertion order-independent, or make the scripted performer record by batch index. Then re-run CI. |
