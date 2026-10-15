@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Xcode
         run: bash scripts/ci/select-xcode.sh
@@ -37,7 +37,7 @@ jobs:
       # the project-generation inputs; restore-keys fall back to the latest
       # cache so source-only changes keep their built dependencies.
       - name: Cache build products and packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             DerivedData/Build
@@ -230,7 +230,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: focustube-ios-ci
           path: Artifacts/

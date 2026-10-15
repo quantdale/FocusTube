@@ -27,3 +27,7 @@ reclamation.
 |------|---------|--------|
 | Test core | `swift test` | ✅ 141 XCTest + 11 swift-testing, 0 failures |
 | Flake probe | `swift test --skip-build --filter testSubscriptionFeedChunksVideosListBeyondIDCap` ×40 | ✅ 0/40 failed (was 10/40) |
+
+## PR #1 merged (2026-10-16 03:2x PHT)
+`main` tip `8448140`: PR #1 checks were Core ✅ ×2 and iOS CI ✅ (26m59s, full Gate, UI tests).
+The Node 20 deprecation was the only remaining CI warning; it is being fixed on `ci/node24-actions`.
