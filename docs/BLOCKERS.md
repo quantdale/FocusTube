@@ -5,7 +5,7 @@
 |---|------|-----------|----------|
 | M1 | iPhone test batch, Batch A A1–A14 | Run [`docs/MAC_FINALIZATION_CHECKLIST.md`](MAC_FINALIZATION_CHECKLIST.md) on a Mac with the iPhone connected | V1 criteria 1–3 and PERSONAL_RELEASE |
 | M2 | Mac, Xcode, and signing | Install Xcode on a Mac, open the project, set your Apple ID team under Signing & Capabilities, and build to the device | M1, plus any on-device debugging |
-| M4 | Google OAuth client and `Secrets.local.xcconfig` | Create an iOS OAuth client in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) and enable the YouTube Data API v3. Copy `Config/Secrets.example.xcconfig` (or the template documented in the README) to `Config/Secrets.local.xcconfig` and fill in the client ID and reversed client ID | Real sign-in, M1 auth items, M5 |
+| M4 | Google OAuth client and `Secrets.local.xcconfig` | Create an iOS OAuth client in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) and enable the YouTube Data API v3. Copy `Config/Secrets.local.xcconfig.example` to `Config/Secrets.local.xcconfig` and fill in the client ID and reversed client ID | Real sign-in, M1 auth items, M5 |
 | M5 | Authenticated live-smoke run | On the [Actions tab](https://github.com/quantdale/FocusTube/actions/workflows/ios-ci.yml), click "Run workflow" with `live_smoke=true`. The Google token secrets must be set first | V1 criterion 4 and the YouTubeKit 0.4.8 viability check |
 | M3 | (Resolved 2026-10-16) CI jobs blocked by a billing/spending limit | Repo made public; CI runs again | — |
 
