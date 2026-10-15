@@ -32,11 +32,11 @@ backend.
 |------|--------|
 | M0–M8 implementation (extraction, playback, downloads incl. adaptive 1080, auth/API, Home, Search, video page/comments, Library, background media) | Done per checkpoints |
 | Hardening V1–V3 and backlog HB-001..030 | Resolved |
-| OPT_PERFORMANCE_V1 | Done; introduced a flaky test (see BLOCKERS B1) |
+| OPT_PERFORMANCE_V1 | Done; its flaky test was fixed in PR #1 |
 | Device validation (Batch A) | **Not done**; owner-only |
 | Live authenticated smoke | **Not done**; owner-only |
 | Open GitHub issues/PRs | None (checked 2026-10-15) |
-| Latest `main` CI (`86516e0`, 2026-08-30 12:57 PHT) | Core Tests ✅; iOS CI ❌ (core flake, see VERIFICATION) |
+| Latest checked `main` (`8448140`, PR #1 merged 2026-10-16 PHT) | Core Tests ✅; iOS CI ✅ (full Gate on the PR) |
 
 ## Top 5 issues
 1. **Flaky core test on `main`** (`YouTubeDataClientTests.testSubscriptionFeedChunksVideosListBeyondIDCap`).

@@ -2,43 +2,24 @@
 
 FocusTube uses **campaigns, milestones, work packets, and evidence gates**. Feature count does not advance state; observed acceptance evidence does.
 
-## Campaign model
+## Campaign model and current status (refreshed 2026-10-16)
 
-### Active now — INTEGRATION_COMPLETION_V1
+Implementation is complete. The following campaigns are all closed with green
+gates: INTEGRATION_COMPLETION_V1, IMPLEMENTATION_V1 milestones M0–M8,
+HARDENING_V1/V3, DDV2, and OPT_PERFORMANCE_V1. The last code qualification was
+at `7a70943`, and it was re-qualified on `main` `8448140` (PR #1, Core Tests and iOS CI green).
 
-Scope: finish integrating the implemented subsystems into a functioning
-product, revalidate every gate against observed evidence, then run
-**HARDENING_V1** and prepare the personal release. The owner has explicitly
-authorized completion of the whole project, including hardening.
+### Active now: device validation (owner-gated)
+Owner `DEVICE_VALIDATION_V1_REFRESHED` (Batch A A1–A14) on a physical iPhone,
+plus one authenticated live-smoke CI dispatch. See
+`docs/MAC_FINALIZATION_CHECKLIST.md`.
 
-The implementation agent runs continuously through this sequence and does not stop between packets.
+### Later: PERSONAL_RELEASE (M10)
+Signing and install, plus physical-iPhone evidence.
 
-### Active within this campaign — HARDENING_V1
-
-Scope: M9 and `.agent/HARDENING_BACKLOG.md` plus newly discovered torture/a11y/performance/security issues.
-
-HARDENING_V1 runs automatically after IC-EXIT under INTEGRATION_COMPLETION_V1
-(the owner has explicitly authorized the full completion campaign).
-Critical/High defects remain immediate blockers and are never deferred;
-Medium/Low items are fixed when bounded or recorded in the backlog.
-
-### Later — PERSONAL_RELEASE
-
-Scope: M10, signing/install and physical-iPhone evidence.
-
-Device-only verification does not block the current implementation campaign.
-
----
-
-## Current status as of 2026-08-20
-
-- Bootstrap repository/specification scaffold exists on `main` at commit `81384e84127177186eaa9f87f71a36874f47b785`.
-- `FocusTubeCore` has observed passing policy tests in the artifact-construction environment.
-- G0 is **not yet proven** because macOS/XcodeGen/iOS Simulator CI evidence has not been observed.
-- Current implementation packet: `WP-000-BOOTSTRAP`.
-- No media extraction/playback/download viability gate is yet claimed complete.
-
-Always trust `.agent/STATE.yaml` over this dated narrative if implementation has advanced.
+For the up-to-date prioritized list, see `docs/ROADMAP.md`, `docs/PROGRESS.md`
+and `docs/BLOCKERS.md`. `.agent/STATE.yaml` is the source of truth, and the
+milestone sections below are kept as historical record.
 
 ---
 
