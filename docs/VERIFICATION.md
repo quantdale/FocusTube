@@ -31,3 +31,11 @@ reclamation.
 ## PR #1 merged (2026-10-16 03:2x PHT)
 `main` tip `8448140`: PR #1 checks were Core ✅ ×2 and iOS CI ✅ (26m59s, full Gate, UI tests).
 The Node 20 deprecation was the only remaining CI warning; it is being fixed on `ci/node24-actions`.
+
+## Re-qualified at `09a7ee3` (2026-10-16 ~05:00 PHT)
+`main` tip `09a7ee3` (PR #3 squash, on top of `7e650e0` PR #4) was checked as follows:
+- Core Tests ✅ on PR #3 (runs 38801410890 and 38801416935).
+- iOS CI ✅ on PR #3 (run 38801417134, 32m40s, full Gate including UI tests).
+- PR #4 (`7e650e0`): Core ✅ and iOS CI ✅ (run 38797704060).
+
+This is the **current qualified baseline**. Device Batch A (A1–A14) should target `09a7ee3` or newer.
