@@ -36,7 +36,7 @@ backend.
 | Device validation (Batch A) | **Not done**; owner-only |
 | Live authenticated smoke | **Not done**; owner-only |
 | Open GitHub issues/PRs | PR #5 (DownloadRetryPolicy tests), as of 2026-10-16 |
-| Latest checked `main` (`09a7ee3`, PRs #1–#4 merged 2026-10-16 PHT) | Core Tests ✅; iOS CI ✅ (full Gate on PR #3, run 38801417134). This is the qualified baseline |
+| Latest checked `main` (`23b0d2f`, PRs #1–#5 merged 2026-10-16 PHT) | Core Tests ✅; iOS CI ✅ (full Gate on PR #3, run 38801417134). This is the qualified baseline |
 
 ## Top 5 issues
 1. **Flaky core test on `main`** (`YouTubeDataClientTests.testSubscriptionFeedChunksVideosListBeyondIDCap`).
