@@ -322,13 +322,19 @@ final class Journeys: XCTestCase {
 
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["Search"].exists)
+        #if FOCUSTUBE_LEGACY_DOWNLOADS
         XCTAssertTrue(app.tabBars.buttons["Downloads"].exists)
+        #else
+        XCTAssertFalse(app.tabBars.buttons["Downloads"].exists, "ADR-0007: no Downloads tab")
+        #endif
         XCTAssertTrue(app.tabBars.buttons["Library"].exists)
 
         app.tabBars.buttons["Search"].tap()
         XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))
+        #if FOCUSTUBE_LEGACY_DOWNLOADS
         app.tabBars.buttons["Downloads"].tap()
         XCTAssertTrue(app.navigationBars["Downloads"].waitForExistence(timeout: 5))
+        #endif
         app.tabBars.buttons["Library"].tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Home"].tap()
@@ -549,6 +555,7 @@ final class Journeys: XCTestCase {
             "save toggle must reflect saved state; label was '\(app.buttons["save-toggle"].firstMatch.label)'"
         )
 
+        #if FOCUSTUBE_LEGACY_DOWNLOADS
         let download = app.buttons["download-button"].firstMatch
         XCTAssertTrue(
             download.waitForExistence(timeout: 10),
@@ -563,6 +570,9 @@ final class Journeys: XCTestCase {
             .completed,
             "picker must offer qualities resolved by the extractor"
         )
+        #else
+        XCTAssertFalse(app.buttons["download-button"].exists, "ADR-0007: no download control")
+        #endif
 
         // Comments live in the same non-lazy ScrollView: existence proves they
         // rendered without depending on synthesized scroll gestures.
@@ -608,6 +618,7 @@ final class Journeys: XCTestCase {
         XCTAssertEqual(resumedTitle.label, "Seeded In-Progress Video")
     }
 
+    #if FOCUSTUBE_LEGACY_DOWNLOADS
     // MARK: - Journey G: downloads
 
     func testDownloadCompletesRegistersAndDeletes() {
@@ -693,6 +704,8 @@ final class Journeys: XCTestCase {
     }
 
     // MARK: - Journey H: settings/account (DDV2-05)
+
+    #endif
 
     func testSettingsSheetShowsAccountStateAndSignOutFlips() {
         let app = launch("home-loaded")
@@ -911,6 +924,7 @@ final class Journeys: XCTestCase {
         }
     }
 
+    #if FOCUSTUBE_LEGACY_DOWNLOADS
     // MARK: - Journey L: offline playback reaches playing (HB-014)
 
     func testOfflinePlaybackReachesPlayingStateWithFixtureMedia() {
@@ -951,4 +965,5 @@ final class Journeys: XCTestCase {
             done.tap()
         }
     }
+    #endif
 }

@@ -73,9 +73,11 @@ struct VideoPageView: View {
                     metadataHeader
                     actionRow
 
+                    #if FOCUSTUBE_LEGACY_DOWNLOADS
                     Divider()
 
                     downloadSection
+                    #endif
 
                     Divider()
 
@@ -167,7 +169,9 @@ struct VideoPageView: View {
                 videoID: video.id,
                 resumeAt: library.resumePosition(for: video.id)
             )
+            #if FOCUSTUBE_LEGACY_DOWNLOADS
             await loadQualities()
+            #endif
             await loadComments()
             await loadAccountState()
         }
@@ -254,7 +258,9 @@ struct VideoPageView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 saveButton
+                #if FOCUSTUBE_LEGACY_DOWNLOADS
                 downloadButton
+                #endif
                 likeButton
                 subscribeButton
                 shareButton

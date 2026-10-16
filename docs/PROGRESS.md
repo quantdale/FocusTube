@@ -74,3 +74,11 @@ Everything in item 5 is closed. CI warnings were fixed in PR #4, and `aws/tap` p
   with 11 unit tests. Linux `swift test`: 156/156 pass.
 - Not started: phase 2 (iOS WebKit engine and switch-over), phase 3 (deletions), phase 4
   (device). The app still plays via YouTubeKit on `main` until phase 2 merges.
+
+## Update 2026-10-16 — phase 2: downloads compiled out (ADR-0007)
+Branch `feat/compile-out-downloads`: the Downloads tab, the video-page Download button,
+the quality picker section and quality resolution (which called the extractor) are wrapped in
+`#if FOCUSTUBE_LEGACY_DOWNLOADS` (not defined anywhere, so off). UI journeys G (download
+flow/failure) and L (offline playback) are compiled out with them, and the shell/video-page
+journeys now assert the Downloads tab and Download button are **absent**. The download stack
+itself still compiles (deleted in phase 3). Verified only by macOS iOS CI.

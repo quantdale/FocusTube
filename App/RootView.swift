@@ -53,6 +53,8 @@ struct RootView: View {
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
             .tag(1)
 
+            #if FOCUSTUBE_LEGACY_DOWNLOADS
+            // ADR-0007: offline downloads violate the YouTube ToS; compiled out by default.
             NavigationStack {
                 DownloadsView(
                     store: libraryStore,
@@ -62,6 +64,7 @@ struct RootView: View {
             }
             .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
             .tag(2)
+            #endif
 
             NavigationStack {
                 LibraryView(
