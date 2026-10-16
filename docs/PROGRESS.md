@@ -1,6 +1,8 @@
 # PROGRESS — Phase 1 Assessment (2026-10-15)
 
 ## What FocusTube is
+> Superseded: this Phase 1 description predates ADR-0007 (IFrame player, no extraction or downloads) and ADR-0008 (local-first, no sign-in, no Data API). See the updates at the end of this file.
+
 FocusTube is a personal-use native iOS (SwiftUI, iOS 17+, Swift 6) YouTube
 client built for deliberate long-form viewing. It has four tabs: Home
 (subscription feed), Search (explicit submit), Downloads, and Library. Shorts
@@ -139,3 +141,11 @@ switch-over. It contains `URLSessionHTTP` (ephemeral session; only https `www.yo
 `LocalLibraryModel` (subscriptions and playlists in `library.json`, subscriptions feed refresh, oEmbed cache,
 player duration fed back into the Shorts firewall, local search), `AddView` (paste a link and local search)
 and `SubscriptionsFeedView` (pull-to-refresh). Watch history and Watch Later stay in the SwiftData `LibraryStore`.
+
+## Update 2026-10-16 — ADR-0008 switch-over (PR #22) and core cleanup (PR #23)
+- PR #22 (`feat/app-switch-local-first`) switches the app to local-first and removes GoogleSignIn and `YouTubeDataClient`.
+  iOS CI run 38899779583 on d75a878 failed only at the Gate: all 45 unit tests passed (`** TEST SUCCEEDED **`) and the UI tests passed (exit 0),
+  but `xcodebuild` returned 65 after testing finished. That is simulator or xcodebuild teardown flakiness, not a code failure, so the run was rerun once.
+  (The earlier failure, run 38892429441, was a real UI failure in `testAddChannelLinkSubscribesLocally` on an older head. It was fixed by d75a878.)
+- PR #23 (`chore/core-remove-data-api`) is stacked on #22. It is retargeted to `main` and rebased after #22 merges, and merged only on green.
+- README no longer describes YouTubeKit, GoogleSignIn or the Data API.

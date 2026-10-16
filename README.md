@@ -29,12 +29,12 @@ There is currently **no active agent-actionable coding campaign**. The last exec
 
 - Native iOS app, not a WebView wrapper.
 - SwiftUI UI with AVPlayer/AVPlayerViewController.
-- YouTubeKit is the only media extractor; **local extraction only**.
+- No media extraction: playback uses the official YouTube IFrame Player embedded in a WKWebView (ADR-0007).
 - No yt-dlp fallback and no remote extractor.
 - Download resolutions are exactly **1080p, 720p, 480p, 360p**; 1080p is the hard ceiling.
 - Offline downloads are a first-class requirement.
 - URLSession background transfer + native AVFoundation muxing path.
-- YouTube Data API v3 for supported account-aware metadata/actions; GoogleSignIn for OAuth.
+- No sign-in, no Google Cloud, no YouTube Data API and no OAuth (ADR-0008). Content comes from pasted links, public channel RSS/Atom feeds and oEmbed metadata, stored in a local on-device library.
 - SwiftData indexes metadata; filesystem stores media.
 - No backend for core V1.
 - Windows-first authoring; remote macOS/Xcode/iOS Simulator build/test plane.
@@ -81,8 +81,8 @@ For the exact reusable prompt, use [`.agent/BOOT_PROMPT.md`](.agent/BOOT_PROMPT.
 
 ## Current external assumptions
 
-The bootstrap research baseline records YouTubeKit 0.4.8, GoogleSignIn 9.0.0 documentation, Swift-on-Windows support, and Xcode 26.6 as the targeted stable Apple toolchain. Reverify external assumptions when work actually depends on them; do not churn dependencies without evidence. See [`docs/reference/SOURCES.md`](docs/reference/SOURCES.md).
+The bootstrap research baseline records Swift-on-Windows support and Xcode 26.6 as the targeted stable Apple toolchain. YouTubeKit and GoogleSignIn were removed (ADR-0007, ADR-0008); the app has no third-party YouTube SDK dependencies. Reverify external assumptions when work actually depends on them; do not churn dependencies without evidence. See [`docs/reference/SOURCES.md`](docs/reference/SOURCES.md).
 
 ## Policy note
 
-FocusTube's custom extraction/download path is not the official YouTube offline-playback path. Keep official YouTube Data API interactions separate from the unofficial media-extraction subsystem and do not represent the latter as officially authorized. See [`docs/11-SECURITY-PRIVACY-POLICY.md`](docs/11-SECURITY-PRIVACY-POLICY.md).
+FocusTube does not download or extract media and uses no YouTube Data API or account access. Playback goes through the official IFrame embed player; metadata comes only from public RSS feeds and oEmbed. See [`docs/11-SECURITY-PRIVACY-POLICY.md`](docs/11-SECURITY-PRIVACY-POLICY.md).
