@@ -81,8 +81,8 @@ For the exact reusable prompt, use [`.agent/BOOT_PROMPT.md`](.agent/BOOT_PROMPT.
 
 ## Current external assumptions
 
-The bootstrap research baseline records YouTubeKit 0.4.8, GoogleSignIn 9.0.0 documentation, Swift-on-Windows support, and Xcode 26.6 as the targeted stable Apple toolchain. Reverify external assumptions when work actually depends on them; do not churn dependencies without evidence. See [`docs/reference/SOURCES.md`](docs/reference/SOURCES.md).
+FocusTube depends on no third-party packages and no Google Cloud project: playback uses the official YouTube IFrame Player API in a `WKWebView` (ADR-0007), and content comes from public YouTube RSS/Atom feeds plus oEmbed, stored in a local library (ADR-0008). Xcode 26.6 is the targeted stable Apple toolchain. Reverify external assumptions when work actually depends on them. See [`docs/reference/SOURCES.md`](docs/reference/SOURCES.md).
 
 ## Policy note
 
-FocusTube's custom extraction/download path is not the official YouTube offline-playback path. Keep official YouTube Data API interactions separate from the unofficial media-extraction subsystem and do not represent the latter as officially authorized. See [`docs/11-SECURITY-PRIVACY-POLICY.md`](docs/11-SECURITY-PRIVACY-POLICY.md).
+FocusTube does not extract streams, download media, or use the YouTube Data API. Playback happens only in the official embedded player, with YouTube's own controls and branding left intact; public feeds and oEmbed are read without sign-in or API keys, at user-triggered refreshes. Changes that would bypass the official player or YouTube's Terms of Service are out of scope. See [`docs/11-SECURITY-PRIVACY-POLICY.md`](docs/11-SECURITY-PRIVACY-POLICY.md) and [`docs/adr/0008-no-google-cloud-local-first.md`](docs/adr/0008-no-google-cloud-local-first.md).
