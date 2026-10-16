@@ -132,3 +132,10 @@ index still needs them: `DownloadTask`/`DownloadState`/`DownloadQueue`/`Download
   Shorts firewall by `/shorts/` link, portrait oEmbed or a learned duration ≤180 s, de-dup, newest first).
   Linux `swift test`: 177/177 on that branch.
 - Next: app wiring (remove GoogleSignIn and `YouTubeDataClient`; add the Add tab, the local feed and the oEmbed video page).
+
+## Update 2026-10-16 — ADR-0008 app wiring, step 1 (additive)
+Branch `feat/app-local-library-model` adds code that nothing calls yet, so the iOS build checks it before the
+switch-over. It contains `URLSessionHTTP` (ephemeral session; only https `www.youtube.com` is allowed),
+`LocalLibraryModel` (subscriptions and playlists in `library.json`, subscriptions feed refresh, oEmbed cache,
+player duration fed back into the Shorts firewall, local search), `AddView` (paste a link and local search)
+and `SubscriptionsFeedView` (pull-to-refresh). Watch history and Watch Later stay in the SwiftData `LibraryStore`.
