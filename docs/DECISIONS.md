@@ -74,3 +74,6 @@ Full text: [`docs/adr/0008-no-google-cloud-local-first.md`](adr/0008-no-google-c
   keep the 180 s rule when a duration is known. Documented leak: a Short with a `watch?v=` feed link
   can slip in until its metadata is seen.
 - M4, M5, B4, B5 and B9 are dropped.
+
+## 2026-10-17 — No Codex PR reviews
+Michael's standing rule: never use Codex PR reviews (no `@codex` comments, no review requests, no waiting on Codex). On 2026-10-17 a repo grep found no Codex config. Disable any that appears. Merges are gated on CI checks only.

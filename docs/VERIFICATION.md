@@ -64,4 +64,4 @@ Rule: nothing WebKit-related is marked verified until macOS CI builds/tests it o
 | Live fetch of `feeds/videos.xml` and `oembed` from the app | ❌ Unverified until device. CI uses fixtures only |
 | Add tab, local feed and video page in the app | ❌ Pending macOS CI, then device |
 
-| App builds and UI journeys pass with GoogleSignIn and the Data API removed (PR #22) | iOS CI run 38899779583 on d75a878: unit 45/45 passed and UI exit 0, but the Gate went red on a stray xcodebuild exit 65 after success (infra). Rerun pending | ⏳ Pending a green rerun |
+| App builds and UI journeys pass with GoogleSignIn and the Data API removed (PR #22) | iOS CI on d75a878: unit 45/45 passed; UI failed (`testAddChannelLinkSubscribesLocally`, keyboard covered the tab bar). Fix 630f2c7, CI pending | ⏳ Pending iOS CI on 630f2c7 |

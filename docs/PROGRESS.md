@@ -144,8 +144,9 @@ and `SubscriptionsFeedView` (pull-to-refresh). Watch history and Watch Later sta
 
 ## Update 2026-10-16 — ADR-0008 switch-over (PR #22) and core cleanup (PR #23)
 - PR #22 (`feat/app-switch-local-first`) switches the app to local-first and removes GoogleSignIn and `YouTubeDataClient`.
-  iOS CI run 38899779583 on d75a878 failed only at the Gate: all 45 unit tests passed (`** TEST SUCCEEDED **`) and the UI tests passed (exit 0),
-  but `xcodebuild` returned 65 after testing finished. That is simulator or xcodebuild teardown flakiness, not a code failure, so the run was rerun once.
-  (The earlier failure, run 38892429441, was a real UI failure in `testAddChannelLinkSubscribesLocally` on an older head. It was fixed by d75a878.)
+  Its iOS CI failed 3 times in a row in `testAddChannelLinkSubscribesLocally` ("Home tab must open"). The UI bundle exited 65 and the unit tests passed every time.
+  An earlier note blamed infra flakiness; that came from misreading `ui.exit` and `unit.exit`, and was wrong.
+  Root cause: after a channel link was submitted, the keyboard stayed up over the tab bar, so the Home tap never reached it.
+  Fix (630f2c7): `AddView` clears `@FocusState` on submit and dismisses the keyboard on scroll. The test now asserts the keyboard is released before it switches tabs.
 - PR #23 (`chore/core-remove-data-api`) is stacked on #22. It is retargeted to `main` and rebased after #22 merges, and merged only on green.
 - README no longer describes YouTubeKit, GoogleSignIn or the Data API.
