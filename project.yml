@@ -16,9 +16,6 @@ configs:
 packages:
   FocusTubeCore:
     path: .
-  YouTubeKit:
-    url: https://github.com/alexeichhorn/YouTubeKit.git
-    exactVersion: 0.4.8
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS.git
     exactVersion: 9.0.0
@@ -65,7 +62,6 @@ targets:
       Release: Config/Release.xcconfig
     dependencies:
       - package: FocusTubeCore
-      - package: YouTubeKit
       - package: GoogleSignIn
         product: GoogleSignIn
       - package: GoogleSignIn

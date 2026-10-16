@@ -12,11 +12,9 @@ final class FocusTubeAppDelegate: NSObject, UIApplicationDelegate {
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
-        if identifier == BackgroundDownloadTransport.sessionIdentifier {
-            BackgroundDownloadTransport.shared.setBackgroundCompletionHandler(completionHandler)
-        } else {
-            completionHandler()
-        }
+        // ADR-0007: downloads were removed; a leftover background session
+        // from an older build is acknowledged immediately.
+        completionHandler()
     }
 
     func application(

@@ -15,8 +15,6 @@ struct RootView: View {
     private var api: YouTubeAPI { dependencies.api }
     private var playerCoordinator: PlayerCoordinator { dependencies.playerCoordinator }
     private var libraryStore: LibraryStore { dependencies.libraryStore }
-    private var downloadManager: DownloadManager { dependencies.downloadManager }
-    private var downloadService: DownloadService { dependencies.downloadService }
     private var backgroundMedia: BackgroundMediaCoordinator { dependencies.backgroundMedia }
 
     /// HB-029: explicit tab selection persisted across scene restoration.
@@ -32,7 +30,6 @@ struct RootView: View {
                     playerCoordinator: playerCoordinator,
                     auth: auth,
                     api: api,
-                    downloadService: downloadService,
                     library: libraryStore
                 )
             }
@@ -46,33 +43,18 @@ struct RootView: View {
                     playerCoordinator: playerCoordinator,
                     auth: auth,
                     api: api,
-                    downloadService: downloadService,
                     library: libraryStore
                 )
             }
             .tabItem { Label("Search", systemImage: "magnifyingglass") }
             .tag(1)
 
-            #if FOCUSTUBE_LEGACY_DOWNLOADS
-            // ADR-0007: offline downloads violate the YouTube ToS; compiled out by default.
-            NavigationStack {
-                DownloadsView(
-                    store: libraryStore,
-                    downloadManager: downloadManager,
-                    downloadService: downloadService
-                )
-            }
-            .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
-            .tag(2)
-            #endif
-
             NavigationStack {
                 LibraryView(
                     store: libraryStore,
                     playerCoordinator: playerCoordinator,
                     auth: auth,
-                    api: api,
-                    downloadService: downloadService
+                    api: api
                 )
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
@@ -85,10 +67,6 @@ struct RootView: View {
             backgroundMedia.registerRemoteCommands()
             backgroundMedia.registerInterruptionObservation()
             backgroundMedia.registerRouteChangeObservation()
-            // Durable queue reconstruction (DDV2-01): after launch
-            // reconciliation, persisted `.queued` downloads re-enter the FIFO
-            // promotion queue so they survive process death.
-            await downloadService.restorePersistedQueue()
         }
     }
 }
@@ -98,7 +76,6 @@ struct LibraryView: View {
     let playerCoordinator: PlayerCoordinator
     let auth: AuthSession
     let api: YouTubeAPI
-    let downloadService: DownloadService
 
     @State private var selectedSummary: VideoSummary?
     @State private var playlistsState: PlaylistsLoadState = .idle
@@ -137,7 +114,6 @@ struct LibraryView: View {
                 coordinator: playerCoordinator,
                 auth: auth,
                 api: api,
-                downloadService: downloadService,
                 library: store
             )
             .toolbar {
@@ -484,7 +460,6 @@ private struct HomeFeedView: View {
     let playerCoordinator: PlayerCoordinator
     let auth: AuthSession
     let api: YouTubeAPI
-    let downloadService: DownloadService
     let library: LibraryStore
 
     @State private var selectedVideo: VideoSummary?
@@ -601,7 +576,6 @@ private struct HomeFeedView: View {
                 coordinator: playerCoordinator,
                 auth: auth,
                 api: api,
-                downloadService: downloadService,
                 library: library
             )
             .toolbar {

@@ -322,19 +322,11 @@ final class Journeys: XCTestCase {
 
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["Search"].exists)
-        #if FOCUSTUBE_LEGACY_DOWNLOADS
-        XCTAssertTrue(app.tabBars.buttons["Downloads"].exists)
-        #else
         XCTAssertFalse(app.tabBars.buttons["Downloads"].exists, "ADR-0007: no Downloads tab")
-        #endif
         XCTAssertTrue(app.tabBars.buttons["Library"].exists)
 
         app.tabBars.buttons["Search"].tap()
         XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))
-        #if FOCUSTUBE_LEGACY_DOWNLOADS
-        app.tabBars.buttons["Downloads"].tap()
-        XCTAssertTrue(app.navigationBars["Downloads"].waitForExistence(timeout: 5))
-        #endif
         app.tabBars.buttons["Library"].tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Home"].tap()
@@ -562,24 +554,7 @@ final class Journeys: XCTestCase {
             "save toggle must reflect saved state; label was '\(app.buttons["save-toggle"].firstMatch.label)'"
         )
 
-        #if FOCUSTUBE_LEGACY_DOWNLOADS
-        let download = app.buttons["download-button"].firstMatch
-        XCTAssertTrue(
-            download.waitForExistence(timeout: 10),
-            "download control must render"
-        )
-        let downloadReady = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "isEnabled == true"),
-            object: download
-        )
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [downloadReady], timeout: 15),
-            .completed,
-            "picker must offer qualities resolved by the extractor"
-        )
-        #else
         XCTAssertFalse(app.buttons["download-button"].exists, "ADR-0007: no download control")
-        #endif
 
         // Comments live in the same non-lazy ScrollView: existence proves they
         // rendered without depending on synthesized scroll gestures.
@@ -625,94 +600,6 @@ final class Journeys: XCTestCase {
         XCTAssertEqual(resumedTitle.label, "Seeded In-Progress Video")
     }
 
-    #if FOCUSTUBE_LEGACY_DOWNLOADS
-    // MARK: - Journey G: downloads
-
-    func testDownloadCompletesRegistersAndDeletes() {
-        let app = launch("download-flow")
-        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
-        let page = app.staticTexts["video-title"]
-        let trace = openVideoPageFromFeed(app, expecting: page)
-        XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
-
-        let download = app.buttons["download-button"]
-        let dlTrace = interact(app, locate: { $0.buttons["download-button"].firstMatch }, tap: true)
-        XCTAssertTrue(
-            dlTrace.isEmpty,
-            "download action must appear once qualities resolve [\(trace);\(dlTrace)]"
-        )
-        // Precise signal if the scripted happy path ever surfaces a failure:
-        // registration cannot succeed when admission refused the transfer.
-        XCTAssertFalse(
-            app.alerts["Download failed"].waitForExistence(timeout: 2),
-            "scripted happy-path download must not surface a failure alert"
-        )
-        waitForDownloadSettle(app)
-
-        app.tabBars.buttons["Downloads"].tap()
-        // Tab arrival is asserted explicitly: a mis-delivered tab tap must fail
-        // HERE with full diagnostics, never masquerade as a registration defect.
-        XCTAssertTrue(
-            app.navigationBars["Downloads"].waitForExistence(timeout: 8),
-            "Downloads tab must come to front;\(treeDiagnostics(app))"
-        )
-        // SwiftUI Buttons merge their label children, so the row is addressed
-        // by its own identifier; the merged label carries the real title.
-        let completedRow = app.buttons.matching(identifier: "downloaded-row").firstMatch
-        let downloadedRowCount = app.buttons.matching(identifier: "downloaded-row").count
-        let emptyCopyVisible = app.staticTexts["No downloaded videos yet."].exists
-        XCTAssertTrue(
-            completedRow.waitForExistence(timeout: 10),
-            "the scripted transfer must finalize, validate, and register offline media; rows=\(downloadedRowCount) emptyCopy=\(emptyCopyVisible);\(treeDiagnostics(app))"
-        )
-        XCTAssertTrue(
-            completedRow.label.contains("Fixture Documentary One"),
-            "registered row carries the real video title; label was '\(completedRow.label)'"
-        )
-
-        app.buttons["Delete download"].firstMatch.tap()
-        let confirm = app.buttons["Delete"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "destructive delete requires explicit confirmation")
-        confirm.tap()
-        XCTAssertFalse(
-            completedRow.waitForExistence(timeout: 3),
-            "confirmed deletion removes the downloaded-media row"
-        )
-        XCTAssertTrue(app.staticTexts["No downloaded videos yet."].exists)
-    }
-
-    func testDownloadFailureSurfacesTypedAlert() {
-        let app = launch("download-failure")
-        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
-        let page = app.staticTexts["video-title"]
-        let trace = openVideoPageFromFeed(app, expecting: page)
-        XCTAssertTrue(page.exists, "video page must open from the fixture feed [\(trace)]")
-
-        let download = app.buttons["download-button"]
-        let dlTrace = interact(app, locate: { $0.buttons["download-button"].firstMatch }, tap: true)
-        XCTAssertTrue(
-            dlTrace.isEmpty,
-            "download action must appear once qualities resolve [\(trace);\(dlTrace)]"
-        )
-
-        XCTAssertTrue(
-            app.alerts["Download failed"].waitForExistence(timeout: 10),
-            "transport failure must surface the typed failure alert"
-        )
-        // The typed cause/retry copy is pinned at unit level
-        // (DownloadServiceTests.testTransportFailureCopyExplainsCauseAndRetry);
-        // iOS 26 does not reliably expose alert message text to XCUITest, so
-        // the UI contract here is: typed alert presents with an acknowledge
-        // action.
-        XCTAssertTrue(
-            app.alerts["Download failed"].buttons["OK"].waitForExistence(timeout: 5),
-            "failure alert must be actionable"
-        )
-    }
-
-    // MARK: - Journey H: settings/account (DDV2-05)
-
-    #endif
 
     func testSettingsSheetShowsAccountStateAndSignOutFlips() {
         let app = launch("home-loaded")
@@ -931,46 +818,4 @@ final class Journeys: XCTestCase {
         }
     }
 
-    #if FOCUSTUBE_LEGACY_DOWNLOADS
-    // MARK: - Journey L: offline playback reaches playing (HB-014)
-
-    func testOfflinePlaybackReachesPlayingStateWithFixtureMedia() {
-        let app = launch("download-flow")
-        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch))
-        let trace = openVideoPageFromFeed(app, expecting: app.staticTexts["video-title"])
-        let dlTrace = interact(app, locate: { $0.buttons["download-button"].firstMatch }, tap: true)
-        XCTAssertTrue(dlTrace.isEmpty, "download control must reveal [\(dlTrace)];\(trace)")
-        waitForDownloadSettle(app)
-
-        app.tabBars.buttons["Downloads"].tap()
-        XCTAssertTrue(
-            app.navigationBars["Downloads"].waitForExistence(timeout: 8),
-            "Downloads tab must come to front;\(treeDiagnostics(app))"
-        )
-        let completedRow = app.buttons.matching(identifier: "downloaded-row").firstMatch
-        XCTAssertTrue(
-            completedRow.waitForExistence(timeout: 10),
-            "completed download row must render;\(treeDiagnostics(app))"
-        )
-        completedRow.tap()
-
-        // The fixture transfer finalized REAL playable media: the player must
-        // reach a genuine playing state, never the failed overlay.
-        let playingMarker = app.descendants(matching: .any)["player-playing"].firstMatch
-        let doneVisible = app.buttons["local-player-done"].exists
-        let failedVisible = app.staticTexts["Playback failed"].exists
-        XCTAssertTrue(
-            playingMarker.waitForExistence(timeout: 15),
-            "offline playback must reach .playing; sheet=\(doneVisible) failed=\(failedVisible);\(treeDiagnostics(app))"
-        )
-        XCTAssertFalse(
-            app.staticTexts["Playback failed"].exists,
-            "playable fixture media must not surface a failure overlay"
-        )
-        let done = app.buttons["local-player-done"]
-        if done.waitForExistence(timeout: 3) {
-            done.tap()
-        }
-    }
-    #endif
 }
