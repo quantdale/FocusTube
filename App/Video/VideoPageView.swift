@@ -1,7 +1,7 @@
 import SwiftUI
 import FocusTubeCore
 
-/// Production video page: native player, available-only download quality picker,
+/// Production video page: official IFrame player (ADR-0007),
 /// comments with posting/replies, supported account actions with truthful
 /// server-backed state, and offline-library registration. All data is fetched
 /// live; failures degrade gracefully without leaking short-form content.
@@ -10,18 +10,12 @@ struct VideoPageView: View {
     @Bindable var coordinator: PlayerCoordinator
     let auth: AuthSession
     let api: YouTubeAPI
-    let downloadService: DownloadService
     let library: LibraryStore
 
-    @State private var qualities: [DownloadQuality] = []
-    /// HB-024: truthful lifecycle for the download-quality surface.
-    @State private var qualityResolutionState: QualityResolutionState = .resolving
-    @State private var selectedQuality: DownloadQuality?
     @State private var comments: [Comment] = []
     @State private var commentsDisabled = false
     @State private var commentsError: YouTubeAPIError?
     @State private var isLoadingComments = false
-    @State private var isDownloading = false
     @State private var isSaved = false
 
     // DDV2-04: account-action + composer state.
@@ -47,17 +41,6 @@ struct VideoPageView: View {
     private var commentsService: CommentsService { CommentsService(api: api) }
     private var accountActions: AccountActionsService { AccountActionsService(api: api) }
 
-    /// The quality the button acts on (picker selection or the 720p default).
-    private var effectiveQuality: DownloadQuality { selectedQuality ?? .p720 }
-
-    /// In-flight while this view awaits the service, or while the manager's
-    /// observable live-task projection still holds a transfer for this
-    /// video+quality (covers view recreation mid-download).
-    @MainActor
-    private var downloadInFlight: Bool {
-        isDownloading || downloadService.isInFlight(videoID: video.id, quality: effectiveQuality)
-    }
-
     var body: some View {
         // A bounded detail page uses a plain scroll view: List laziness only
         // materializes near-viewport rows on current iOS runtimes, which made
@@ -73,11 +56,6 @@ struct VideoPageView: View {
                     metadataHeader
                     actionRow
 
-                    #if FOCUSTUBE_LEGACY_DOWNLOADS
-                    Divider()
-
-                    downloadSection
-                    #endif
 
                     Divider()
 
@@ -110,18 +88,6 @@ struct VideoPageView: View {
         }
         .navigationTitle("Video")
         .navigationBarTitleDisplayMode(.inline)
-        .alert(
-            "Download failed",
-            isPresented: Binding(
-                get: { downloadService.lastFailure != nil },
-                set: { if !$0 { downloadService.acknowledgeFailure() } }
-            ),
-            presenting: downloadService.lastFailure
-        ) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { failure in
-            Text(failure.userMessage)
-        }
         .alert(
             "Can't share this video",
             isPresented: $shareErrorShown
@@ -169,9 +135,6 @@ struct VideoPageView: View {
                 videoID: video.id,
                 resumeAt: library.resumePosition(for: video.id)
             )
-            #if FOCUSTUBE_LEGACY_DOWNLOADS
-            await loadQualities()
-            #endif
             await loadComments()
             await loadAccountState()
         }
@@ -258,9 +221,6 @@ struct VideoPageView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 saveButton
-                #if FOCUSTUBE_LEGACY_DOWNLOADS
-                downloadButton
-                #endif
                 likeButton
                 subscribeButton
                 shareButton
@@ -270,38 +230,6 @@ struct VideoPageView: View {
             .padding(.vertical, 10)
         }
         .accessibilityElement(children: .contain)
-    }
-
-    /// Starts the transfer with the picker's selection (720p default). Lives in
-    /// the action row so the primary download interaction shares the first
-    /// viewport with the other account-safe actions; the quality picker below
-    /// is the deliberate pre-selection surface.
-    private var downloadButton: some View {
-        Button {
-            startDownload()
-        } label: {
-            if downloadInFlight {
-                Label("Downloading…", systemImage: "arrow.down.circle")
-            } else {
-                Label("Download", systemImage: "arrow.down.circle")
-            }
-        }
-        .disabled(downloadInFlight || qualities.isEmpty)
-        .accessibilityIdentifier("download-button")
-    }
-
-    private func startDownload() {
-        Task {
-            isDownloading = true
-            await downloadService.download(
-                videoID: video.id,
-                title: video.title,
-                channelTitle: video.channelTitle,
-                quality: effectiveQuality,
-                durationSeconds: Double(video.durationSeconds ?? 0)
-            )
-            isDownloading = false
-        }
     }
 
     private var saveButton: some View {
@@ -505,22 +433,6 @@ struct VideoPageView: View {
         }
     }
 
-    // MARK: - Download
-
-    private var downloadSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Download quality")
-                .font(.headline)
-            DownloadQualityPickerView(available: qualities, selection: $selectedQuality, state: qualityResolutionState)
-            Text("Pick a quality, then tap Download above. Downloads never exceed your choice.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal)
-        .padding(.vertical, 12)
-    }
-
     // MARK: - Comments
 
     private var commentsSection: some View {
@@ -624,33 +536,6 @@ struct VideoPageView: View {
     }
 
     // MARK: - Data loading
-
-    private func loadQualities() async {
-        // HB-024 tri-state: resolving → loaded (possibly genuinely empty) or
-        // failed, so the picker copy never conflates the three.
-        qualityResolutionState = .resolving
-        // Reuse the coordinator's extraction when it belongs to this video;
-        // only fall back to a second extraction if playback never resolved.
-        let resolved: ResolvedMedia?
-        if let cached = coordinator.lastResolvedMedia, cached.videoID == video.id {
-            resolved = cached
-        } else {
-            do {
-                resolved = try await YouTubeKitMediaExtractor().resolve(videoID: video.id)
-            } catch {
-                resolved = nil
-            }
-        }
-        guard let resolved else {
-            qualities = []
-            qualityResolutionState = .failed
-            return
-        }
-        let picker = DownloadQualityPicker()
-        qualities = picker.availableQualities(from: resolved)
-        selectedQuality = qualities.first
-        qualityResolutionState = .loaded
-    }
 
     private func loadComments() async {
         guard let token = await auth.accessToken() else {

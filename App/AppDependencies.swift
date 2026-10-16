@@ -18,8 +18,6 @@ final class AppDependencies {
     let playerCoordinator: PlayerCoordinator
     let backgroundMedia: BackgroundMediaCoordinator
     let libraryStore: LibraryStore
-    let downloadManager: DownloadManager
-    let downloadService: DownloadService
     let homeStore: HomeFeedStore
     let searchStore: SearchStore
     let recentSearches: RecentSearchStore
@@ -62,13 +60,8 @@ final class AppDependencies {
         return AppDependencies(
             auth: GoogleSignInAuthSession(),
             api: YouTubeDataClient(onItemsSkipped: Self.reportSkippedItems),
-            extractor: YouTubeKitMediaExtractor(),
             makePlayer: { PlayerCoordinator(engine: WKWebViewPlayerEngine()) },
-            transport: BackgroundDownloadTransport.shared,
-            container: container,
-            mediaDirectory: DownloadManager.defaultMediaDirectory(),
-            incompleteDirectory: DownloadManager.defaultIncompleteDirectory(),
-            validate: MediaAssetValidator.makeSeam()
+            container: container
         )
     }
 
@@ -106,24 +99,13 @@ final class AppDependencies {
         }
         let searchError: YouTubeAPIError? = scenario == .searchError ? .network : nil
 
-        let scratch = FileManager.default.temporaryDirectory
-            .appendingPathComponent("FocusTubeUITests-\(UUID().uuidString)")
-
         return AppDependencies(
             auth: FixtureAuthSession(authenticated: scenario != .signedOut),
             api: FixtureYouTubeAPI(feedError: feedError, searchError: searchError, searchHits: scenario != .searchEmpty),
-            extractor: FixtureExtractor(),
             makePlayer: {
                 PlayerCoordinator(engine: FixturePlayerEngine(), resolveID: FixturePlayerEngine.resolveFixtureID)
             },
-            transport: ScriptedDownloadTransport(failsAfterProgress: scenario == .downloadFailure),
-            container: container,
-            mediaDirectory: scratch.appendingPathComponent("Media"),
-            incompleteDirectory: scratch.appendingPathComponent("Incomplete"),
-            storage: FixtureStorage(),
-            // The scripted transport writes plain bytes; AVFoundation track
-            // validation cannot pass on them (and must not run) in fixtures.
-            validate: nil
+            container: container
         )
     }
     #endif
@@ -133,46 +115,12 @@ final class AppDependencies {
     private init(
         auth: AuthSession,
         api: YouTubeAPI,
-        extractor: MediaExtracting,
         makePlayer: () -> PlayerCoordinator,
-        transport: DownloadTransport,
-        container: ModelContainer,
-        mediaDirectory: URL,
-        incompleteDirectory: URL,
-        storage: StorageProviding = VolumeStorage(),
-        validate: (@Sendable (URL) async throws -> Void)?
+        container: ModelContainer
     ) {
         self.auth = auth
         self.api = api
         let library = LibraryStore(context: ModelContext(container))
-        let manager = DownloadManager(
-            transport: transport,
-            context: ModelContext(container),
-            storage: storage,
-            mediaDirectory: mediaDirectory,
-            incompleteDirectory: incompleteDirectory,
-            validate: validate
-        )
-        // Transfers that finish via the relaunched background session bypass
-        // DownloadService; register them so offline media is never orphaned.
-        // The library upserts by id, so this stays idempotent with in-app
-        // registration. Presentation metadata captured at enqueue time provides
-        // the real title; legacy/missing metadata falls back to the videoID
-        // (the library upsert never downgrades an existing real title).
-        manager.onMediaFinalized = { [library, manager] task in
-            let metadata = manager.presentationMetadata(taskID: task.id)
-            let size = (try? task.destinationURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-            library.addDownloadedMedia(DownloadedMedia(
-                id: task.id,
-                videoID: task.videoID,
-                title: metadata?.title ?? task.videoID,
-                resolution: task.resolution,
-                fileURL: task.destinationURL,
-                sizeBytes: Int64(size),
-                createdAt: Date(),
-                channelTitle: metadata?.channelTitle
-            ))
-        }
         let player = makePlayer()
         let media = BackgroundMediaCoordinator(target: player)
         // Interruption auto-resume must respect user intent: capture whether
@@ -190,20 +138,6 @@ final class AppDependencies {
         }
 
         self.libraryStore = library
-        self.downloadManager = manager
-        let service = DownloadService(
-            extractor: extractor,
-            downloadManager: manager,
-            library: library,
-            mediaDirectory: mediaDirectory
-        )
-        self.downloadService = service
-        // Terminal settlements outside DownloadService's own run loops —
-        // reattached background transfers finishing after a relaunch, or
-        // manager-level cancels — must still promote durable queued work.
-        manager.onTaskSettled = { [weak service] _ in
-            service?.downloadQueueDidSettle()
-        }
         self.playerCoordinator = player
         self.backgroundMedia = media
         self.homeStore = HomeFeedStore(auth: auth, api: api)

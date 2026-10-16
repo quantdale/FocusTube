@@ -7,7 +7,6 @@ struct SearchView: View {
     let playerCoordinator: PlayerCoordinator
     let auth: AuthSession
     let api: YouTubeAPI
-    let downloadService: DownloadService
     let library: LibraryStore
 
     @State private var queryText = ""
@@ -95,7 +94,6 @@ struct SearchView: View {
                 coordinator: playerCoordinator,
                 auth: auth,
                 api: api,
-                downloadService: downloadService,
                 library: library
             )
             .toolbar {

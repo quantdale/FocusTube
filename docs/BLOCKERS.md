@@ -21,4 +21,4 @@
 | B6 | No iOS toolchain on this Linux box | Environment | — | Use macOS CI or a Mac |
 | B7 | Resolved in PR #8: the `ScriptedPerformer` in `YouTubeDataClientTests` mutated state without a lock under concurrent feed hydration. `xctest` died with SIGTRAP on macOS CI (PR #7 run 38817976196) | High (gate integrity) | agent | Guard the performer with an `NSLock`, the same pattern the other test performers use |
 | B8 | WebKit/IFrame behavior cannot be exercised on Linux | Environment | agent + CI/owner | Phase 2 relies on macOS iOS CI for build/UI tests and on a device for real playback |
-| B9 | Live smoke as defined tests YouTubeKit extraction, which ADR-0007 removes | Low | agent | Re-scope to Data API in phase 3 |
+| B9 | Live smoke as defined tests YouTubeKit extraction, which ADR-0007 removes | Low | agent | The extraction smokes are deleted in phase 3. Re-scope M5 to an authenticated Data API smoke (not yet written) |

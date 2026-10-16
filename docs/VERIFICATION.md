@@ -54,3 +54,4 @@ Rule: nothing WebKit-related is marked verified until macOS CI builds/tests it o
 | `PlayerCoordinator` over `PlayerEngine` (load deferral, resume, invalid id, typed errors, progress throttle, stop) | 7 `PlayerCoordinatorTests` pass on Linux in a scratch package: same sources, with `@Observable` stripped because the Linux toolchain's Observation library fails to link | ✅ logic on Linux; the real file with `@Observable` is unverified until macOS CI |
 | App target compiles with the IFrame switch-over, and UI journeys pass with `FixturePlayerEngine` | — | ❌ Pending macOS iOS CI (PR for `feat/iframe-playback-switch`) |
 | Real IFrame playback on device | — | ❌ Unverified |
+| App builds and tests pass without YouTubeKit or the download stack | — | ❌ Pending macOS iOS CI (`chore/remove-app-download-stack`) |

@@ -97,3 +97,20 @@ Branch `feat/iframe-playback-switch` (stacked on PR #11):
   used only by the compiled-out Downloads local player and the opt-in extraction smokes. They are deleted in phase 3.
 - New `PlayerCoordinatorTests` (7) use a fake engine. The video-page UI journey now asserts `player-playing`
   through the fake engine.
+
+## Update 2026-10-16 — phase 3: app download stack and YouTubeKit removed (ADR-0007)
+Branch `chore/remove-app-download-stack`:
+- Deleted from the app: `DownloadManager`, `DownloadService`, `DownloadsView`, `BackgroundDownloadTransport`,
+  `MediaAssetValidator`, `AdaptiveMuxer`, `StorageProviding`, `DownloadQualityPickerView`,
+  `YouTubeKitMediaExtractor`, and the Legacy AVPlayer coordinator and view.
+- Removed the download wiring from `AppDependencies`, `RootView`, `SearchView` and `VideoPageView`.
+  The app delegate now acknowledges leftover background sessions immediately.
+- Removed the UI-test fixtures for extraction and download, the download scenarios, and the
+  `FOCUSTUBE_LEGACY_DOWNLOADS` flag. The compiled-out journeys are gone.
+- Deleted the download, extraction and AVPlayer unit tests and every live extraction smoke.
+- **YouTubeKit is removed from `project.yml`.**
+- Kept on purpose for a separate data-cleanup PR: the `DownloadedMedia`/`DownloadRecord` SwiftData
+  models, which stay in the schema to avoid a migration risk; the `LibraryStore` downloaded index; and the
+  Settings "Downloads" storage section, which reports leftover files.
+- The core package still contains the extraction and download types. They are now unused by the app and
+  will be deleted in the next PR.
