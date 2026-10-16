@@ -25,7 +25,7 @@ public final class PlayerCoordinator {
     public var nowPlayingArtist: String?
 
     let engine: any PlayerEngine
-    @ObservationIgnored private let resolveID: (String) -> YouTubeVideoID?
+    private let resolveID: (String) -> YouTubeVideoID?
     @ObservationIgnored private var lastReportedProgress: Double = -.infinity
     /// Minimum seconds between `onProgress` calls (engine ticks every 0.5 s).
     let progressInterval: Double
