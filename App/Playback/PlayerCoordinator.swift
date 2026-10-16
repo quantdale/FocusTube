@@ -15,10 +15,6 @@ public final class PlayerCoordinator {
     public private(set) var currentVideoID: String?
     public private(set) var engineState = IFramePlayerState()
 
-    /// Extraction no longer happens; kept only so the compiled-out legacy
-    /// download code still type-checks. Always nil. Removed in phase 3.
-    public var lastResolvedMedia: ResolvedMedia? { nil }
-
     public var onProgress: (@MainActor (TimeInterval) -> Void)?
     public var onNowPlayingChanged: (@MainActor () -> Void)?
     public var nowPlayingTitle: String?

@@ -114,3 +114,11 @@ Branch `chore/remove-app-download-stack`:
   Settings "Downloads" storage section, which reports leftover files.
 - The core package still contains the extraction and download types. They are now unused by the app and
   will be deleted in the next PR.
+
+## Update 2026-10-16 — phase 3: core extraction and download planning removed (ADR-0007)
+Branch `chore/remove-core-extraction` (stacked on the app-removal PR) deletes these core types and their tests:
+`MediaExtracting`, `ResolvedMedia`/`MediaStream`, `MediaStreamFilter`, `AdaptiveSelection`, `ExtractionError`,
+`DownloadQuality`, `DownloadQualityPicker`, `DownloadPlanner`, `DownloadCoordinator`, `DownloadReconciler`,
+`DownloadRetryPolicy` and `StorageEstimator`. Kept for now, because the persisted `DownloadRecord`/library
+index still needs them: `DownloadTask`/`DownloadState`/`DownloadQueue`/`DownloadTransport` (`FileManaging`) and
+`OfflineLibraryPolicy`. Linux `swift test`: 109/109 pass.
