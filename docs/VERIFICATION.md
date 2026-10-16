@@ -55,3 +55,4 @@ Rule: nothing WebKit-related is marked verified until macOS CI builds/tests it o
 | App target compiles with the IFrame switch-over, and UI journeys pass with `FixturePlayerEngine` | — | ❌ Pending macOS iOS CI (PR for `feat/iframe-playback-switch`) |
 | Real IFrame playback on device | — | ❌ Unverified |
 | App builds and tests pass without YouTubeKit or the download stack | — | ❌ Pending macOS iOS CI (`chore/remove-app-download-stack`) |
+| Core with extraction/download planning removed | Linux `swift build` + `swift test` 109/109 (`chore/remove-core-extraction`) | ✅ Linux; app side pending macOS CI |

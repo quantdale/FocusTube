@@ -48,7 +48,5 @@ final class DownloadQueuePolicyTests: XCTestCase {
         // The degraded failure class exists specifically so unusable persisted
         // queue rows surface an actionable typed state instead of a generic one.
         XCTAssertNotEqual(DownloadError.queueStateCorrupted, .interrupted)
-        // Corrupted queue state is not auto-retried; recovery is user-driven.
-        XCTAssertFalse(DownloadRetryPolicy.default.isRetryable(.queueStateCorrupted))
     }
 }
