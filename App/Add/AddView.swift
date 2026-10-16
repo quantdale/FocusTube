@@ -13,6 +13,9 @@ struct AddView: View {
     @State private var message: String?
     @State private var isWorking = false
     @State private var query = ""
+    @FocusState private var focusedField: Field?
+
+    private enum Field { case link, search }
 
     var body: some View {
         List {
@@ -23,6 +26,7 @@ struct AddView: View {
                     .keyboardType(.URL)
                     .submitLabel(.go)
                     .onSubmit { submit() }
+                    .focused($focusedField, equals: .link)
                     .accessibilityIdentifier("add-link-field")
                 HStack {
                     Button("Paste") {
@@ -50,6 +54,7 @@ struct AddView: View {
 
             Section("Search your library") {
                 TextField("Search saved, history and feed", text: $query)
+                    .focused($focusedField, equals: .search)
                     .accessibilityIdentifier("local-search-field")
                 ForEach(model.localSearch(query)) { video in
                     Button { onOpen(video) } label: { VideoCard(video: video) }
@@ -58,10 +63,14 @@ struct AddView: View {
                 }
             }
         }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Add")
     }
 
     private func submit() {
+        // Release the keyboard on submit so it never hides the tab bar after
+        // a link is added (it previously stayed up and swallowed tab taps).
+        focusedField = nil
         let text = linkText
         message = nil
         let link: YouTubeLink

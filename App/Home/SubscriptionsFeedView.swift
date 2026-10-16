@@ -39,5 +39,8 @@ struct SubscriptionsFeedView: View {
         }
         .navigationTitle("Home")
         .task { await model.refresh() }
+        .onChange(of: model.library.subscriptions.map(\.channelID.rawValue)) {
+            Task { await model.refresh() }
+        }
     }
 }

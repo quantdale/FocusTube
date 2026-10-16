@@ -16,9 +16,6 @@ configs:
 packages:
   FocusTubeCore:
     path: .
-  GoogleSignIn:
-    url: https://github.com/google/GoogleSignIn-iOS.git
-    exactVersion: 9.0.0
 
 settings:
   base:
@@ -62,10 +59,6 @@ targets:
       Release: Config/Release.xcconfig
     dependencies:
       - package: FocusTubeCore
-      - package: GoogleSignIn
-        product: GoogleSignIn
-      - package: GoogleSignIn
-        product: GoogleSignInSwift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quantdale.FocusTube
