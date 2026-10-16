@@ -40,3 +40,14 @@ The Node 20 deprecation was the only remaining CI warning; it was fixed by the a
 - PR #4 (`7e650e0`): Core ✅ and iOS CI ✅ (run 38797704060).
 
 This is the **current qualified baseline**. Device Batch A (A1–A14) should target `23b0d2f` or newer.
+
+## Compliance migration (ADR-0007), 2026-10-16
+| Item | Evidence | Status |
+|------|----------|--------|
+| Core IFrame controller / bridge parsing / command JS / embed HTML | Linux `swift test` 156/156 (11 new in `IFramePlayerTests`) on branch `feat/iframe-player-core` | ✅ Linux; Core CI on PR #9 pending at time of writing |
+| Embed page actually loads the IFrame API in WKWebView | — | ❌ **Unverified** (no WebKit on Linux) |
+| JS→Swift bridge round-trip (`messageHandlers.focustube`) | — | ❌ **Unverified** until macOS CI/device runs it |
+| Inline playback, autoplay without gesture, fullscreen/rotation | — | ❌ **Unverified** (device only) |
+| PiP / lock screen / background behavior under IFrame | — | ❌ **Unverified**; expected unsupported (ADR-0007) |
+| iOS target compiles without YouTubeKit | — | ❌ Not attempted yet (phase 3) |
+Rule: nothing WebKit-related is marked verified until macOS CI builds/tests it or a device runs it.
