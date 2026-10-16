@@ -18,7 +18,7 @@
 | iOS CI 32891558884 | 7a70943 (qualified) | ✅ per checkpoint (20/20 journeys, 141 unit tests) |
 
 ## Not verified (owner/macOS)
-Real OAuth, Data API mutations, live YouTubeKit extraction, background
+(Superseded by ADR-0007/0008: no OAuth, Data API or extraction.) Background
 URLSession under suspension, PiP, lock screen, headset, and storage
 reclamation.
 
@@ -56,3 +56,10 @@ Rule: nothing WebKit-related is marked verified until macOS CI builds/tests it o
 | Real IFrame playback on device | — | ❌ Unverified |
 | App builds and tests pass without YouTubeKit or the download stack | — | ❌ Pending macOS iOS CI (`chore/remove-app-download-stack`) |
 | Core with extraction/download planning removed | Linux `swift build` + `swift test` 109/109 (`chore/remove-core-extraction`) | ✅ Linux; app side pending macOS CI |
+
+## ADR-0008 (no Google Cloud), 2026-10-16
+| Item | Status |
+|------|--------|
+| Link parser, Atom parser, oEmbed decoding, local library policies, feed aggregator | Linux unit tests (see each PR) |
+| Live fetch of `feeds/videos.xml` and `oembed` from the app | ❌ Unverified until device. CI uses fixtures only |
+| Add tab, local feed and video page in the app | ❌ Pending macOS CI, then device |
