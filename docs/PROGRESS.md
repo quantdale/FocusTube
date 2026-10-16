@@ -64,3 +64,13 @@ places batch results by index (`fetchDetailBatchesConcurrently`).
 
 ## Update 2026-10-16 — final agent audit
 Everything in item 5 is closed. CI warnings were fixed in PR #4, and `aws/tap` plus the `fatalError` were handled by decision in PR #6. The adapter dirs are kept by decision (DECISIONS, P4). `.agent/STATE.yaml` `repo_baseline` and `resume_token` now point at the qualified `23b0d2f`. The remaining work is owner-only: M1, M2, M4, M5.
+
+## Update 2026-10-16 — compliance migration started (ADR-0007, P-C)
+- ADR-0007 accepted: official YouTube IFrame Player in WKWebView replaces YouTubeKit +
+  AVPlayer; offline downloads are removed (compiled out behind `FOCUSTUBE_LEGACY_DOWNLOADS`,
+  off, during the transition; then deleted).
+- Phase 1b (PR #9): core `PlayerEngine` protocol, `IFramePlayerCommand`,
+  `IFrameBridgeMessage`, `IFramePlayerController`, `IFrameEmbedPage`, `YouTubeVideoID`
+  with 11 unit tests. Linux `swift test`: 156/156 pass.
+- Not started: phase 2 (iOS WebKit engine and switch-over), phase 3 (deletions), phase 4
+  (device). The app still plays via YouTubeKit on `main` until phase 2 merges.

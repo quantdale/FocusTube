@@ -39,3 +39,22 @@ fixed path, so they can't be merged into one directory without breaking discover
 (symlinks are unreliable on the Windows authoring host). All four already defer to the
 one canonical source: root `AGENTS.md` plus `.agent/` (the fifth dir). Rule: change the
 behavior in `.agent/`; edit a shim only if its pointer text changes.
+
+## 2026-10-16 — ADR-0007: official IFrame player; offline downloads removed (compliance)
+Full text: [`docs/adr/0007-official-iframe-player.md`](adr/0007-official-iframe-player.md).
+Supersedes ADR-0002, ADR-0004 and ADR-0006.
+- Playback moves from YouTubeKit stream extraction + AVPlayer to the official YouTube
+  IFrame Player API in a `WKWebView` (youtube-nocookie host, `playsinline=1`,
+  `enablejsapi=1`). Reason: extraction and downloading violate the YouTube API ToS and
+  App Store guideline 5.2.3; Michael's hard limit is ToS/App Store compliance.
+- Core gets a platform-independent `PlayerEngine` protocol plus an IFrame command/bridge/state
+  machine (Linux-tested). WebKit stays in the iOS target behind the protocol.
+- **Offline downloads are removed, not kept.** There is no compliant way to download.
+  For the transition only, download UI is compiled out behind `FOCUSTUBE_LEGACY_DOWNLOADS`
+  (off by default, never set for shipped builds) so the deletion can land in small,
+  CI-verified PRs; phase 3 deletes the code and the flag.
+- Accepted losses: background audio (dropped), our PiP and lock-screen/remote-command
+  integration (unsupported until a device shows WebKit behavior), the Downloads tab and the
+  quality picker.
+- Migration: 1a docs, 1b core, 2 iOS engine + switch-over, 3 deletions + YouTubeKit removal,
+  4 device validation. See the ADR table.

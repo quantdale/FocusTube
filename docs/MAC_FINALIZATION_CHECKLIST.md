@@ -7,7 +7,7 @@ Prerequisite: B1 is fixed and CI is green on the new tip. Use that SHA, not
 - [ ] Xcode 26.x (26.6 preferred) with an iOS 17+ SDK; `xcode-select` points at it
 - [ ] `brew install xcodegen` (>= 2.46.0)
 - [ ] `swift test` passes on the Mac (repeat the flaky test about 20 times)
-- [ ] `xcodegen generate` → open `FocusTube.xcodeproj`; packages resolve (YouTubeKit 0.4.8, GoogleSignIn 9.0.0)
+- [ ] `xcodegen generate` → open `FocusTube.xcodeproj`; packages resolve (GoogleSignIn 9.0.0; YouTubeKit 0.4.8 only until ADR-0007 phase 3 removes it)
 - [ ] Build Debug and Release for the Simulator; run FocusTubeTests and FocusTubeUITests (expect 20/20 journeys)
 
 ## Signing and secrets (never commit)
@@ -27,3 +27,11 @@ Prerequisite: B1 is fixed and CI is green on the new tip. Use that SHA, not
 ## CI
 - [ ] Dispatch `ios-ci.yml` with `live_smoke=true` once and record the run ID
 - [ ] Update `.agent/STATE.yaml` with the evidence (owner or agent, after observing it)
+
+## Compliance migration (ADR-0007) — after phase 2 merges
+- [ ] Video plays inline in the embedded IFrame player (youtube-nocookie), no extraction
+- [ ] Play/pause/seek from our controls reach the player; progress updates
+- [ ] A video with embedding disabled shows the "can't play here" error (codes 101/150), with an "Open in YouTube" option
+- [ ] Fullscreen and rotation work
+- [ ] Record (don't require) PiP, lock-screen and background behavior; A8, A9, A14 (downloads) are retired
+- [ ] Release build has no Downloads tab or quality picker (`FOCUSTUBE_LEGACY_DOWNLOADS` unset)
