@@ -146,3 +146,8 @@ and `SubscriptionsFeedView` (pull-to-refresh). Watch history and Watch Later sta
 - Video page rebuilt on feed/oEmbed metadata; player duration ≤180 s feeds the Shorts firewall and blocks playback.
 - UI-test fixtures/journeys rewritten for scenarios empty, home-loaded, home-network-error, video-page, library-seeded, add-flow.
 - Secrets example trimmed to DEVELOPMENT_TEAM only.
+
+## 2026-10-16 — Core cleanup (ADR-0008)
+- Deleted core Data API client and models (YouTubeAPI, YouTubeDataClient, playlists, ratings, account actions), comments, SearchService, HomeFeedAggregator, offline/download types and their tests. `FileManaging` kept (moved to Support/) for LibraryStore.
+- README dependency and policy notes rewritten for IFrame + public feeds/oEmbed.
+- Follow-ups: app SwiftData `DownloadedMedia` model removal needs a schema-migration PR; docs/00-PRODUCT-SPEC and 01-ARCHITECTURE still describe downloads/Data API and need a rewrite.

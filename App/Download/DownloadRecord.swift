@@ -1,12 +1,9 @@
 import Foundation
 import SwiftData
-import os
-import FocusTubeCore
 
-/// SwiftData-persisted download record. Mirrors the deterministic `DownloadTask`
-/// so metadata survives relaunch and reconciles with filesystem reality. The
-/// component list is persisted so an interrupted download can be retried after a
-/// process relaunch even though the in-memory coordinator state is gone.
+/// Legacy SwiftData download record (ADR-0007 removed downloads). Kept only so
+/// existing on-device stores keep opening with the same schema; nothing writes
+/// it anymore. Remove together with `DownloadedMedia` in a migration PR.
 @Model
 final class DownloadRecord {
     @Attribute(.unique) var id: String
@@ -38,89 +35,15 @@ final class DownloadRecord {
     /// behavior.
     var plannedDurationSeconds: Double?
 
-    init(task: DownloadTask) {
-        self.id = task.id
-        self.videoID = task.videoID
-        self.resolution = task.resolution
-        self.destinationURL = task.destinationURL
-        self.statusRaw = task.state.status.rawValue
-        self.bytesDownloaded = task.state.bytesDownloaded
-        self.totalBytes = task.state.totalBytes
-        self.errorRaw = task.state.error?.rawValue
+    init(id: String, videoID: String, resolution: Int, destinationURL: URL, statusRaw: String) {
+        self.id = id
+        self.videoID = videoID
+        self.resolution = resolution
+        self.destinationURL = destinationURL
+        self.statusRaw = statusRaw
+        self.bytesDownloaded = 0
+        self.totalBytes = 0
         self.createdAt = Date()
-        self.componentsData = (try? Self.coder.encode(task.components)) ?? Data()
+        self.componentsData = Data()
     }
-
-    /// Shared component-payload coders. Allocation used to happen on every
-    /// projection pass (`records` maps every persisted row through
-    /// `downloadTask` → `components`), so each enqueue paid one decoder
-    /// allocation per lifetime download row. All call sites are main-actor
-    /// composition paths, so sharing is race-free in practice;
-    /// `nonisolated(unsafe)` mirrors the documented APIDate pattern.
-    private nonisolated(unsafe) static let coder = JSONEncoder()
-    private nonisolated(unsafe) static let decoder = JSONDecoder()
-
-    /// Degrades to an empty list on an undecodable payload (e.g. schema drift
-    /// after an app update), but logs the failure instead of swallowing it.
-    /// The payload itself is never logged — component JSON contains source URLs.
-    var components: [DownloadComponent] {
-        do {
-            return try Self.decoder.decode([DownloadComponent].self, from: componentsData)
-        } catch {
-            Self.logger.error("Components decode failed (\(error.localizedDescription)); treating as empty")
-            return []
-        }
-    }
-
-    var downloadTask: DownloadTask {
-        let status = DownloadStatus(rawValue: statusRaw) ?? .failed
-        let error = errorRaw.flatMap { DownloadError(rawValue: $0) }
-        var state = DownloadState(status: status)
-        state.error = error
-        state.bytesDownloaded = bytesDownloaded
-        state.totalBytes = totalBytes
-        return DownloadTask(
-            id: id,
-            videoID: videoID,
-            resolution: resolution,
-            destinationURL: destinationURL,
-            components: components,
-            state: state
-        )
-    }
-
-    func apply(_ task: DownloadTask) {
-        self.statusRaw = task.state.status.rawValue
-        self.errorRaw = task.state.error?.rawValue
-        self.bytesDownloaded = task.state.bytesDownloaded
-        self.totalBytes = task.state.totalBytes
-    }
-
-    /// Stores user-facing presentation metadata; status/progress fields are
-    /// untouched so state-machine events can never clobber it.
-    func applyPresentationMetadata(title: String, channelTitle: String) {
-        self.title = title
-        self.channelTitle = channelTitle
-    }
-
-
-
-    /// Decodes the durable queue payload; nil when absent (legacy row) or
-    /// undecodable (schema drift). The failure is logged, never fatal — the
-    /// restore path synthesizes an equivalent payload from the row fields.
-    var queuedMetadata: QueuedDownloadMetadata? {
-        guard let data = queuedMetadataData else { return nil }
-        do {
-            return try Self.decoder.decode(QueuedDownloadMetadata.self, from: data)
-        } catch {
-            Self.logger.error("Queued metadata decode failed (\(error.localizedDescription)); treating as legacy")
-            return nil
-        }
-    }
-
-    func applyQueuedMetadata(_ metadata: QueuedDownloadMetadata) {
-        self.queuedMetadataData = try? Self.coder.encode(metadata)
-    }
-
-    private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "download-record")
 }

@@ -66,3 +66,4 @@ Rule: nothing WebKit-related is marked verified until macOS CI builds/tests it o
 
 ## W2 local-first app switch (2026-10-16)
 - Linux: core `swift build` + `swift test` pass. iOS app/UI journeys verified only by GitHub iOS CI (Linux cannot build the app).
+- Core cleanup: Linux `swift build` + `swift test` pass (42 tests) after removing Data API/comments/download types.
