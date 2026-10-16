@@ -1,11 +1,10 @@
 import UIKit
-import GoogleSignIn
 import FocusTubeCore
 
 /// Minimal UIKit app delegate so the system can wake FocusTube when a
 /// background `URLSession` finishes transferring while the app is suspended, and
 /// hand back the completion handler the system expects once all events are
-/// delivered. Also routes Google's OAuth redirect back into GoogleSignIn.
+/// delivered.
 final class FocusTubeAppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
@@ -15,13 +14,5 @@ final class FocusTubeAppDelegate: NSObject, UIApplicationDelegate {
         // ADR-0007: downloads were removed; a leftover background session
         // from an older build is acknowledged immediately.
         completionHandler()
-    }
-
-    func application(
-        _ app: UIApplication,
-        open url: URL,
-        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
-    ) -> Bool {
-        GIDSignIn.sharedInstance.handle(url)
     }
 }

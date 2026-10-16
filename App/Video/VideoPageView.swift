@@ -1,125 +1,64 @@
 import SwiftUI
 import FocusTubeCore
 
-/// Production video page: official IFrame player (ADR-0007),
-/// comments with posting/replies, supported account actions with truthful
-/// server-backed state, and offline-library registration. All data is fetched
-/// live; failures degrade gracefully without leaking short-form content.
+/// ADR-0008 video page: official IFrame player (ADR-0007), metadata from the
+/// feed/oEmbed, local Watch Later and local subscribe, share and Open in
+/// YouTube. No comments, ratings or account actions (no Google account).
 struct VideoPageView: View {
     let video: VideoSummary
     @Bindable var coordinator: PlayerCoordinator
-    let auth: AuthSession
-    let api: YouTubeAPI
     let library: LibraryStore
+    let localLibrary: LocalLibraryModel
 
-    @State private var comments: [Comment] = []
-    @State private var commentsDisabled = false
-    @State private var commentsError: YouTubeAPIError?
-    @State private var isLoadingComments = false
     @State private var isSaved = false
-
-    // DDV2-04: account-action + composer state.
-    @State private var ratingState: VideoRatingState?
-    @State private var subscriptionLookup: SubscriptionLookup?
-    @State private var didLoadSubscriptionState = false
-    @State private var isTogglingLike = false
-    @State private var isTogglingSubscribe = false
-    @State private var accountActionError: YouTubeAPIError?
-    @State private var composerText = ""
-    @State private var replyTarget: Comment?
-    /// HB-026: per-target composer drafts. Switching reply targets (or
-    /// returning to top-level) preserves what the user typed instead of
-    /// silently destroying it; drafts clear only on successful submit.
-    @State private var composerDrafts: [String: String] = [:]
-    /// HB-029: controlled error when the id cannot form a shareable URL.
-    @State private var shareErrorShown = false
-    @State private var isSubmittingComment = false
-    @State private var addingToPlaylistIDs: Set<String> = []
     @State private var isDescriptionExpanded = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var channelTitle: String?
+    @State private var blockedAsShort = false
+    @Environment(\.openURL) private var openURL
 
-    private var commentsService: CommentsService { CommentsService(api: api) }
-    private var accountActions: AccountActionsService { AccountActionsService(api: api) }
+    private var channelID: YouTubeChannelID? { video.channelID.flatMap(YouTubeChannelID.init) }
+    private var watchURL: URL? {
+        YouTubeVideoID(video.id).flatMap { URL(string: "https://www.youtube.com/watch?v=\($0.rawValue)") }
+    }
+    private var knownDuration: Int? {
+        let d = coordinator.engineState.duration
+        return d > 0 ? Int(d.rounded()) : video.durationSeconds
+    }
 
     var body: some View {
-        // A bounded detail page uses a plain scroll view: List laziness only
-        // materializes near-viewport rows on current iOS runtimes, which made
-        // below-the-fold controls intermittently absent from both the
-        // accessibility hierarchy and XCUITest queries.
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if blockedAsShort {
+                    ContentUnavailableView(
+                        "Short video blocked",
+                        systemImage: "hand.raised",
+                        description: Text("FocusTube hides videos of 3 minutes or less.")
+                    )
+                    .frame(height: 240)
+                    .accessibilityIdentifier("short-blocked")
+                } else {
                     PlayerView(coordinator: coordinator)
                         .frame(maxWidth: .infinity)
                         .frame(height: 240)
-
-                    metadataHeader
-                    actionRow
-
-
-                    Divider()
-
-                    descriptionSection
-
-                    Divider()
-
-                    commentsSection
-                        .id("comments-section")
                 }
-            }
-            .onChange(of: replyTarget?.id) { oldID, newID in
-                // HB-026: park the draft under the OLD target and restore the
-                // new target's parked draft (nil = top-level composer).
-                if let oldID {
-                    composerDrafts[Self.draftKey(for: oldID)] = composerText
-                } else {
-                    composerDrafts[Self.topLevelDraftKey] = composerText
-                }
-                let restoredKey = newID.map { Self.draftKey(for: $0) } ?? Self.topLevelDraftKey
-                composerText = composerDrafts[restoredKey] ?? ""
-                // Tapping Reply must bring the composer to the user, wherever
-                // the page is currently scrolled: reply context without a
-                // visible composer reads as a dead tap.
-                guard replyTarget != nil else { return }
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo("comments-section", anchor: .top)
-                }
+                metadataHeader
+                actionRow
+                Divider()
+                descriptionSection
             }
         }
         .navigationTitle("Video")
         .navigationBarTitleDisplayMode(.inline)
-        .alert(
-            "Can't share this video",
-            isPresented: $shareErrorShown
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("The video link couldn't be built from its identifier, so sharing is unavailable.")
-        }
-        .alert(
-            "Couldn't complete action",
-            isPresented: Binding(
-                get: { accountActionError != nil },
-                set: { if !$0 { accountActionError = nil } }
-            ),
-            presenting: accountActionError
-        ) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { error in
-            Text(accountErrorLabel(error))
-        }
         .task {
-            // Register callbacks and Now Playing metadata before playback
-            // starts so early progress ticks and state transitions are not
-            // missed by late registration.
             coordinator.onProgress = { seconds in
+                let duration = coordinator.engineState.duration > 0 ? Int(coordinator.engineState.duration.rounded()) : video.durationSeconds
                 Task {
                     await library.recordProgress(
                         videoID: video.id,
                         title: video.title,
-                        channelTitle: video.channelTitle,
+                        channelTitle: displayChannel,
                         position: seconds,
-                        duration: video.durationSeconds,
+                        duration: duration,
                         completed: false,
                         publishedAt: video.publishedAt,
                         thumbnailURL: video.thumbnailURL?.absoluteString,
@@ -131,42 +70,38 @@ struct VideoPageView: View {
             coordinator.nowPlayingTitle = video.title
             coordinator.nowPlayingArtist = video.channelTitle
             isSaved = library.isSaved(videoID: video.id)
-            await coordinator.loadAndPlay(
-                videoID: video.id,
-                resumeAt: library.resumePosition(for: video.id)
-            )
-            await loadComments()
-            await loadAccountState()
+            await coordinator.loadAndPlay(videoID: video.id, resumeAt: library.resumePosition(for: video.id))
+            if video.channelTitle.isEmpty, let id = YouTubeVideoID(video.id) {
+                channelTitle = await localLibrary.metadata(for: id)?.authorName
+            }
         }
-        .onDisappear {
-            // Sheet dismissal must stop this page from recording watch-history
-            // rows under its video ID — e.g. when local playback from Downloads
-            // reuses the shared coordinator afterwards.
-            coordinator.onProgress = nil
+        .onChange(of: coordinator.engineState.duration) { _, duration in
+            guard duration > 0 else { return }
+            Task { await localLibrary.learnDuration(videoID: video.id, seconds: duration) }
+            // ADR-0008 Shorts rule d: a duration ≤180 s learned from the player blocks playback.
+            if ShortFormPolicy().isBlocked(durationSeconds: Int(duration.rounded())) {
+                coordinator.stop()
+                blockedAsShort = true
+            }
         }
+        .onDisappear { coordinator.onProgress = nil }
     }
 
-    // MARK: - Metadata
+    private var displayChannel: String { channelTitle ?? video.channelTitle }
 
-    /// Compact title + channel/duration line directly under the player. The
-    /// long-form description is deliberately demoted below the primary actions
-    /// (DDV2-08): interactions belong in the first viewport, not behind a wall
-    /// of text.
     private var metadataHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(video.title).font(.headline)
                 .accessibilityIdentifier("video-title")
             HStack(spacing: 8) {
-                Text(video.channelTitle)
+                Text(displayChannel)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("video-channel")
-                if let published = video.publishedAt {
-                    Text(Self.publishedLabel(published))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if let published = VideoCard.relativePublished(video.publishedAt) {
+                    Text(published).font(.caption).foregroundStyle(.secondary)
                 }
-                if let duration = VideoCard.durationText(video.durationSeconds) {
+                if let duration = VideoCard.durationText(knownDuration) {
                     Text(duration)
                         .font(.caption2.monospaced())
                         .padding(.horizontal, 5)
@@ -181,567 +116,79 @@ struct VideoPageView: View {
         .padding(.top, 12)
     }
 
-    /// Collapsible long-form description, demoted below the primary actions.
-    private var descriptionSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            descriptionBlock
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal)
-        .padding(.top, 12)
-    }
-
-    @ViewBuilder
-    private var descriptionBlock: some View {
-        if let description = video.description?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
-            Text(description)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .lineLimit(isDescriptionExpanded ? nil : 2)
-                .padding(.top, 2)
-            Button(isDescriptionExpanded ? "Less" : "More") {
-                if reduceMotion {
-                    isDescriptionExpanded.toggle()
-                } else {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isDescriptionExpanded.toggle()
-                    }
-                }
-            }
-            .font(.caption.weight(.medium))
-            // HB-029: caption-styled text buttons still need a 44pt target.
-            .frame(minHeight: 44, alignment: .leading)
-            .accessibilityIdentifier("description-toggle")
-        }
-    }
-
-    // MARK: - Action row
-
     private var actionRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                saveButton
-                likeButton
-                subscribeButton
-                shareButton
-                moreMenu
+                Button {
+                    if isSaved {
+                        library.removeSaved(videoID: video.id)
+                    } else {
+                        library.save(videoID: video.id, title: video.title, channelTitle: displayChannel,
+                                     durationSeconds: knownDuration, publishedAt: video.publishedAt,
+                                     thumbnailURL: video.thumbnailURL?.absoluteString, channelID: video.channelID,
+                                     videoDescription: video.description)
+                    }
+                    isSaved = library.isSaved(videoID: video.id)
+                } label: {
+                    Label(isSaved ? "Saved" : "Watch later", systemImage: isSaved ? "clock.fill" : "clock")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("save-toggle")
+                .accessibilityLabel(isSaved ? "Remove from saved" : "Save video")
+
+                if let channelID {
+                    let subscribed = localLibrary.isSubscribed(channelID)
+                    Button {
+                        Task {
+                            if subscribed { await localLibrary.unsubscribe(channelID) }
+                            else { await localLibrary.subscribe(channelID, title: displayChannel) }
+                        }
+                    } label: {
+                        Label(subscribed ? "Subscribed" : "Subscribe", systemImage: subscribed ? "bell.fill" : "bell")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("subscribe-toggle")
+                }
+
+                if let watchURL {
+                    ShareLink(item: watchURL, subject: Text(video.title)) {
+                        Label("Share", systemImage: "square.and.arrow.up").labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("share-button")
+
+                    Button {
+                        openURL(watchURL)
+                    } label: {
+                        Label("Open in YouTube", systemImage: "arrow.up.right.square").labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("open-in-youtube")
+                }
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
         }
-        .accessibilityElement(children: .contain)
-    }
-
-    private var saveButton: some View {
-        Button {
-            if isSaved {
-                library.removeSaved(videoID: video.id)
-                isSaved = false
-            } else {
-                library.save(
-                    videoID: video.id,
-                    title: video.title,
-                    channelTitle: video.channelTitle,
-                    durationSeconds: video.durationSeconds,
-                    publishedAt: video.publishedAt,
-                    thumbnailURL: video.thumbnailURL?.absoluteString,
-                    channelID: video.channelID,
-                    videoDescription: video.description
-                )
-                isSaved = true
-            }
-        } label: {
-            Label(
-                isSaved ? "Saved" : "Save",
-                systemImage: isSaved ? "bookmark.fill" : "bookmark"
-            )
-            .labelStyle(.titleAndIcon)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityLabel(isSaved ? "Remove from saved" : "Save video")
-        .accessibilityIdentifier("save-toggle")
-    }
-
-    private var likeButton: some View {
-        Button {
-            Task { await toggleLike() }
-        } label: {
-            Label(
-                ratingState == .like ? "Liked" : "Like",
-                systemImage: ratingState == .like ? "hand.thumbsup.fill" : "hand.thumbsup"
-            )
-            .labelStyle(.titleAndIcon)
-        }
-        .buttonStyle(.bordered)
-        .disabled(isTogglingLike)
-        .accessibilityIdentifier("like-toggle")
-        .accessibilityHint(ratingState == .like ? "Removes your rating" : "Rates this video positively")
     }
 
     @ViewBuilder
-    private var subscribeButton: some View {
-        // State comes from an authoritative subscriptions.list lookup, never
-        // from prior taps. Requires the channel resource id from hydration.
-        if let channelID = video.channelID {
-            let subscribed = subscriptionLookup != nil
-            Button {
-                Task { await toggleSubscription(channelID: channelID) }
-            } label: {
-                Label(
-                    subscribed ? "Subscribed" : "Subscribe",
-                    systemImage: subscribed ? "bell.fill" : "bell"
-                )
-                .labelStyle(.titleAndIcon)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!didLoadSubscriptionState || isTogglingSubscribe)
-            .accessibilityIdentifier("subscribe-toggle")
-            .accessibilityHint(subscribed ? "Unsubscribes from this channel" : "Subscribes to this channel")
-        }
-    }
-
-    private var shareButton: some View {
-        Group {
-            if let shareURL {
-                ShareLink(item: shareURL, subject: Text(video.title)) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .labelStyle(.titleAndIcon)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("share-button")
-            } else {
-                // HB-029: malformed ids surface a controlled error instead of
-                // sharing file:/// garbage.
-                Button {
-                    shareErrorShown = true
-                } label: {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .labelStyle(.titleAndIcon)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("share-button")
-            }
-        }
-    }
-
-    /// A well-formed watch URL exists only for valid YouTube id shapes.
-    private var shareURL: URL? {
-        guard DownloadRequest.isValidVideoID(video.id) else { return nil }
-        return URL(string: "https://youtu.be/\(video.id)")
-    }
-
-    @State private var showPlaylistPicker = false
-    @State private var playlistsForPicker: [PlaylistSummary]?
-    @State private var playlistsForPickerError: String?
-    @State private var playlistPickStatus: String?
-
-    /// Bounded extra actions: explicit save-to-playlist (quota-costing writes
-    /// only run on an explicit user choice of target playlist).
-    private var moreMenu: some View {
-        Menu {
-            Button {
-                playlistPickStatus = nil
-                playlistsForPickerError = nil
-                showPlaylistPicker = true
-                if playlistsForPicker == nil {
-                    Task { await loadPlaylistsForPicker() }
-                }
-            } label: {
-                Label("Save to playlist…", systemImage: "plus.rectangle.on.folder")
-            }
-        } label: {
-            Label("More", systemImage: "ellipsis.circle")
-                .labelStyle(.titleAndIcon)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("more-actions-button")
-        .sheet(isPresented: $showPlaylistPicker) {
-            NavigationStack {
-                List {
-                    if let status = playlistPickStatus {
-                        Text(status)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    switch playlistsForPicker {
-                    case .none:
-                        ProgressView()
-                    case .some(let playlists):
-                        ForEach(playlists, id: \.id) { playlist in
-                            Button {
-                                Task { await addTo(playlist) }
-                            } label: {
-                                HStack {
-                                    Text(playlist.title)
-                                    Spacer()
-                                    if addingToPlaylistIDs.contains(playlist.id) {
-                                        ProgressView()
-                                    }
-                                }
-                            }
-                            .disabled(addingToPlaylistIDs.contains(playlist.id))
-                            .accessibilityIdentifier("playlist-pick-\(playlist.id)")
-                        }
-                    }
-                    if let error = playlistsForPickerError {
-                        Text(error).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .navigationTitle("Save to playlist")
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { showPlaylistPicker = false }
-                    }
-                }
-            }
-            .presentationDetents([.medium])
-        }
-    }
-
-    private func loadPlaylistsForPicker() async {
-        guard let token = await auth.accessToken() else {
-            playlistsForPickerError = "Sign in to use your playlists."
-            playlistsForPicker = []
-            return
-        }
-        do {
-            playlistsForPicker = try await accountActions.playlists(accessToken: token)
-        } catch {
-            playlistsForPickerError = "Couldn't load playlists."
-            playlistsForPicker = []
-        }
-    }
-
-    private func addTo(_ playlist: PlaylistSummary) async {
-        // Duplicate-submit guard runs BEFORE any await: YouTube permits the
-        // same video twice in one playlist, so an ungated double-tap would
-        // create real duplicate server state.
-        guard !addingToPlaylistIDs.contains(playlist.id) else { return }
-        addingToPlaylistIDs.insert(playlist.id)
-        defer { addingToPlaylistIDs.remove(playlist.id) }
-        guard let token = await auth.accessToken() else {
-            accountActionError = .unauthorized
-            return
-        }
-        do {
-            try await accountActions.addToPlaylist(playlistID: playlist.id, videoID: video.id, accessToken: token)
-            playlistPickStatus = "Added to \(playlist.title)."
-        } catch let error as YouTubeAPIError {
-            accountActionError = error
-        } catch {
-            accountActionError = .network
-        }
-    }
-
-    // MARK: - Comments
-
-    private var commentsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Comments")
-                .font(.headline)
-
-            if !commentsDisabled {
-                composer
-            }
-
-            if commentsDisabled {
-                Text("Comments are disabled for this video.")
+    private var descriptionSection: some View {
+        if let description = video.description?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(description)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
-            } else if isLoadingComments {
-                ProgressView()
-            } else if let commentsError {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(commentsErrorLabel(commentsError), systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                    Button("Retry") {
-                        Task { await loadComments() }
-                    }
-                }
-            } else {
-                ForEach(comments) { comment in
-                    commentBlock(comment)
-                }
-                if comments.isEmpty {
-                    Text("No comments yet.")
-                        .foregroundStyle(.secondary)
-                }
+                    .lineLimit(isDescriptionExpanded ? nil : 3)
+                Button(isDescriptionExpanded ? "Less" : "More") { isDescriptionExpanded.toggle() }
+                    .font(.caption.weight(.medium))
+                    .frame(minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("description-toggle")
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal)
-        .padding(.vertical, 12)
-        .padding(.bottom, 24)
-    }
-
-    private var composer: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let target = replyTarget {
-                HStack {
-                    Text("Replying to \(target.author)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("Cancel") {
-                        // Draft is parked by onChange when the target clears;
-                        // nothing is destroyed here.
-                        replyTarget = nil
-                    }
-                    .font(.caption)
-                    .frame(minHeight: 44)
-                }
-            }
-            HStack {
-                TextField(replyTarget == nil ? "Add a comment…" : "Add a reply…", text: $composerText, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-                    .disabled(isSubmittingComment)
-                    .accessibilityIdentifier("comment-composer-field")
-                Button {
-                    Task { await submitComment() }
-                } label: {
-                    if isSubmittingComment {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "paperplane.fill")
-                    }
-                }
-                .frame(minWidth: 44, minHeight: 44)
-                .disabled(isSubmittingComment || composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityLabel(replyTarget == nil ? "Post comment" : "Post reply")
-                .accessibilityIdentifier("comment-submit")
-            }
-        }
-    }
-
-    private func commentBlock(_ comment: Comment) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(comment.author).font(.caption.bold())
-            Text(comment.text)
-            Button("Reply") {
-                // Draft for the incoming target is restored by onChange;
-                // the current text is parked, never discarded.
-                replyTarget = comment
-            }
-            .font(.caption)
-            .frame(minHeight: 44)
-            .accessibilityIdentifier("reply-button-\(comment.id)")
-            ForEach(comment.replies) { reply in
-                Text("↳ \(reply.author): \(reply.text)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 12)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 4)
-    }
-
-    // MARK: - Data loading
-
-    private func loadComments() async {
-        guard let token = await auth.accessToken() else {
-            // Signed out: surface the authored degraded state instead of the
-            // fabricated "No comments yet." empty state.
-            commentsError = .unauthorized
-            return
-        }
-        isLoadingComments = true
-        commentsError = nil
-        defer { isLoadingComments = false }
-        do {
-            let page = try await commentsService.comments(videoID: video.id, accessToken: token)
-            comments = page.comments
-            commentsDisabled = page.commentsDisabled
-        } catch let error as YouTubeAPIError where error == .commentsDisabled {
-            commentsDisabled = true
-        } catch {
-            // Non-disabled failures stay distinguishable from "no comments";
-            // non-API errors (e.g. low-level transport) surface as .network.
-            commentsError = error as? YouTubeAPIError ?? .network
-            commentsDisabled = false
-        }
-    }
-
-    /// Authoritative initial states for like/subscribe (never inferred from
-    /// prior interactions). Silent best-effort: absence of state simply hides
-    /// nothing — buttons stay enabled with neutral labels.
-    private func loadAccountState() async {
-        guard let token = await auth.accessToken() else {
-            // Signed out: keep Subscribe enabled so tapping surfaces the same
-            // "Sign in to use this action." alert as Like — one consistent
-            // degraded-state contract for account actions.
-            didLoadSubscriptionState = true
-            return
-        }
-        async let rating: Void = loadRating(token: token)
-        async let subscription: Void = loadSubscriptionState(token: token)
-        _ = await (rating, subscription)
-    }
-
-    private func loadRating(token: String) async {
-        ratingState = try? await accountActions.ratingState(videoID: video.id, accessToken: token)
-    }
-
-    private func loadSubscriptionState(token: String) async {
-        defer { didLoadSubscriptionState = true }
-        guard let channelID = video.channelID else { return }
-        subscriptionLookup = try? await accountActions.subscriptionState(channelID: channelID, accessToken: token)
-    }
-
-    // MARK: - Account mutations (optimistic with explicit rollback)
-
-    private func toggleLike() async {
-        // Duplicate-submit gate runs BEFORE the first await: while the token
-        // fetch is in flight the button stays tappable, and a late flag would
-        // let double taps enqueue two mutations.
-        guard !isTogglingLike else { return }
-        isTogglingLike = true
-        defer { isTogglingLike = false }
-        guard let token = await auth.accessToken() else {
-            accountActionError = .unauthorized
-            return
-        }
-        let previous = ratingState ?? .none
-        let next: VideoRatingState = previous == .like ? .none : .like
-        ratingState = next
-        do {
-            if next == .like {
-                try await accountActions.rate(videoID: video.id, rating: .like, accessToken: token)
-            } else {
-                try await accountActions.removeRating(videoID: video.id, accessToken: token)
-            }
-        } catch {
-            ratingState = previous
-            accountActionError = error as? YouTubeAPIError ?? .network
-        }
-    }
-
-    private func toggleSubscription(channelID: String) async {
-        // Same pre-await duplicate-submit gate as toggleLike.
-        guard !isTogglingSubscribe else { return }
-        isTogglingSubscribe = true
-        defer { isTogglingSubscribe = false }
-        guard let token = await auth.accessToken() else {
-            accountActionError = .unauthorized
-            return
-        }
-        let wasSubscribed = subscriptionLookup != nil
-        do {
-            if wasSubscribed {
-                try await accountActions.unsubscribe(subscriptionID: subscriptionLookup!.subscriptionID, accessToken: token)
-                subscriptionLookup = nil
-            } else {
-                try await accountActions.subscribe(channelID: channelID, accessToken: token)
-            }
-        } catch {
-            subscriptionLookup = wasSubscribed ? subscriptionLookup : nil
-            accountActionError = error as? YouTubeAPIError ?? .network
-            return
-        }
-        if !wasSubscribed {
-            do {
-                subscriptionLookup = try await accountActions.subscriptionState(channelID: channelID, accessToken: token)
-            } catch {
-                // The subscribe itself succeeded; only authoritative-state
-                // verification failed. Silently rendering the unsubscribed
-                // state here would invite a redundant re-subscribe against an
-                // existing server-side subscription (audit M2), so the
-                // verification failure surfaces instead.
-                accountActionError = .network
-            }
-        }
-    }
-
-    // MARK: - Comment submission
-
-    private func submitComment() async {
-        // Duplicate-submit gate runs BEFORE the first await (see toggleLike).
-        guard !isSubmittingComment else { return }
-        isSubmittingComment = true
-        defer { isSubmittingComment = false }
-        guard let token = await auth.accessToken() else {
-            accountActionError = .unauthorized
-            return
-        }
-        // Snapshot what is being posted: the field is disabled during flight,
-        // so this text is exactly what the user saw when tapping send.
-        let submittedText = composerText
-        let submittedDraftKey = replyTarget.map { Self.draftKey(for: $0.id) } ?? Self.topLevelDraftKey
-        do {
-            if let target = replyTarget {
-                let stored = try await commentsService.reply(to: target.id, text: submittedText, accessToken: token)
-                if let index = comments.firstIndex(where: { $0.id == target.id }) {
-                    let existing = comments[index]
-                    // Comment is immutable-by-design; rebuild the thread row.
-                    comments[index] = Comment(
-                        id: existing.id,
-                        author: existing.author,
-                        text: existing.text,
-                        likeCount: existing.likeCount,
-                        publishedAt: existing.publishedAt,
-                        replyCount: max(existing.replyCount, existing.replies.count + 1),
-                        replies: existing.replies + [stored]
-                    )
-                }
-                replyTarget = nil
-            } else {
-                let stored = try await commentsService.post(videoID: video.id, text: submittedText, accessToken: token)
-                comments.insert(stored, at: 0)
-            }
-            composerText = ""
-            // A successfully posted draft is consumed; no stale copy lingers.
-            composerDrafts.removeValue(forKey: submittedDraftKey)
-        } catch {
-            accountActionError = error as? YouTubeAPIError ?? .network
-        }
-    }
-
-    // MARK: - Composer drafts (HB-026)
-
-    private static let topLevelDraftKey = "__top__"
-
-    private static func draftKey(for commentID: String) -> String { "reply:\(commentID)" }
-
-    // MARK: - Copy helpers
-
-    /// Cached medium-date formatter: constructing a DateFormatter per body
-    /// evaluation was pure allocation churn on a re-rendering detail page.
-    @MainActor private static let publishedFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter
-    }()
-
-    @MainActor
-    private static func publishedLabel(_ date: Date) -> String {
-        Self.publishedFormatter.string(from: date)
-    }
-
-    private func commentsErrorLabel(_ error: YouTubeAPIError) -> String {
-        switch error {
-        case .unauthorized: return "Sign in to post or see comments."
-        case .quotaExceeded: return "Comments quota exceeded. Try again later."
-        case .forbidden: return "You don't have access to comments on this video."
-        case .commentsDisabled: return "Comments are disabled for this video."
-        case .notFound: return "Comments are unavailable for this video."
-        case .network: return "Network error loading comments."
-        case .decode: return "Couldn't load comments."
-        case .invalidInput: return "That comment can't be sent. Check the text and try again."
-        case .unknown: return "Couldn't load comments."
-        }
-    }
-
-    private func accountErrorLabel(_ error: YouTubeAPIError) -> String {
-        switch error {
-        case .unauthorized: return "Sign in to use this action."
-        case .quotaExceeded: return "YouTube API quota exceeded. Try again later."
-        case .forbidden: return "Your account doesn't have permission for this action."
-        case .commentsDisabled: return "Comments are unavailable for this action."
-        case .notFound: return "The item no longer exists."
-        case .invalidInput: return "That input can't be submitted. Check it and try again."
-        case .network: return "A network problem interrupted the action. Try again."
-        case .decode: return "The response couldn't be read. Try again."
-        case .unknown: return "The action failed. Try again."
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            .padding(.top, 12)
         }
     }
 }

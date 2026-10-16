@@ -34,7 +34,7 @@ There is currently **no active agent-actionable coding campaign**. The last exec
 - Download resolutions are exactly **1080p, 720p, 480p, 360p**; 1080p is the hard ceiling.
 - Offline downloads are a first-class requirement.
 - URLSession background transfer + native AVFoundation muxing path.
-- YouTube Data API v3 for supported account-aware metadata/actions; GoogleSignIn for OAuth.
+- Public YouTube RSS/Atom feeds + oEmbed with a local library (ADR-0008); no Google sign-in, no API key, playback via the official IFrame player (ADR-0007).
 - SwiftData indexes metadata; filesystem stores media.
 - No backend for core V1.
 - Windows-first authoring; remote macOS/Xcode/iOS Simulator build/test plane.

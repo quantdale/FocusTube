@@ -300,297 +300,121 @@ final class Journeys: XCTestCase {
         return ""
     }
 
-    /// Synchronizes with the download pipeline after tapping the video page's
-    /// download control: waits until the button's label returns to the idle
-    /// "Download" state, which happens exactly when `DownloadService.download`
-    /// returned (transfer finalized, validated, and registered in the offline
-    /// library). If the tap never landed, the label was never left, so this
-    /// returns immediately without masking a mis-tap — the row assertion below
-    /// remains the honest verdict.
-    private func waitForDownloadSettle(_ app: XCUIApplication) {
-        let button = app.buttons["download-button"].firstMatch
-        guard button.exists else { return }
-        let idle = NSPredicate(format: "label == %@", "Download")
-        let expectation = XCTNSPredicateExpectation(predicate: idle, object: button)
-        XCTWaiter.wait(for: [expectation], timeout: 15)
+
+    private func clearTextField(_ app: XCUIApplication, _ field: XCUIElement) {
+        focusAndType(app, field, "")
+        for _ in 0..<90 {
+            field.typeText(XCUIKeyboardKey.delete.rawValue)
+        }
     }
 
-    // MARK: - Journey A: shell
+    private func submitLink(_ app: XCUIApplication, _ link: String) -> XCUIElement {
+        let field = app.textFields["add-link-field"]
+        XCTAssertTrue(waitExists(field), "Add tab must show the link field;\(treeDiagnostics(app))")
+        clearTextField(app, field)
+        field.typeText(link)
+        dismissKeyboard(app)
+        app.buttons["add-submit"].firstMatch.tap()
+        return app.staticTexts["add-message"]
+    }
+
+    private func waitLabel(_ element: XCUIElement, contains text: String, _ timeout: TimeInterval = 10) -> Bool {
+        let p = NSPredicate(format: "label CONTAINS %@", text)
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: p, object: element)], timeout: timeout) == .completed
+    }
+
+    // MARK: - Journey A: shell (ADR-0008: Home / Add / Library)
 
     func testShellTabsExistAndSwitchWithoutCorruption() {
-        let app = launch("signed-out")
-
-        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.tabBars.buttons["Search"].exists)
-        XCTAssertFalse(app.tabBars.buttons["Downloads"].exists, "ADR-0007: no Downloads tab")
+        let app = launch("empty")
+        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Add"].exists)
         XCTAssertTrue(app.tabBars.buttons["Library"].exists)
+        XCTAssertFalse(app.tabBars.buttons["Search"].exists, "ADR-0008: Search became Add")
+        XCTAssertFalse(app.tabBars.buttons["Downloads"].exists, "ADR-0007: no Downloads tab")
 
-        app.tabBars.buttons["Search"].tap()
-        XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["Add"].tap()
+        XCTAssertTrue(app.navigationBars["Add"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Library"].tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Home"].tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
     }
 
-    // MARK: - Journey B: signed-out Home
+    // MARK: - Journey B: fresh install, no sign-in
 
-    func testSignedOutHomeShowsSignInCallToAction() {
-        let app = launch("signed-out")
+    func testEmptyHomeInvitesAddingAChannelWithoutSignIn() {
+        let app = launch("empty")
         XCTAssertTrue(
-            app.buttons["Sign in with Google"].waitForExistence(timeout: 15),
-            "fresh signed-out install must surface the sign-in CTA"
+            app.descendants(matching: .any)["feed-empty"].firstMatch.waitForExistence(timeout: 15),
+            "empty library must explain how to add channels;\(treeDiagnostics(app))"
         )
+        XCTAssertFalse(app.buttons["Sign in with Google"].exists, "ADR-0008: no Google sign-in")
     }
 
-    // MARK: - Journey B2: signed-in Home error recovery
+    // MARK: - Journey C: subscriptions feed + Shorts firewall
 
-    func testHomeFeedErrorSurfacesAndRetryStaysInteractive() {
+    func testHomeFeedLoadsFromLocalSubscriptionsAndDropsShorts() {
+        let app = launch("home-loaded")
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "feed must load;\(treeDiagnostics(app))")
+        XCTAssertTrue(app.staticTexts["Fixture Documentary One"].firstMatch.exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "feed-video-row").count, 3, "the /shorts/ entry must be filtered")
+        XCTAssertFalse(app.staticTexts["Fixture Sneaky Short"].exists, "Shorts never reach the feed")
+    }
+
+    func testFeedFailureIsVisibleNotSilent() {
         let app = launch("home-network-error")
         XCTAssertTrue(
-            app.staticTexts["Network error loading your subscriptions."].waitForExistence(timeout: 15),
-            "feed failure must be visible, never a silent blank list"
-        )
-        let retry = app.buttons["Try again"]
-        XCTAssertTrue(retry.waitForExistence(timeout: 5))
-        retry.tap()
-        XCTAssertTrue(
-            app.staticTexts["Network error loading your subscriptions."].waitForExistence(timeout: 5),
-            "repeated failure stays in a coherent recoverable error state"
+            app.descendants(matching: .any)["feed-partial-failure"].firstMatch.waitForExistence(timeout: 15),
+            "a failing channel feed must be surfaced;\(treeDiagnostics(app))"
         )
     }
 
-    // MARK: - Journey C: signed-in Home
+    // MARK: - Journey D: video page (IFrame engine + local actions)
 
-    func testHomeFeedLoadsAndExplicitLoadMoreAppends() {
-        let app = launch("home-loaded")
-        let firstRow = app.buttons["feed-video-row"].firstMatch
-        XCTAssertTrue(waitExists(firstRow), "fixture feed rows must render")
-
-        // Rich cards are taller than the old text rows, so Load more may sit
-        // below the fold: reveal via geometry before tapping.
-        let loadTrace = interact(app, locate: { $0.buttons["load-more-button"].firstMatch }, tap: true)
-        XCTAssertTrue(
-            loadTrace.isEmpty,
-            "page one must advertise continuation and be tappable [\(loadTrace)]"
-        )
-
-        // Page two exhausts the fixture feed (nextPageToken becomes nil), so the
-        // load-more control DISAPPEARING is the deterministic append proof — a
-        // lazy List may never realize far-below-fold rows for count-based queries.
-        let stillAdvertising = NSPredicate(format: "exists == true")
-        let expectation = XCTNSPredicateExpectation(predicate: stillAdvertising, object: app.buttons["load-more-button"].firstMatch)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [expectation], timeout: 5),
-            .timedOut,
-            "explicit Load more must consume the fixture's last page (control must disappear);\(treeDiagnostics(app))"
-        )
-    }
-
-    // MARK: - Journey D: search
-
-    func testSearchButtonSubmitsAndShortsNeverAppear() {
-        let app = launch("search-ready")
-        app.tabBars.buttons["Search"].tap()
-        let field = app.textFields["search-field"]
-        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
-        field.tap()
-        field.typeText("documentary")
-
-        app.buttons["search-submit-button"].tap()
-
-        XCTAssertTrue(
-            app.staticTexts["Fixture Search Result Alpha"].waitForExistence(timeout: 5),
-            "hydrated long-form result must render after explicit submit;\(treeDiagnostics(app))"
-        )
-        XCTAssertFalse(
-            app.staticTexts["Fixture Sneaky Short"].exists,
-            "short-form results are filtered before render, always"
-        )
-        // Submit deliberately drops field focus (SwiftUI @FocusState): the
-        // keyboard must not squeeze the results list while the reveal loop
-        // hunts load-more, and tapping the field again re-focuses it.
-
-        // Reveal via the proven interact() machinery (direction correction,
-        // stability double-read, bounded last-resort tap): revealAndTap's
-        // single-direction loop scrolled past visible targets on taller DDV2
-        // layouts (run-32828052990 trace: target parked at y=527 while rows
-        // reported negative Y) and could never converge.
-        // Submit deliberately keeps field focus; like a real user, the journey
-        // explicitly dismisses the keyboard (nav-bar tap) so the reveal below
-        // operates at full list height instead of tapping through keyboard
-        // glass.
-        dismissKeyboard(app)
-
-        let lmTrace = interact(app, locate: { $0.buttons["load-more-button"].firstMatch }, tap: true)
-        XCTAssertTrue(lmTrace.isEmpty, "load more must be reachable [\(lmTrace);\(treeDiagnostics(app))]")
-        // Second page exhausts the fixture results: the disappearing load-more
-        // control is the deterministic append proof (lazy List rows far below
-        // the fold may never realize for count queries).
-        let stillAdvertising = NSPredicate(format: "exists == true")
-        let expectation = XCTNSPredicateExpectation(predicate: stillAdvertising, object: app.buttons["load-more-button"].firstMatch)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [expectation], timeout: 5),
-            .timedOut,
-            "Load more must consume the fixture's last result page;\(treeDiagnostics(app))"
-        )
-    }
-
-    func testKeyboardReturnSubmitsSearch() {
-        let app = launch("search-ready")
-        app.tabBars.buttons["Search"].tap()
-        let field = app.textFields["search-field"]
-        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
-        field.tap()
-        // Trailing newline presses the keyboard's Search key: proves the
-        // onSubmit path without touching the Search button.
-        field.typeText("keyboard query\n")
-
-        XCTAssertTrue(
-            app.staticTexts["Fixture Search Result Alpha"].waitForExistence(timeout: 5),
-            "keyboard Return/Search must trigger the explicit-submit path"
-        )
-    }
-
-    func testEmptyQuerySubmitIsRejectedWithoutNetworkOrStateChange() {
-        let app = launch("search-ready")
-        app.tabBars.buttons["Search"].tap()
-        let field = app.textFields["search-field"]
-        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
-
-        XCTAssertFalse(
-            app.buttons["search-submit-button"].isEnabled,
-            "whitespace-only input must leave the Search button disabled"
-        )
-        field.tap()
-        field.typeText("\n") // Return on an empty field: no API call, no state.
-        XCTAssertFalse(app.staticTexts["No results for"].exists)
-        XCTAssertFalse(app.buttons["load-more-button"].exists)
-    }
-
-    func testSearchErrorSurfacesAndRetryStaysInteractive() {
-        let app = launch("search-error")
-        app.tabBars.buttons["Search"].tap()
-        let field = app.textFields["search-field"]
-        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
-        field.tap()
-        field.typeText("anything\n")
-
-        XCTAssertTrue(
-            app.staticTexts["Network error."].waitForExistence(timeout: 5),
-            "typed network failure must be visible, never a silent blank list"
-        )
-        let retry = app.buttons["Try again"]
-        XCTAssertTrue(retry.waitForExistence(timeout: 5))
-        retry.tap()
-        // Fixture keeps failing; the important behavior is that the UI stays
-        // in a coherent recoverable error state instead of hanging or crashing.
-        XCTAssertTrue(app.staticTexts["Network error."].waitForExistence(timeout: 5))
-    }
-
-    func testSearchWithNoHitsShowsEmptyState() {
-        let app = launch("search-empty")
-        app.tabBars.buttons["Search"].tap()
-        let field = app.textFields["search-field"]
-        XCTAssertTrue(waitExists(field), "search field must exist on the Search tab")
-        field.tap()
-        field.typeText("nothing to find\n")
-
-        XCTAssertTrue(
-            app.staticTexts["No results for \"nothing to find\"."].waitForExistence(timeout: 5),
-            "zero-hit search must show an explicit empty state"
-        )
-    }
-
-    // MARK: - Journey E: video page
-
-    func testVideoPageShowsMetadataSaveCommentsAndCloses() {
+    func testVideoPageShowsMetadataSaveSubscribeAndCloses() {
         let app = launch("video-page")
         XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
         let title = app.staticTexts["video-title"]
         let trace = openVideoPageFromFeed(app, expecting: title)
-
         XCTAssertTrue(title.exists, "video title must render [\(trace)]")
-        XCTAssertEqual(app.staticTexts["video-title"].label, "Fixture Documentary One")
-        XCTAssertTrue(app.staticTexts["video-channel"].exists)
-
-        // ADR-0007: playback runs through the PlayerEngine seam; in fixtures the
-        // fake engine scripts ready → buffering → playing.
+        XCTAssertEqual(title.label, "Fixture Documentary One")
         XCTAssertTrue(
             app.descendants(matching: .any)["player-playing"].firstMatch.waitForExistence(timeout: 10),
             "fake IFrame engine must drive the player to .playing;\(treeDiagnostics(app))"
         )
+        XCTAssertTrue(app.buttons["subscribe-toggle"].firstMatch.waitForExistence(timeout: 10))
 
-        // Accessibility contract: the label reflects the ACTION, not the state,
-        // before any interaction. The page is a deliberate non-lazy ScrollView,
-        // so existence equals rendered — the assertion does not depend on
-        // gesture-based scrolling reaching the control.
-        XCTAssertTrue(
-            app.buttons["save-toggle"].firstMatch.waitForExistence(timeout: 10),
-            "save action must render"
-        )
-        XCTAssertEqual(
-            app.buttons["save-toggle"].firstMatch.label,
-            "Save video",
-            "accessibility label reflects the action, not the state"
-        )
-
-        var toggledToSaved = false
+        XCTAssertTrue(app.buttons["save-toggle"].firstMatch.waitForExistence(timeout: 10), "save action must render")
+        XCTAssertEqual(app.buttons["save-toggle"].firstMatch.label, "Save video")
+        var toggled = false
         for _ in 0..<3 {
-            let saveTrace = interact(app, locate: { $0.buttons["save-toggle"].firstMatch }, tap: true)
-            XCTAssertTrue(saveTrace.isEmpty, "save action must be tappable [\(saveTrace)]")
-            let savedLabel = NSPredicate(format: "label == %@", "Remove from saved")
-            let savedExpectation = XCTNSPredicateExpectation(
-                predicate: savedLabel,
-                object: app.buttons["save-toggle"].firstMatch
-            )
-            if XCTWaiter.wait(for: [savedExpectation], timeout: 3) == .completed {
-                toggledToSaved = true
-                break
-            }
+            let t = interact(app, locate: { $0.buttons["save-toggle"].firstMatch }, tap: true)
+            XCTAssertTrue(t.isEmpty, "save action must be tappable [\(t)]")
+            if waitLabel(app.buttons["save-toggle"].firstMatch, contains: "Remove from saved", 3) { toggled = true; break }
         }
-        XCTAssertTrue(
-            toggledToSaved,
-            "save toggle must reflect saved state; label was '\(app.buttons["save-toggle"].firstMatch.label)'"
-        )
-
+        XCTAssertTrue(toggled, "save toggle must reflect saved state")
         XCTAssertFalse(app.buttons["download-button"].exists, "ADR-0007: no download control")
-
-        // Comments live in the same non-lazy ScrollView: existence proves they
-        // rendered without depending on synthesized scroll gestures.
-        XCTAssertTrue(
-            app.staticTexts["Fixture comment alpha"].firstMatch.waitForExistence(timeout: 10),
-            "fixture comment must render"
-        )
+        XCTAssertFalse(app.staticTexts["Comments"].exists, "ADR-0008: comments need the Data API; removed")
 
         app.buttons["Close"].tap()
-        XCTAssertTrue(
-            waitExists(app.buttons["feed-video-row"].firstMatch),
-            "dismissal returns to the feed"
-        )
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "dismissal returns to the feed")
     }
 
-    // MARK: - Journey F/H: library persistence + relaunch + actionability
+    // MARK: - Journey F: library persistence + relaunch
 
     func testLibraryRowsAreActionableAndSurviveRelaunch() {
         let app = launch("library-seeded")
         app.tabBars.buttons["Library"].tap()
+        XCTAssertTrue(waitExists(app.buttons["library-history-row"]))
+        XCTAssertTrue(app.buttons["library-saved-row"].exists)
 
-        let historyRow = app.buttons["library-history-row"]
-        XCTAssertTrue(waitExists(historyRow))
-        let savedRow = app.buttons["library-saved-row"]
-        XCTAssertTrue(savedRow.exists)
-
-        // Relaunch against the same persistent fixture store: entries survive.
         app.terminate()
         let relaunched = launch("library-seeded")
         relaunched.tabBars.buttons["Library"].tap()
         XCTAssertTrue(waitExists(relaunched.buttons["library-history-row"]))
         XCTAssertTrue(relaunched.buttons["library-saved-row"].exists)
 
-        // Continue Watching is actionable: opens the video page for that entry.
-        // Asserted against the video page's own identifier, not the row label,
-        // which would otherwise match the tapped row itself (vacuous pass).
         relaunched.buttons["library-history-row"].firstMatch.tap()
         let resumedTitle = relaunched.staticTexts["video-title"]
         XCTAssertTrue(
@@ -600,185 +424,26 @@ final class Journeys: XCTestCase {
         XCTAssertEqual(resumedTitle.label, "Seeded In-Progress Video")
     }
 
+    // MARK: - Journey G: Add by link (ADR-0008)
 
-    func testSettingsSheetShowsAccountStateAndSignOutFlips() {
-        let app = launch("home-loaded")
-        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load first")
-
-        let settingsButton = app.buttons["settings-button"]
-        XCTAssertTrue(waitExists(settingsButton), "profile control must exist on Home")
-        settingsButton.tap()
-
-        XCTAssertTrue(
-            app.descendants(matching: .any)["settings-signed-in"].firstMatch.waitForExistence(timeout: 10),
-            "settings must show authenticated state"
-        )
-        let signOut = app.buttons["settings-sign-out"]
-        XCTAssertTrue(signOut.waitForExistence(timeout: 5), "sign-out control must exist when signed in")
-        signOut.tap()
-        XCTAssertTrue(
-            app.staticTexts["Signed out"].waitForExistence(timeout: 5),
-            "signing out must flip the visible account state"
-        )
+    func testAddChannelLinkSubscribesLocally() {
+        let app = launch("add-flow")
+        app.tabBars.buttons["Add"].tap()
+        let message = submitLink(app, "https://www.youtube.com/channel/UCfixturefixturefixture0")
+        XCTAssertTrue(waitLabel(message, contains: "Subscribed to Fixture Channel", 15), "subscribe must confirm;\(treeDiagnostics(app))")
+        app.tabBars.buttons["Home"].tap()
+        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "new subscription feeds Home")
     }
 
-    func testSettingsSheetShowsSignedOutStateWithoutSignOut() {
-        let app = launch("signed-out")
-        XCTAssertTrue(waitExists(app.buttons["settings-button"]))
-        app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.staticTexts["Signed out"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["settings-sign-in"].waitForExistence(timeout: 5))
-        XCTAssertFalse(
-            app.buttons["settings-sign-out"].exists,
-            "no sign-out control may appear while signed out"
-        )
+    func testAddRejectsShortsAndHandleLinksWithGuidance() {
+        let app = launch("add-flow")
+        app.tabBars.buttons["Add"].tap()
+        let message = submitLink(app, "https://www.youtube.com/shorts/abcdefghijk")
+        XCTAssertTrue(waitLabel(message, contains: "Shorts aren't supported"), "Shorts links are rejected;\(treeDiagnostics(app))")
+        _ = submitLink(app, "https://www.youtube.com/@somehandle")
+        XCTAssertTrue(waitLabel(message, contains: "channel ID"), "handles get Copy-channel-ID guidance; label='\(message.label)'")
     }
 
-    // MARK: - Journey I: search recents (DDV2-07)
-
-    private func clearTextField(_ app: XCUIApplication, _ field: XCUIElement) {
-        focusAndType(app, field, "")
-        for _ in 0..<30 {
-            field.typeText(XCUIKeyboardKey.delete.rawValue)
-        }
-    }
-
-    func testSearchRecentsRecordSuggestAndClearLocally() {
-        let app = launch("search-ready")
-        app.tabBars.buttons["Search"].tap()
-        let field = app.textFields["search-field"]
-        XCTAssertTrue(waitExists(field))
-
-        // Explicit submit records the query.
-        field.tap()
-        field.typeText("documentary")
-        app.buttons["search-submit-button"].tap()
-        XCTAssertTrue(
-            app.staticTexts["Fixture Search Result Alpha"].waitForExistence(timeout: 5),
-            "first submit must produce results"
-        )
-
-        // Clearing the typed text reveals the persisted recents list.
-        clearTextField(app, field)
-        let recent = app.buttons.matching(identifier: "recent-search-row").firstMatch
-        XCTAssertTrue(recent.waitForExistence(timeout: 5), "recorded query must appear under Recent searches")
-
-        // Typing a fragment shows a LOCAL suggestion; tapping it re-submits.
-        field.tap()
-        field.typeText("doc")
-        let suggestion = app.buttons.matching(identifier: "search-suggestion-row").firstMatch
-        XCTAssertTrue(suggestion.waitForExistence(timeout: 5), "local suggestion must appear from the recorded query")
-        suggestion.tap()
-        XCTAssertTrue(
-            app.staticTexts["Fixture Search Result Alpha"].waitForExistence(timeout: 5),
-            "choosing a local suggestion submits that query"
-        )
-
-        // Clear history removes every recent row.
-        clearTextField(app, field)
-        let clear = app.buttons["clear-search-history"]
-        if clear.waitForExistence(timeout: 3) {
-            clear.tap()
-            XCTAssertFalse(
-                app.buttons.matching(identifier: "recent-search-row").firstMatch.exists,
-                "clear must remove all recent queries"
-            )
-        } else {
-            XCTFail("clear-history control missing while recents are shown")
-        }
-    }
-
-    // MARK: - Journey J: video actions (DDV2-04)
-
-    func testVideoActionsShowServerBackedStateAndToggleLike() {
-        let app = launch("video-page")
-        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "fixture feed must load")
-        let page = app.staticTexts["video-title"]
-        let trace = openVideoPageFromFeed(app, expecting: page)
-        XCTAssertTrue(page.exists, "video page must open [\(trace)]")
-
-        // The fixture reports an existing like: the initial label must be the
-        // truth, not a neutral default.
-        let likeToggle = app.buttons["like-toggle"]
-        XCTAssertTrue(likeToggle.waitForExistence(timeout: 10), "like action must exist")
-        XCTAssertEqual(likeToggle.label, "Liked", "initial state comes from getRating")
-        likeToggle.tap()
-        XCTAssertEqual(likeToggle.label, "Like", "tapping a liked video removes the rating")
-
-        let subscribeToggle = app.buttons["subscribe-toggle"]
-        XCTAssertTrue(subscribeToggle.waitForExistence(timeout: 10))
-        XCTAssertTrue(subscribeToggle.label.contains("Subscribed"), "subscription state is authoritative")
-        subscribeToggle.tap()
-        XCTAssertFalse(subscribeToggle.label.contains("Subscribed"), "unsubscribe flips the label")
-
-        // Share and more actions render as part of the row.
-        XCTAssertTrue(app.buttons["share-button"].exists)
-        XCTAssertTrue(app.buttons["more-actions-button"].exists)
-    }
-
-    // MARK: - Journey K: comment composer (DDV2-04)
-
-    func testCommentComposerPostsTopLevelAndReplyWithoutDuplicates() {
-        let app = launch("video-page")
-        XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch))
-        let page = app.staticTexts["video-title"]
-        openVideoPageFromFeed(app, expecting: page)
-
-        let composerField = app.textViews["comment-composer-field"].firstMatch
-        let composerFieldFallback = app.textFields["comment-composer-field"].firstMatch
-        let target = composerField.waitForExistence(timeout: 10) ? composerField : composerFieldFallback
-        let composerCount = app.textViews.count
-        let fieldCount = app.textFields.count
-        XCTAssertTrue(
-            target.waitForExistence(timeout: 5),
-            "comment composer must exist; textViews=\(composerCount) fields=\(fieldCount);\(treeDiagnostics(app))"
-        )
-
-        target.tap()
-        // Focus proof: typeText without a focused field silently drops input,
-        // which would masquerade as a product defect in the reply path.
-        XCTAssertTrue(
-            app.keyboards.firstMatch.waitForExistence(timeout: 5),
-            "composer must gain keyboard focus before typing;\(treeDiagnostics(app))"
-        )
-        target.typeText("Fixture journey comment")
-        // The keyboard may cover the submit control: dismiss it first so the
-        // tap lands on the button, not on keyboard glass.
-        dismissKeyboard(app)
-        app.buttons["comment-submit"].tap()
-        XCTAssertTrue(
-            app.staticTexts["Fixture journey comment"].waitForExistence(timeout: 5),
-            "posted top-level comment appears in the tree;\(treeDiagnostics(app))"
-        )
-
-        // Reply to the first fixture comment thread. Scrolling down to the
-        // reply control moves the top composer offscreen: scroll back to it
-        // before typing, or the submit tap lands nowhere.
-        let replyTrace = interact(app, locate: { $0.buttons["reply-button-fc1"].firstMatch }, tap: true)
-        XCTAssertTrue(replyTrace.isEmpty, "reply control must be reachable [\(replyTrace);\(treeDiagnostics(app))]")
-        let composerBackTrace = interact(app, locate: { $0.buttons["comment-submit"].firstMatch }, tap: false)
-        XCTAssertTrue(composerBackTrace.isEmpty, "composer must scroll back into view [\(composerBackTrace);\(treeDiagnostics(app))]")
-        target.tap()
-        // Focus proof: typeText without a focused field silently drops input,
-        // which would masquerade as a product defect in the reply path.
-        XCTAssertTrue(
-            app.keyboards.firstMatch.waitForExistence(timeout: 5),
-            "composer must gain keyboard focus before typing;\(treeDiagnostics(app))"
-        )
-        target.typeText("Fixture journey reply")
-        dismissKeyboard(app)
-        app.buttons["comment-submit"].tap()
-        let postedReply = app.staticTexts.containing(
-            NSPredicate(format: "label CONTAINS %@", "Fixture journey reply")
-        ).firstMatch
-        XCTAssertTrue(
-            postedReply.waitForExistence(timeout: 5),
-            "posted reply renders under its parent;\(treeDiagnostics(app))"
-        )
-    }
-
-    /// Focuses a text entry element with one bounded retry (iOS 26 cold taps
-    /// sometimes swallow the first focus tap), then types `text`.
     private func focusAndType(_ app: XCUIApplication, _ element: XCUIElement, _ text: String) {
         element.tap()
         if !app.keyboards.firstMatch.waitForExistence(timeout: 3) {
@@ -819,3 +484,4 @@ final class Journeys: XCTestCase {
     }
 
 }
+

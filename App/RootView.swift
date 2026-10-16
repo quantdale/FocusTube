@@ -2,67 +2,53 @@ import SwiftUI
 import os
 import FocusTubeCore
 
+/// ADR-0008 shell: Home (local subscriptions feed), Add (paste a link + local
+/// search; replaces Search) and Library. No sign-in.
 struct RootView: View {
-    private static let logger = Logger(subsystem: "com.quantdale.FocusTube", category: "app-shell")
-
     let dependencies: AppDependencies
 
-    // Long-lived dependencies are owned by AppDependencies (created once per
-    // process); these accessors keep the body below readable.
-    private var homeStore: HomeFeedStore { dependencies.homeStore }
-    private var searchStore: SearchStore { dependencies.searchStore }
-    private var auth: AuthSession { dependencies.auth }
-    private var api: YouTubeAPI { dependencies.api }
     private var playerCoordinator: PlayerCoordinator { dependencies.playerCoordinator }
     private var libraryStore: LibraryStore { dependencies.libraryStore }
+    private var localLibrary: LocalLibraryModel { dependencies.localLibrary }
     private var backgroundMedia: BackgroundMediaCoordinator { dependencies.backgroundMedia }
 
     /// HB-029: explicit tab selection persisted across scene restoration.
     @SceneStorage("FocusTube.selectedTab") private var selectedTab = 0
+    @State private var homeVideo: VideoSummary?
+    @State private var addVideo: VideoSummary?
+    @State private var addPlaylist: SavedPlaylist?
 
     var body: some View {
-        // HB-029: explicit selection binding with scene storage — the user's
-        // tab survives scene restoration instead of always resetting to Home.
         TabView(selection: $selectedTab) {
             NavigationStack {
-                HomeFeedView(
-                    store: homeStore,
-                    playerCoordinator: playerCoordinator,
-                    auth: auth,
-                    api: api,
-                    library: libraryStore
+                SubscriptionsFeedView(
+                    model: localLibrary,
+                    resumeFractions: libraryStore.resumeFractions(),
+                    onOpen: { homeVideo = $0 }
                 )
+                .videoDestination($homeVideo, coordinator: playerCoordinator, library: libraryStore, localLibrary: localLibrary)
             }
             .tabItem { Label("Home", systemImage: "house") }
             .tag(0)
 
             NavigationStack {
-                SearchView(
-                    store: searchStore,
-                    recentSearches: dependencies.recentSearches,
-                    playerCoordinator: playerCoordinator,
-                    auth: auth,
-                    api: api,
-                    library: libraryStore
-                )
+                AddView(model: localLibrary, onOpen: { addVideo = $0 }, onOpenPlaylist: { addPlaylist = $0 })
+                    .navigationDestination(item: $addPlaylist) { playlist in
+                        LocalPlaylistView(playlist: playlist, model: localLibrary) { addVideo = $0 }
+                    }
+                    .videoDestination($addVideo, coordinator: playerCoordinator, library: libraryStore, localLibrary: localLibrary)
             }
-            .tabItem { Label("Search", systemImage: "magnifyingglass") }
+            .tabItem { Label("Add", systemImage: "plus.circle") }
             .tag(1)
 
             NavigationStack {
-                LibraryView(
-                    store: libraryStore,
-                    playerCoordinator: playerCoordinator,
-                    auth: auth,
-                    api: api
-                )
+                LibraryView(store: libraryStore, playerCoordinator: playerCoordinator, localLibrary: localLibrary)
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
             .tag(3)
         }
         .task {
-            // The coordinator is created once in init; re-appearance only
-            // re-configures the session and re-registers (idempotent) commands.
+            await localLibrary.load()
             try? backgroundMedia.configureAudioSession()
             backgroundMedia.registerRemoteCommands()
             backgroundMedia.registerInterruptionObservation()
@@ -71,24 +57,58 @@ struct RootView: View {
     }
 }
 
+extension View {
+    /// The video page is a pushed route, not a modal sheet (modal presentation
+    /// of player content proved unreliable on iOS 26 runtimes).
+    func videoDestination(_ item: Binding<VideoSummary?>, coordinator: PlayerCoordinator,
+                          library: LibraryStore, localLibrary: LocalLibraryModel) -> some View {
+        navigationDestination(item: item) { video in
+            VideoPageView(video: video, coordinator: coordinator, library: library, localLibrary: localLibrary)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close") { item.wrappedValue = nil }
+                    }
+                }
+        }
+    }
+}
+
+/// A locally saved playlist, loaded from its public feed (most recent ~15 items).
+struct LocalPlaylistView: View {
+    let playlist: SavedPlaylist
+    let model: LocalLibraryModel
+    let onOpen: (VideoSummary) -> Void
+    @State private var videos: [VideoSummary] = []
+    @State private var failed = false
+
+    var body: some View {
+        List {
+            if failed { Text("Couldn't load this playlist.").foregroundStyle(.secondary) }
+            ForEach(videos) { video in
+                Button { onOpen(video) } label: { VideoCard(video: video) }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("playlist-video-row")
+            }
+            Text("Public feeds show a playlist's most recent items only.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        .navigationTitle(playlist.title)
+        .refreshable { await load() }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do { videos = try await model.playlistVideos(playlist.playlistID); failed = false } catch { failed = true }
+    }
+}
+
 struct LibraryView: View {
     let store: LibraryStore
     let playerCoordinator: PlayerCoordinator
-    let auth: AuthSession
-    let api: YouTubeAPI
+    let localLibrary: LocalLibraryModel
 
     @State private var selectedSummary: VideoSummary?
-    @State private var playlistsState: PlaylistsLoadState = .idle
-    @State private var selectedPlaylist: PlaylistSummary?
-    /// HB-029: duplicate-load guard — a fast double-tap on Show/Try-again
-    /// must not issue two quota-costing playlists.list calls.
-    @State private var isLoadingPlaylists = false
-
-    private var accountActions: AccountActionsService { AccountActionsService(api: api) }
-
-    enum PlaylistsLoadState {
-        case idle, loading, loaded([PlaylistSummary]), failed(String)
-    }
+    @State private var selectedPlaylist: SavedPlaylist?
 
     var body: some View {
         List {
@@ -96,32 +116,13 @@ struct LibraryView: View {
             historySection
             savedSection
             playlistsSection
+            subscriptionsSection
         }
         .navigationTitle("Library")
         .navigationDestination(item: $selectedPlaylist) { playlist in
-            PlaylistDetailView(playlist: playlist, api: api, auth: auth) { summary in
-                selectedSummary = summary
-            }
+            LocalPlaylistView(playlist: playlist, model: localLibrary) { selectedSummary = $0 }
         }
-        // The video page is a pushed route, not a modal sheet: modal
-        // presentation of AVKit-hosting content proved unreliable on current
-        // iOS 26 runtimes (content never reached the accessibility hierarchy),
-        // while a stack push keeps the deliberate long-form flow and gives the
-        // page real back-swipe/navigation semantics.
-        .navigationDestination(item: $selectedSummary) { summary in
-            VideoPageView(
-                video: summary,
-                coordinator: playerCoordinator,
-                auth: auth,
-                api: api,
-                library: store
-            )
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { selectedSummary = nil }
-                }
-            }
-        }
+        .videoDestination($selectedSummary, coordinator: playerCoordinator, library: store, localLibrary: localLibrary)
     }
 
     private func open(_ summary: VideoSummary) {
@@ -263,337 +264,37 @@ struct LibraryView: View {
         }
     }
 
-    /// Bounded supported-playlists surface: user's own playlists, fetched only
-    /// when the user opens this section (explicit action, quota-appropriate).
     private var playlistsSection: some View {
-        Section("Your YouTube playlists") {
-            switch playlistsState {
-            case .idle:
-                Button {
-                    Task { await loadPlaylists() }
-                } label: {
-                    Label("Show my playlists", systemImage: "list.triangle")
-                }
-                .accessibilityIdentifier("library-show-playlists")
-            case .loading:
-                ProgressView()
-            case .failed(let message):
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(message).font(.caption).foregroundStyle(.secondary)
-                    Button("Try again") {
-                        Task { await loadPlaylists() }
-                    }
-                }
-            case .loaded(let playlists):
-                if playlists.isEmpty {
-                    Text("No playlists found.").foregroundStyle(.secondary)
-                }
-                ForEach(playlists, id: \.id) { playlist in
-                    Button {
-                        selectedPlaylist = playlist
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(playlist.title).lineLimit(1)
-                                Text("\(playlist.itemCount) video\(playlist.itemCount == 1 ? "" : "s")")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .accessibilityIdentifier("playlist-row-\(playlist.id)")
-                }
+        Section("Saved playlists") {
+            let playlists = localLibrary.library.playlists
+            if playlists.isEmpty {
+                Text("Paste a playlist link in Add to save it here.").foregroundStyle(.secondary)
+            }
+            ForEach(playlists) { playlist in
+                Button { selectedPlaylist = playlist } label: { Text(playlist.title).lineLimit(1) }
+                    .accessibilityIdentifier("library-playlist-row")
+            }
+            .onDelete { offsets in
+                let doomed = offsets.map { playlists[$0].playlistID }
+                Task { for id in doomed { await localLibrary.removePlaylist(id) } }
             }
         }
     }
 
-    private func loadPlaylists() async {
-        // HB-029: check-and-set BEFORE any await; overlapping taps coalesce.
-        guard !isLoadingPlaylists else { return }
-        guard let token = await auth.accessToken() else {
-            playlistsState = .failed("Sign in to see your playlists.")
-            return
-        }
-        isLoadingPlaylists = true
-        playlistsState = .loading
-        defer { isLoadingPlaylists = false }
-        do {
-            playlistsState = .loaded(try await accountActions.playlists(accessToken: token))
-        } catch let error as YouTubeAPIError {
-            playlistsState = .failed(Self.playlistsErrorLabel(error))
-        } catch {
-            playlistsState = .failed("Couldn't load playlists.")
-        }
-    }
-
-    private static func playlistsErrorLabel(_ error: YouTubeAPIError) -> String {
-        switch error {
-        case .unauthorized: return "Sign in to see your playlists."
-        case .quotaExceeded: return "YouTube quota exceeded. Try again later."
-        case .forbidden: return "You don't have access to these playlists."
-        default: return "Couldn't load playlists."
-        }
-    }
-}
-
-/// Items of one user playlist with per-item removal (bounded first page).
-struct PlaylistDetailView: View {
-    let playlist: PlaylistSummary
-    let api: YouTubeAPI
-    let auth: AuthSession
-    let onOpenVideo: (VideoSummary) -> Void
-
-    @State private var items: [PlaylistItemSummary] = []
-    @State private var isLoading = true
-    /// HB-029 duplicate-load guard (presentation-only `isLoading` starts true
-    /// so the first frame never flashes the empty state).
-    @State private var loadInFlight = false
-    @State private var errorText: String?
-    @State private var removalError: String?
-
-    var body: some View {
-        List {
-            if let message = removalError {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(message).font(.caption).foregroundStyle(.secondary)
-                    Button("Try again") {
-                        removalError = nil
-                        Task { await load() }
-                    }
-                }
+    private var subscriptionsSection: some View {
+        Section("Subscriptions") {
+            let subs = localLibrary.library.subscriptions
+            if subs.isEmpty {
+                Text("No subscriptions yet.").foregroundStyle(.secondary)
             }
-            if isLoading {
-                ProgressView()
-            } else if let errorText {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(errorText).foregroundStyle(.secondary)
-                    Button("Try again") {
-                        Task { await load() }
-                    }
-                }
-            } else if items.isEmpty {
-                Text("This playlist is empty.").foregroundStyle(.secondary)
-            } else {
-                ForEach(items, id: \.playlistItemID) { item in
-                    Button {
-                        // H3-03 (HB-029): playlist-origin payloads keep the
-                        // video's description/owner-channel metadata when the
-                        // API provided it, so Subscribe and description
-                        // More/Less no longer vanish on this route.
-                        onOpenVideo(VideoSummary(
-                            id: item.videoID,
-                            title: item.title,
-                            channelTitle: item.channelTitle,
-                            durationSeconds: nil,
-                            publishedAt: nil,
-                            thumbnailURL: item.thumbnailURL.flatMap(URL.init(string:)),
-                            description: item.videoDescription,
-                            channelID: item.channelID
-                        ))
-                    } label: {
-                        Text(item.title).lineLimit(2)
-                    }
-                }
-                .onDelete { offsets in
-                    let doomed = offsets.map { items[$0] }
-                    Task {
-                        await remove(doomed)
-                    }
-                }
+            ForEach(subs) { sub in
+                Text(sub.title.isEmpty ? sub.channelID.rawValue : sub.title)
+                    .accessibilityIdentifier("library-subscription-row")
             }
-        }
-        .navigationTitle(playlist.title)
-        .task { await load() }
-    }
-
-    private func load() async {
-        guard !loadInFlight else { return }
-        guard let token = await auth.accessToken() else {
-            errorText = "Sign in to see this playlist."
-            isLoading = false
-            return
-        }
-        loadInFlight = true
-        isLoading = true
-        defer { loadInFlight = false }
-        do {
-            items = try await api.fetchPlaylistItems(playlistID: playlist.id, accessToken: token)
-            isLoading = false
-        } catch {
-            errorText = "Couldn't load this playlist."
-            isLoading = false
-        }
-    }
-
-    private func remove(_ doomed: [PlaylistItemSummary]) async {
-        guard let token = await auth.accessToken() else {
-            removalError = "Sign in to manage this playlist."
-            return
-        }
-        var failedIDs: Set<String> = []
-        for item in doomed {
-            do {
-                try await api.removeFromPlaylist(playlistItemID: item.playlistItemID, accessToken: token)
-            } catch {
-                failedIDs.insert(item.playlistItemID)
+            .onDelete { offsets in
+                let doomed = offsets.map { subs[$0].channelID }
+                Task { for id in doomed { await localLibrary.unsubscribe(id) } }
             }
-        }
-        // Only rows the server actually removed leave the list; a failed
-        // delete must not fabricate local state that resurrects on re-fetch.
-        let removedIDs = Set(doomed.map(\.playlistItemID)).subtracting(failedIDs)
-        items.removeAll { removedIDs.contains($0.playlistItemID) }
-        if !failedIDs.isEmpty {
-            removalError = "Some videos couldn't be removed. Try again."
-        }
-    }
-}
-
-/// Chronological long-form subscription Home feed with the short-form firewall
-/// applied before render. Load-more is an explicit user action.
-private struct HomeFeedView: View {
-    @Bindable var store: HomeFeedStore
-    let playerCoordinator: PlayerCoordinator
-    let auth: AuthSession
-    let api: YouTubeAPI
-    let library: LibraryStore
-
-    @State private var selectedVideo: VideoSummary?
-    @State private var showSettings = false
-    @State private var isSigningIn = false
-
-    var body: some View {
-        List {
-            if !store.isAuthenticated, store.videos.isEmpty, !store.isLoading {
-                // Fresh install: GoogleSignIn is restore-only until the user
-                // explicitly signs in. Hidden for fake sessions (tests) and
-                // once authenticated.
-                Button {
-                    Task {
-                        // HB-029 sign-in re-entry guard.
-                        guard !isSigningIn else { return }
-                        isSigningIn = true
-                        defer { isSigningIn = false }
-                        if await (auth as? GoogleSignInAuthSession)?.signIn() == true {
-                            await store.restore()
-                            await store.load()
-                        }
-                    }
-                } label: {
-                    if isSigningIn {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("Signing in…")
-                        }
-                    } else {
-                        Label("Sign in with Google", systemImage: "person.crop.circle.badge.checkmark")
-                    }
-                }
-                .disabled(isSigningIn)
-                .accessibilityIdentifier("google-sign-in-button")
-            }
-            if store.isLoading {
-                ProgressView("Loading feed…")
-            }
-            if let error = store.error {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(Self.errorLabel(error), systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                    Button("Try again") {
-                        Task { await store.load() }
-                    }
-                }
-                .accessibilityIdentifier("home-error")
-            } else if !store.isLoading,
-                      store.isAuthenticated,
-                      store.videos.isEmpty {
-                Text("No long-form videos from your subscriptions yet.")
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("home-empty")
-            }
-            // HB-027: one projection fetch per body evaluation, not one
-            // full-history scan per card row.
-            let resumeFractions = library.resumeFractions()
-            ForEach(store.videos) { video in
-                Button {
-                    selectedVideo = video
-                } label: {
-                    VideoCard(
-                        video: video,
-                        progressFraction: resumeFractions[video.id]
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("feed-video-row")
-            }
-            if store.nextPageToken != nil {
-                Button {
-                    Task { await store.loadMore() }
-                } label: {
-                    Label("Load more", systemImage: "arrow.down.circle")
-                }
-                .accessibilityIdentifier("load-more-button")
-            }
-        }
-        .navigationTitle("Home")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showSettings = true
-                } label: {
-                    Image(systemName: "person.crop.circle")
-                }
-                .accessibilityLabel("Account and settings")
-                .accessibilityIdentifier("settings-button")
-            }
-        }
-        .sheet(isPresented: $showSettings) {
-            AccountSettingsView(store: store, auth: auth, library: library)
-        }
-        .refreshable {
-            // Explicit user action: a deliberate page-one reload is
-            // quota-appropriate, unlike automatic refetches on tab switches.
-            await store.load()
-        }
-        .task {
-            // Auto-load ONLY a still-empty feed: tab switches must not re-fetch
-            // the whole subscription aggregate (quota churn) or clobber scroll
-            // position. Explicit recovery paths are the Try-again button and
-            // the sign-in CTA.
-            guard store.videos.isEmpty else { return }
-            await store.restore()
-            await store.load()
-        }
-        // Pushed video page (see LibraryView note): modal presentation of
-        // AVKit-hosting content is unreliable on current iOS 26 runtimes.
-        .navigationDestination(item: $selectedVideo) { video in
-            VideoPageView(
-                video: video,
-                coordinator: playerCoordinator,
-                auth: auth,
-                api: api,
-                library: library
-            )
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { selectedVideo = nil }
-                }
-            }
-        }
-    }
-
-    private static func errorLabel(_ error: YouTubeAPIError) -> String {
-        switch error {
-        case .quotaExceeded: return "Subscription quota exceeded. Try again later."
-        case .unauthorized: return "Sign in to see your subscriptions."
-        case .forbidden: return "Your account doesn't have permission to view this feed."
-        case .network: return "Network error loading your subscriptions."
-        case .unknown: return "Couldn't load your subscriptions."
-        default: return "Subscriptions unavailable."
         }
     }
 }
