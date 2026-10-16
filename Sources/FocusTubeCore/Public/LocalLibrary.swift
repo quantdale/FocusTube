@@ -2,7 +2,7 @@ import Foundation
 
 /// Local-first library (ADR-0008): no account, no sync. Pure value type with
 /// policies; persisted by `LocalLibraryStore`.
-public struct LocalSubscription: Equatable, Codable, Sendable, Identifiable {
+public struct LocalSubscription: Hashable, Codable, Sendable, Identifiable {
     public let channelID: YouTubeChannelID
     public var title: String
     public let addedAt: Date
@@ -12,7 +12,7 @@ public struct LocalSubscription: Equatable, Codable, Sendable, Identifiable {
     }
 }
 
-public struct SavedPlaylist: Equatable, Codable, Sendable, Identifiable {
+public struct SavedPlaylist: Hashable, Codable, Sendable, Identifiable {
     public let playlistID: YouTubePlaylistID
     public var title: String
     public let addedAt: Date

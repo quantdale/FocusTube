@@ -63,3 +63,6 @@ Rule: nothing WebKit-related is marked verified until macOS CI builds/tests it o
 | Link parser, Atom parser, oEmbed decoding, local library policies, feed aggregator | Linux unit tests (see each PR) |
 | Live fetch of `feeds/videos.xml` and `oembed` from the app | ❌ Unverified until device. CI uses fixtures only |
 | Add tab, local feed and video page in the app | ❌ Pending macOS CI, then device |
+
+## W2 local-first app switch (2026-10-16)
+- Linux: core `swift build` + `swift test` pass. iOS app/UI journeys verified only by GitHub iOS CI (Linux cannot build the app).

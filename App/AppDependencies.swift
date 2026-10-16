@@ -18,11 +18,7 @@ final class AppDependencies {
     let playerCoordinator: PlayerCoordinator
     let backgroundMedia: BackgroundMediaCoordinator
     let libraryStore: LibraryStore
-    let homeStore: HomeFeedStore
-    let searchStore: SearchStore
-    let recentSearches: RecentSearchStore
-    let auth: AuthSession
-    let api: YouTubeAPI
+    let localLibrary: LocalLibraryModel
 
     /// Process entry point used by `FocusTubeApp`.
     static func make(launchArguments: [String] = ProcessInfo.processInfo.arguments) -> AppDependencies {
@@ -58,20 +54,10 @@ final class AppDependencies {
         }
         excludeMediaFromBackups()
         return AppDependencies(
-            auth: GoogleSignInAuthSession(),
-            api: YouTubeDataClient(onItemsSkipped: Self.reportSkippedItems),
+            localLibrary: LocalLibraryModel(http: URLSessionHTTP(), fileURL: LocalLibraryModel.defaultFileURL()),
             makePlayer: { PlayerCoordinator(engine: WKWebViewPlayerEngine()) },
             container: container
         )
-    }
-
-    /// HB-016 non-silent requirement: partial page decodes report skipped-item
-    /// counts through the platform logger at the composition boundary.
-    /// `nonisolated`: decode happens on arbitrary executors inside the
-    /// Sendable client, and `os.Logger` is thread-safe.
-    private nonisolated static func reportSkippedItems(endpoint: String, count: Int) {
-        Logger(subsystem: "com.quantdale.FocusTube", category: "youtube-client")
-            .warning("\(count, privacy: .public) malformed item(s) skipped in \(endpoint, privacy: .public)")
     }
 
     #if DEBUG
@@ -91,17 +77,11 @@ final class AppDependencies {
             container = try! ModelContainer(for: schema, configurations: [config])
         }
 
-        let feedError: YouTubeAPIError?
-        switch scenario {
-        case .homeNetworkError: feedError = .network
-        case .homeQuotaError: feedError = .quotaExceeded
-        default: feedError = nil
-        }
-        let searchError: YouTubeAPIError? = scenario == .searchError ? .network : nil
-
         return AppDependencies(
-            auth: FixtureAuthSession(authenticated: scenario != .signedOut),
-            api: FixtureYouTubeAPI(feedError: feedError, searchError: searchError, searchHits: scenario != .searchEmpty),
+            localLibrary: LocalLibraryModel(
+                http: FixtureHTTP(feedFails: scenario == .homeNetworkError),
+                fileURL: FixtureLocalLibrary.fileURL(for: scenario)
+            ),
             makePlayer: {
                 PlayerCoordinator(engine: FixturePlayerEngine(), resolveID: FixturePlayerEngine.resolveFixtureID)
             },
@@ -113,13 +93,11 @@ final class AppDependencies {
     // MARK: - Shared wiring
 
     private init(
-        auth: AuthSession,
-        api: YouTubeAPI,
+        localLibrary: LocalLibraryModel,
         makePlayer: () -> PlayerCoordinator,
         container: ModelContainer
     ) {
-        self.auth = auth
-        self.api = api
+        self.localLibrary = localLibrary
         let library = LibraryStore(context: ModelContext(container))
         let player = makePlayer()
         let media = BackgroundMediaCoordinator(target: player)
@@ -140,9 +118,6 @@ final class AppDependencies {
         self.libraryStore = library
         self.playerCoordinator = player
         self.backgroundMedia = media
-        self.homeStore = HomeFeedStore(auth: auth, api: api)
-        self.searchStore = SearchStore(auth: auth, api: api)
-        self.recentSearches = RecentSearchStore(context: ModelContext(container))
 
         #if DEBUG
         if UITestScenario.fromArguments(ProcessInfo.processInfo.arguments) == .librarySeeded {
