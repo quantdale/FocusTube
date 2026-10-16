@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       live_smoke:
-        description: "Run opt-in live YouTube extraction/download smokes"
+        description: "Run opt-in live smokes (extraction smokes being removed per ADR-0007)"
         type: boolean
         default: false
 
