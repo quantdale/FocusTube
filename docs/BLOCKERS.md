@@ -18,3 +18,4 @@
 | B4 | Real Google OAuth client and Data API v3 project | External | owner | Create an iOS OAuth client and fill in `Config/Secrets.local.xcconfig` |
 | B5 | The live smoke needs owner dispatch (`live_smoke=true`) | External | owner | Use workflow_dispatch on `ios-ci.yml` |
 | B6 | No iOS toolchain on this Linux box | Environment | — | Use macOS CI or a Mac |
+| B7 | Resolved in PR #8: the `ScriptedPerformer` in `YouTubeDataClientTests` mutated state without a lock under concurrent feed hydration. `xctest` died with SIGTRAP on macOS CI (PR #7 run 38817976196) | High (gate integrity) | agent | Guard the performer with an `NSLock`, the same pattern the other test performers use |
