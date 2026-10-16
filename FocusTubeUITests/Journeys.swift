@@ -433,6 +433,7 @@ final class Journeys: XCTestCase {
         app.tabBars.buttons["Add"].tap()
         let message = submitLink(app, "https://www.youtube.com/channel/UCfixturefixturefixture0")
         XCTAssertTrue(waitLabel(message, contains: "Subscribed to Fixture Channel", 15), "subscribe must confirm;\(treeDiagnostics(app))")
+        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)], timeout: 5) == .completed, "submitting a link must release the keyboard;\(treeDiagnostics(app))")
         app.tabBars.buttons["Home"].tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5), "Home tab must open;\(treeDiagnostics(app))")
         XCTAssertTrue(waitExists(app.buttons["feed-video-row"].firstMatch), "new subscription feeds Home;\(treeDiagnostics(app))")
