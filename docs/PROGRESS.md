@@ -1,6 +1,8 @@
 # PROGRESS — Phase 1 Assessment (2026-10-15)
 
 ## What FocusTube is
+> Superseded: this Phase 1 description predates ADR-0007 (IFrame player, no extraction or downloads) and ADR-0008 (local-first, no sign-in, no Data API). See the updates at the end of this file.
+
 FocusTube is a personal-use native iOS (SwiftUI, iOS 17+, Swift 6) YouTube
 client built for deliberate long-form viewing. It has four tabs: Home
 (subscription feed), Search (explicit submit), Downloads, and Library. Shorts
@@ -139,3 +141,12 @@ switch-over. It contains `URLSessionHTTP` (ephemeral session; only https `www.yo
 `LocalLibraryModel` (subscriptions and playlists in `library.json`, subscriptions feed refresh, oEmbed cache,
 player duration fed back into the Shorts firewall, local search), `AddView` (paste a link and local search)
 and `SubscriptionsFeedView` (pull-to-refresh). Watch history and Watch Later stay in the SwiftData `LibraryStore`.
+
+## Update 2026-10-16 — ADR-0008 switch-over (PR #22) and core cleanup (PR #23)
+- PR #22 (`feat/app-switch-local-first`) switches the app to local-first and removes GoogleSignIn and `YouTubeDataClient`.
+  Its iOS CI failed 3 times in a row in `testAddChannelLinkSubscribesLocally` ("Home tab must open"). The UI bundle exited 65 and the unit tests passed every time.
+  An earlier note blamed infra flakiness; that came from misreading `ui.exit` and `unit.exit`, and was wrong.
+  Root cause: after a channel link was submitted, the keyboard stayed up over the tab bar, so the Home tap never reached it.
+  Fix (630f2c7): `AddView` clears `@FocusState` on submit and dismisses the keyboard on scroll. The test now asserts the keyboard is released before it switches tabs.
+- PR #23 (`chore/core-remove-data-api`) is stacked on #22. It is retargeted to `main` and rebased after #22 merges, and merged only on green.
+- README no longer describes YouTubeKit, GoogleSignIn or the Data API.

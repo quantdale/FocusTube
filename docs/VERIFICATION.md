@@ -63,3 +63,5 @@ Rule: nothing WebKit-related is marked verified until macOS CI builds/tests it o
 | Link parser, Atom parser, oEmbed decoding, local library policies, feed aggregator | Linux unit tests (see each PR) |
 | Live fetch of `feeds/videos.xml` and `oembed` from the app | ❌ Unverified until device. CI uses fixtures only |
 | Add tab, local feed and video page in the app | ❌ Pending macOS CI, then device |
+
+| App builds and UI journeys pass with GoogleSignIn and the Data API removed (PR #22) | iOS CI on d75a878: unit 45/45 passed; UI failed (`testAddChannelLinkSubscribesLocally`, keyboard covered the tab bar). Fix 630f2c7, CI pending | ⏳ Pending iOS CI on 630f2c7 |

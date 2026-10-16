@@ -180,3 +180,6 @@ A blocker never stops the work. When you hit one (CI not running, approvals, sec
 1. Log it at the top of `docs/BLOCKERS.md` under **Needs Michael (morning queue)**. Give the exact one-to-two-line fix, the links, and what it unblocks.
 2. Use safe, free workarounds: local `swift build`/`swift test` evidence, and keep PRs open with follow-up branches stacked on them. Merge only when CI is green. Never merge anything that needs runtime proof we do not have.
 3. Move on to the next unblocked task.
+
+## No Codex PR reviews (standing, 2026-10-17)
+Never use Codex PR reviews. Don't post `@codex` comments, don't request Codex reviews and don't wait on Codex. If any Codex review config turns up in the repo or in the GitHub app settings, disable it. CI checks are the merge gate.
