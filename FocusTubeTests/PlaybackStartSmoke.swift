@@ -13,7 +13,7 @@ final class PlaybackStartSmoke: XCTestCase {
             "Opt-in live playback smoke; set FOCUSTUBE_LIVE_SMOKE=1 to run against YouTube."
         )
 
-        let coordinator = await PlayerCoordinator()
+        let coordinator = await LegacyAVPlayerCoordinator()
         await coordinator.loadAndPlay(videoID: "aqz-KE-bpKQ")
 
         let reachedPlayable = await waitForPlayable(coordinator: coordinator, timeout: 45)
@@ -23,7 +23,7 @@ final class PlaybackStartSmoke: XCTestCase {
         )
     }
 
-    private func waitForPlayable(coordinator: PlayerCoordinator, timeout seconds: Int) async -> Bool {
+    private func waitForPlayable(coordinator: LegacyAVPlayerCoordinator, timeout seconds: Int) async -> Bool {
         for _ in 0..<seconds {
             let status = await coordinator.state.status
             if status == .ready || status == .playing {

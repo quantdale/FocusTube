@@ -63,6 +63,7 @@ final class AppDependencies {
             auth: GoogleSignInAuthSession(),
             api: YouTubeDataClient(onItemsSkipped: Self.reportSkippedItems),
             extractor: YouTubeKitMediaExtractor(),
+            makePlayer: { PlayerCoordinator(engine: WKWebViewPlayerEngine()) },
             transport: BackgroundDownloadTransport.shared,
             container: container,
             mediaDirectory: DownloadManager.defaultMediaDirectory(),
@@ -112,6 +113,9 @@ final class AppDependencies {
             auth: FixtureAuthSession(authenticated: scenario != .signedOut),
             api: FixtureYouTubeAPI(feedError: feedError, searchError: searchError, searchHits: scenario != .searchEmpty),
             extractor: FixtureExtractor(),
+            makePlayer: {
+                PlayerCoordinator(engine: FixturePlayerEngine(), resolveID: FixturePlayerEngine.resolveFixtureID)
+            },
             transport: ScriptedDownloadTransport(failsAfterProgress: scenario == .downloadFailure),
             container: container,
             mediaDirectory: scratch.appendingPathComponent("Media"),
@@ -130,6 +134,7 @@ final class AppDependencies {
         auth: AuthSession,
         api: YouTubeAPI,
         extractor: MediaExtracting,
+        makePlayer: () -> PlayerCoordinator,
         transport: DownloadTransport,
         container: ModelContainer,
         mediaDirectory: URL,
@@ -168,7 +173,7 @@ final class AppDependencies {
                 channelTitle: metadata?.channelTitle
             ))
         }
-        let player = PlayerCoordinator(extractor: extractor)
+        let player = makePlayer()
         let media = BackgroundMediaCoordinator(target: player)
         // Interruption auto-resume must respect user intent: capture whether
         // playback was actually running when the interruption began.

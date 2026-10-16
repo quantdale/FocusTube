@@ -86,3 +86,14 @@ itself still compiles (deleted in phase 3). Verified only by macOS iOS CI.
 Removed the opt-in `LiveExtractionSmoke` and `AdaptiveLiveSmoke` tests. They only exercised
 YouTubeKit stream extraction against live YouTube, which ADR-0007 forbids. `DownloadLiveSmoke`
 and `PlaybackStartSmoke` follow once the playback switch-over PR lands, because it edits them.
+## Update 2026-10-16 — phase 2: playback switched to the IFrame engine (ADR-0007)
+Branch `feat/iframe-playback-switch` (stacked on PR #11):
+- `PlayerCoordinator` is rewritten over `PlayerEngine` (no extraction, no AVPlayer). Production
+  injects `WKWebViewPlayerEngine`; UI-test fixtures inject `FixturePlayerEngine`, which drives the real
+  core controller with scripted ready → buffering → playing.
+- `PlayerView` hosts the IFrame web view. The failure overlay names the IFrame error (e.g. embedding
+  disabled) and offers "Open in YouTube"; Retry only appears for retryable errors.
+- The old AVPlayer coordinator and view are renamed `LegacyAVPlayerCoordinator`/`LegacyAVPlayerView`,
+  used only by the compiled-out Downloads local player and the opt-in extraction smokes. They are deleted in phase 3.
+- New `PlayerCoordinatorTests` (7) use a fake engine. The video-page UI journey now asserts `player-playing`
+  through the fake engine.
