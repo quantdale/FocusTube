@@ -1,29 +1,12 @@
 import SwiftUI
-import AVKit
 import Observation
 import FocusTubeCore
 
-/// SwiftUI wrapper around the system `AVPlayerViewController`. The controller is
-/// owned by the `PlayerCoordinator` and injected, so SwiftUI view recreation
-/// does not reconstruct or reset the player.
-public struct PlayerViewControllerRepresentation: UIViewControllerRepresentable {
-    let controller: AVPlayerViewController
-
-    public init(controller: AVPlayerViewController) {
-        self.controller = controller
-    }
-
-    public func makeUIViewController(context: Context) -> AVPlayerViewController {
-        controller
-    }
-
-    public func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
-}
-
-/// High-level player surface: native `AVPlayerViewController` plus overlay
-/// states for loading and typed failures.
+/// ADR-0007 player surface: the official IFrame player (WKWebView) plus
+/// loading/failure overlays and the deterministic UI-test markers.
 public struct PlayerView: View {
     @Bindable var coordinator: PlayerCoordinator
+    @Environment(\.openURL) private var openURL
 
     public init(coordinator: PlayerCoordinator) {
         self.coordinator = coordinator
@@ -31,64 +14,86 @@ public struct PlayerView: View {
 
     public var body: some View {
         ZStack {
-            PlayerViewControllerRepresentation(controller: coordinator.playerViewController)
+            if let web = coordinator.engine as? WKWebViewPlayerEngine {
+                IFramePlayerView(engine: web)
+            } else {
+                Color.black
+            }
 
             switch coordinator.state.status {
             case .loading:
                 ProgressView("Loading…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.black.opacity(0.35))
+                    .allowsHitTesting(false)
             case .failed:
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.largeTitle)
                     Text("Playback failed")
                         .font(.headline)
-                    if let error = coordinator.state.error {
-                        Text(String(describing: error))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Button("Retry") {
-                        if let id = coordinator.currentVideoID {
-                            Task { await coordinator.loadAndPlay(videoID: id) }
+                    Text(failureDetail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    HStack {
+                        if coordinator.iframeError?.isRetryable ?? true {
+                            Button("Retry") {
+                                if let id = coordinator.currentVideoID {
+                                    Task { await coordinator.loadAndPlay(videoID: id) }
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        if let id = coordinator.currentVideoID,
+                           let url = URL(string: "https://www.youtube.com/watch?v=\(id)") {
+                            Button("Open in YouTube") { openURL(url) }
+                                .buttonStyle(.bordered)
                         }
                     }
-                    .buttonStyle(.borderedProminent)
                 }
+                .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.black.opacity(0.6))
                 .foregroundStyle(.white)
             default:
-                // Deterministic markers for UI journeys (HB-014 + run-32828052990
-                // diagnosis). `player-playing` is present ONLY when the player
-                // genuinely reached a playing state; `player-status` always
-                // exposes the live state label so a journey failure trace can
-                // distinguish "never played" from "marker not observable".
-                // 44x44 clear hit areas keep the elements visible to the
-                // accessibility engine (a 1x1 opacity-0.001 rect was not).
-                Color.clear
-                    .frame(width: 44, height: 44)
-                    .allowsHitTesting(false)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityIdentifier("player-status")
-                    .accessibilityLabel(String(describing: coordinator.state.status))
-                if coordinator.state.status == .playing {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.001))
+                EmptyView()
+            }
+
+            // Deterministic markers for UI journeys (HB-014): `player-status`
+            // always exposes the live state; `player-playing` only when playing.
+            VStack {
+                HStack {
+                    Color.clear
                         .frame(width: 44, height: 44)
                         .allowsHitTesting(false)
-                        .accessibilityIdentifier("player-playing")
-                } else {
-                    EmptyView()
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityIdentifier("player-status")
+                        .accessibilityLabel(String(describing: coordinator.state.status))
+                    if coordinator.state.status == .playing {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.001))
+                            .frame(width: 44, height: 44)
+                            .allowsHitTesting(false)
+                            .accessibilityIdentifier("player-playing")
+                    }
+                    Spacer()
                 }
+                Spacer()
             }
+            .allowsHitTesting(false)
         }
-        // Hard internal bound: overlay states propose unbounded flexible
-        // frames, and an unconstrained ZStack lets them inflate the hosting
-        // List row (pushing every following section below the lazy-render
-        // fold) on current iOS runtimes. The caller applies the same height;
-        // this makes the contract local to the player surface.
         .frame(height: 240)
+    }
+
+    private var failureDetail: String {
+        switch coordinator.iframeError {
+        case .embeddingNotAllowed?: return "The owner doesn't allow this video to play outside YouTube."
+        case .videoNotFound?: return "This video is unavailable."
+        case .html5Error?: return "The player hit an error. Try again."
+        case .invalidParameter?: return "This video can't be played."
+        case .unknown(let code)?: return "Player error \(code)."
+        case nil: return coordinator.state.error.map { String(describing: $0) } ?? ""
+        }
     }
 }

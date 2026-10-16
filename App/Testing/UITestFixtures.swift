@@ -461,3 +461,54 @@ enum FixtureLibrarySeeder {
     }
 }
 #endif
+
+// MARK: - Fake player engine (ADR-0007)
+
+#if DEBUG
+/// Deterministic stand-in for the WKWebView IFrame engine in UI journeys.
+/// Drives the real core `IFramePlayerController` with scripted bridge
+/// messages (ready → buffering → playing) so the app's state handling is
+/// exercised without network or WebKit.
+@MainActor
+final class FixturePlayerEngine: PlayerEngine {
+    private var controller = IFramePlayerController()
+    var onStateChange: (@MainActor (IFramePlayerState) -> Void)?
+    var state: IFramePlayerState { controller.state }
+
+    init() { _ = controller.apply(.ready) }
+
+    /// UI fixtures use short ids like "fix-home-1"; map them to one valid id.
+    static func resolveFixtureID(_ raw: String) -> YouTubeVideoID? {
+        YouTubeVideoID(raw) ?? YouTubeVideoID("fixtureVid0")
+    }
+
+    func load(_ videoID: YouTubeVideoID, startSeconds: Double, autoplay: Bool) {
+        apply(controller.handle(.load(videoID, startSeconds: startSeconds, autoplay: autoplay)))
+        guard autoplay else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard let self, self.controller.state.videoID == videoID else { return }
+            self.deliver(.stateChange(.buffering))
+            self.deliver(.progress(currentTime: max(0, startSeconds), duration: 600))
+            self.deliver(.stateChange(.playing))
+        }
+    }
+    func play() { if !apply(controller.handle(.play)).isEmpty { deliver(.stateChange(.playing)) } }
+    func pause() { if !apply(controller.handle(.pause)).isEmpty { deliver(.stateChange(.paused)) } }
+    func seek(to seconds: Double) { apply(controller.handle(.seek(seconds))) }
+    func setPlaybackRate(_ rate: Double) {
+        if !apply(controller.handle(.setRate(rate))).isEmpty { deliver(.playbackRateChange(rate)) }
+    }
+    func stop() { apply(controller.handle(.stop)) }
+
+    @discardableResult
+    private func apply(_ commands: [IFramePlayerCommand]) -> [IFramePlayerCommand] {
+        onStateChange?(controller.state)
+        return commands
+    }
+    private func deliver(_ message: IFrameBridgeMessage) {
+        _ = controller.apply(message)
+        onStateChange?(controller.state)
+    }
+}
+#endif

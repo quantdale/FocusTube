@@ -377,13 +377,13 @@ struct LocalPlayerSheet: View {
     let channelTitle: String
     let onDone: () -> Void
 
-    @State private var coordinator: PlayerCoordinator?
+    @State private var coordinator: LegacyAVPlayerCoordinator?
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             if let coordinator {
-                PlayerView(coordinator: coordinator)
+                LegacyAVPlayerView(coordinator: coordinator)
                     .padding(.top, 48)
             } else {
                 ProgressView()
@@ -410,7 +410,7 @@ struct LocalPlayerSheet: View {
         }
         .task {
             if coordinator == nil {
-                let fresh = PlayerCoordinator()
+                let fresh = LegacyAVPlayerCoordinator()
                 fresh.nowPlayingTitle = title
                 fresh.nowPlayingArtist = channelTitle
                 fresh.playLocalFile(fileURL, title: title, artist: channelTitle)

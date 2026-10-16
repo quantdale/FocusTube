@@ -1,372 +1,110 @@
 import Foundation
-import AVFoundation
-import AVKit
-import CoreMedia
 import Observation
 import FocusTubeCore
 
-/// Owns the `AVPlayer` / `AVPlayerViewController` lifecycle and maps native
-/// playback status into the deterministic `PlaybackState` machine so UI and
-/// failure handling stay decoupled from AVFoundation specifics.
-///
-/// `FocusTubeCore` stays free of AVFoundation; this coordinator is the only
-/// place that touches `AVPlayer`. View recreation never resets the player
-/// because the coordinator is created once and injected, not reconstructed per
-/// view render.
+/// ADR-0007: app-facing playback coordinator over a `PlayerEngine` (the
+/// official YouTube IFrame Player in production). No stream extraction.
+/// Keeps the public surface the views already use (`state`, `loadAndPlay`,
+/// `onProgress`, Now Playing fields, `PlayerCommandTarget`).
 @MainActor
 @Observable
 public final class PlayerCoordinator {
-    public private(set) var state: PlaybackState
-    public private(set) var currentStream: MediaStream?
+    public private(set) var state = PlaybackState()
+    /// Detailed IFrame error for the failure overlay (e.g. embedding disabled).
+    public private(set) var iframeError: IFramePlayerError?
     public private(set) var currentVideoID: String?
-    /// The most recent successful extraction, so consumers (e.g. the video
-    /// page's quality picker) can reuse it instead of extracting again.
-    public private(set) var lastResolvedMedia: ResolvedMedia?
+    public private(set) var engineState = IFramePlayerState()
 
-    public let player: AVPlayer
-    public let playerViewController: AVPlayerViewController
+    /// Extraction no longer happens; kept only so the compiled-out legacy
+    /// download code still type-checks. Always nil. Removed in phase 3.
+    public var lastResolvedMedia: ResolvedMedia? { nil }
 
-    /// Called periodically with the current playback time (seconds) so callers
-    /// can persist resume position without polling.
     public var onProgress: (@MainActor (TimeInterval) -> Void)?
-
-    /// Called whenever Now Playing data may have changed (item change, state
-    /// transition, or progress tick); the app layer republishes lock-screen
-    /// metadata from `nowPlayingSnapshot` in response.
     public var onNowPlayingChanged: (@MainActor () -> Void)?
-
-    /// Human-readable Now Playing metadata; set by the presenting view before
-    /// playback starts.
     public var nowPlayingTitle: String?
     public var nowPlayingArtist: String?
 
-    /// Resume position requested for the CURRENT selection only. Set by
-    /// `loadAndPlay`, consumed exactly once when the item reports ready, and
-    /// cleared by every other selection-change path so a stale seek can never
-    /// fire against a later video.
-    var pendingResumeSeek: TimeInterval?
-    /// Injectable for deterministic tests; defaults to the live player seek.
-    var seekAction: (@MainActor (TimeInterval) -> Void)?
+    let engine: any PlayerEngine
+    @ObservationIgnored private let resolveID: (String) -> YouTubeVideoID?
+    @ObservationIgnored private var lastReportedProgress: Double = -.infinity
+    /// Minimum seconds between `onProgress` calls (engine ticks every 0.5 s).
+    let progressInterval: Double
 
-    private var playerItem: AVPlayerItem?
-    private var timeObserver: Any?
-    private var itemObservation: NSKeyValueObservation?
-    private var timeControlObservation: NSKeyValueObservation?
-    /// Monotonic token bumped on every selection entry point (`loadAndPlay`,
-    /// `prepare`, `playLocalFile`, `stop`). Async work captures it at entry and
-    /// may only mutate playback state while it is still current, so overlapping
-    /// or late-arriving extractions can never clobber newer selections.
-    private var generation = 0
-    /// Generation-bound watchdog armed while buffering after `.ready`; fires
-    /// `.stalled` without needing another KVO delivery to arrive.
-    private var stallWatchdog: Task<Void, Never>?
-    /// How long `waitingToPlayAtSpecifiedRate` may persist after `.ready`
-    /// before playback is declared stalled. Injectable for deterministic tests.
-    var stallTimeout: TimeInterval
-    private let extractor: MediaExtracting
-
-    public init(extractor: MediaExtracting = YouTubeKitMediaExtractor(), stallTimeout: TimeInterval = 10) {
-        self.extractor = extractor
-        self.stallTimeout = stallTimeout
-        self.state = PlaybackState()
-        self.player = AVPlayer()
-        self.playerViewController = AVPlayerViewController()
-        self.playerViewController.player = player
-        self.playerViewController.allowsPictureInPicturePlayback = true
-        self.playerViewController.canStartPictureInPictureAutomaticallyFromInline = true
+    public init(
+        engine: any PlayerEngine,
+        progressInterval: Double = 5,
+        resolveID: @escaping (String) -> YouTubeVideoID? = { YouTubeVideoID($0) }
+    ) {
+        self.engine = engine
+        self.progressInterval = progressInterval
+        self.resolveID = resolveID
+        engine.onStateChange = { [weak self] s in self?.engineDidChange(s) }
     }
 
-    deinit {
-        // The coordinator is injected once and lives for the app's lifetime, so
-        // no per-lifecycle teardown of AVFoundation observers is required here.
-    }
-
-    // MARK: - Selection (delegated to Core policy)
-
-    /// Picks the highest allowed natively playable combined stream. Pure and
-    /// deterministic; never selects above 1080p (enforced by Core).
-    public func selectOnlineStream(from media: ResolvedMedia) -> MediaStream? {
-        MediaStreamFilter.selectOnlineStream(media)
-    }
-
-    // MARK: - Native status mapping (deterministic, testable)
-
-    public static func playbackError(for status: AVPlayerItem.Status) -> PlaybackError {
-        switch status {
-        case .readyToPlay:
-            return .unknown
-        case .failed:
-            return .itemFailed
-        case .unknown:
-            return .unknown
-        @unknown default:
-            return .unknown
-        }
-    }
-
-    // MARK: - Now Playing snapshot
-
-    /// Current lock-screen metadata derived from the live player. Finite-value
-    /// guards keep indefinite/NaN stream durations from poisoning the dictionary.
     public var nowPlayingSnapshot: NowPlayingSnapshot {
-        let durationSeconds = player.currentItem.flatMap { item -> Double in
-            let seconds = item.duration.seconds
-            return seconds.isFinite ? seconds : 0
-        } ?? 0
-        let currentSeconds = player.currentTime().seconds
-        return NowPlayingSnapshot(
+        NowPlayingSnapshot(
             title: nowPlayingTitle,
             artist: nowPlayingArtist,
-            duration: durationSeconds,
-            currentTime: currentSeconds.isFinite ? currentSeconds : 0,
-            rate: Double(player.rate)
+            duration: engineState.duration,
+            currentTime: engineState.currentTime,
+            rate: engineState.phase == .playing ? engineState.playbackRate : 0
         )
     }
 
-    private func notifyNowPlayingChanged() {
+    public func loadAndPlay(videoID: String, resumeAt: TimeInterval? = nil) async {
+        currentVideoID = videoID
+        iframeError = nil
+        lastReportedProgress = -.infinity
+        guard let id = resolveID(videoID) else {
+            state = PlaybackState(status: .failed, error: .noPlayableStream)
+            onNowPlayingChanged?()
+            return
+        }
+        let start = (resumeAt ?? 0) > 0.5 ? resumeAt! : 0
+        state = PlaybackState(status: .loading)
+        engine.load(id, startSeconds: start, autoplay: true)
+    }
+
+    public func pause() { engine.pause() }
+    public func resume() { engine.play() }
+
+    public func stop() {
+        engine.stop()
+        currentVideoID = nil
+        iframeError = nil
+        state = PlaybackState(status: .idle)
         onNowPlayingChanged?()
     }
 
-    // MARK: - Loading / playback
+    func engineDidChange(_ s: IFramePlayerState) {
+        let previous = engineState
+        engineState = s
+        if case let .failed(err) = s.phase {
+            iframeError = err
+            state = PlaybackState(status: .failed, error: Self.playbackError(for: err))
+        } else if currentVideoID != nil || s.phase == .idle {
+            state = PlaybackState(status: s.legacyStatus)
+        }
+        reportProgressIfNeeded(previous: previous, current: s)
+        onNowPlayingChanged?()
+    }
 
-    /// Resolves a video ID through the extractor, selects the online stream, and
-    /// begins native playback. Extraction and selection failures are typed and
-    /// observable via `state`.
-    public func loadAndPlay(videoID: String, resumeAt: TimeInterval? = nil) async {
-        generation += 1
-        let gen = generation
-        currentVideoID = videoID
-        pendingResumeSeek = resumeAt
-        do {
-            let media = try await extractor.resolve(videoID: videoID)
-            guard gen == generation else { return }
-            lastResolvedMedia = media
-            guard let stream = selectOnlineStream(from: media) else {
-                pendingResumeSeek = nil
-                state = PlaybackState(status: .failed, error: .noPlayableStream)
-                return
-            }
-            prepare(stream: stream)
-        } catch {
-            guard gen == generation else { return }
-            lastResolvedMedia = nil
-            pendingResumeSeek = nil
-            state = PlaybackState(status: .failed, error: mapExtractionFailure(error))
+    private func reportProgressIfNeeded(previous: IFramePlayerState, current: IFramePlayerState) {
+        guard currentVideoID != nil, current.currentTime > 0 else { return }
+        let phaseSettled = previous.phase != current.phase
+            && (current.phase == .paused || current.phase == .ended)
+        if phaseSettled || abs(current.currentTime - lastReportedProgress) >= progressInterval {
+            lastReportedProgress = current.currentTime
+            onProgress?(current.currentTime)
         }
     }
 
-    /// Attaches an already-selected stream to the player and starts playback.
-    public func prepare(stream: MediaStream) {
-        generation += 1
-        apply(stream: stream)
-    }
-
-    /// Shared tail of every online-selection path (`prepare`, and therefore
-    /// `loadAndPlay`): installs the stream as the current item and starts
-    /// playback. The caller owns the `generation` bump; this resets waiting
-    /// bookkeeping so a stale watchdog from the previous item can never fire.
-    private func apply(stream: MediaStream) {
-        currentStream = stream
-        let item = AVPlayerItem(url: stream.sourceURL)
-        playerItem = item
-        observe(item: item)
-        player.replaceCurrentItem(with: item)
-        state = PlaybackState(status: .loading)
-        resetWaiting()
-        startProgressObserver()
-        player.play()
-        notifyNowPlayingChanged()
-    }
-
-    public func pause() {
-        player.pause()
-    }
-
-    public func resume() {
-        player.play()
-    }
-
-    /// Plays an already-finalized local media file with no network dependency.
-    /// Clears every field tied to prior online playback (stream, video ID,
-    /// resolved media, Now Playing metadata) so local playback can never be
-    /// attributed to — or write history under — the previously loaded video.
-    public func playLocalFile(_ url: URL, title: String? = nil, artist: String? = nil) {
-        generation += 1
-        currentStream = nil
-        currentVideoID = nil
-        lastResolvedMedia = nil
-        nowPlayingTitle = title
-        nowPlayingArtist = artist
-        pendingResumeSeek = nil
-        let item = AVPlayerItem(url: url)
-        playerItem = item
-        observe(item: item)
-        player.replaceCurrentItem(with: item)
-        state = PlaybackState(status: .loading)
-        resetWaiting()
-        startProgressObserver()
-        player.play()
-        notifyNowPlayingChanged()
-    }
-
-    public func stop() {
-        generation += 1
-        itemObservation?.invalidate()
-        timeControlObservation?.invalidate()
-        stopProgressObserver()
-        player.replaceCurrentItem(with: nil)
-        playerItem = nil
-        currentStream = nil
-        currentVideoID = nil
-        // Nil it so an expired stream URL cannot be replayed later by the
-        // quality picker after playback has been torn down.
-        lastResolvedMedia = nil
-        pendingResumeSeek = nil
-        state = PlaybackState(status: .idle)
-        resetWaiting()
-        notifyNowPlayingChanged()
-    }
-
-    private func startProgressObserver() {
-        stopProgressObserver()
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 5, preferredTimescale: 1), queue: .main) { [weak self] time in
-            let seconds = time.seconds
-            guard seconds.isFinite else { return }
-            Task { @MainActor in
-                guard let self else { return }
-                self.onProgress?(seconds)
-                self.notifyNowPlayingChanged()
-            }
+    public static func playbackError(for error: IFramePlayerError) -> PlaybackError {
+        switch error {
+        case .embeddingNotAllowed, .videoNotFound, .invalidParameter: return .noPlayableStream
+        case .html5Error: return .itemFailed
+        case .unknown: return .unknown
         }
-    }
-
-    private func stopProgressObserver() {
-        if let observer = timeObserver {
-            player.removeTimeObserver(observer)
-            timeObserver = nil
-        }
-    }
-
-    // MARK: - Observation
-
-    private func observe(item: AVPlayerItem) {
-        itemObservation?.invalidate()
-        // Bind deliveries to this exact item identity (Sendable token): late
-        // callbacks from a replaced item must never mark a healthy successor
-        // failed or ready.
-        let observedItemID = ObjectIdentifier(item)
-        itemObservation = item.observe(\.status, options: [.new]) { [weak self] observed, _ in
-            // Extract the Sendable status before hopping actors; capturing the
-            // non-Sendable AVPlayerItem across a Task boundary is illegal on
-            // Swift 6.0 toolchains.
-            let status = observed.status
-            Task { @MainActor in
-                guard let currentItem = self?.player.currentItem,
-                      ObjectIdentifier(currentItem) == observedItemID else { return }
-                self?.handle(itemStatus: status)
-            }
-        }
-
-        timeControlObservation?.invalidate()
-        timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
-            let status = observed.timeControlStatus
-            Task { @MainActor in
-                self?.handle(timeControlStatus: status)
-            }
-        }
-    }
-
-    /// Internal (not private) so deterministic tests can drive item-status
-    /// transitions directly instead of depending on AVFoundation readiness
-    /// timing. Production callers are the KVO bindings only.
-    func handle(itemStatus: AVPlayerItem.Status) {
-        switch itemStatus {
-        case .readyToPlay:
-            if state.status == .loading {
-                try? state.transition(to: .ready)
-                if player.timeControlStatus == .playing {
-                    try? state.transition(to: .playing)
-                }
-                consumeResumeSeek()
-            }
-        case .failed:
-            state = PlaybackState(status: .failed, error: .itemFailed)
-        case .unknown:
-            break
-        @unknown default:
-            break
-        }
-        notifyNowPlayingChanged()
-    }
-
-    private func handle(timeControlStatus: AVPlayer.TimeControlStatus) {
-        switch timeControlStatus {
-        case .playing:
-            resetWaiting()
-            if state.status == .ready {
-                try? state.transition(to: .playing)
-            }
-        case .paused:
-            resetWaiting()
-            if state.status == .playing {
-                try? state.transition(to: .paused)
-            }
-        case .waitingToPlayAtSpecifiedRate:
-            // Buffering right after ready is normal; only a sustained wait
-            // (no `playing` transition within the stall timeout) is a stall.
-            // A generation-bound watchdog fires even if no further KVO
-            // callback arrives, so the check does not depend on more traffic.
-            if state.status == .ready, stallWatchdog == nil {
-                let gen = generation
-                let timeout = stallTimeout
-                stallWatchdog = Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                    await self?.checkForStall(generation: gen)
-                }
-            }
-        @unknown default:
-            break
-        }
-        notifyNowPlayingChanged()
-    }
-
-    /// Watchdog body: fails playback as `.stalled` only if this generation is
-    /// still current and the player is still waiting after `.ready`.
-    private func checkForStall(generation gen: Int) {
-        guard gen == generation else { return }
-        guard state.status == .ready,
-              player.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
-        stallWatchdog = nil
-        state = PlaybackState(status: .failed, error: .stalled)
-        notifyNowPlayingChanged()
-    }
-
-    /// Cancels any pending stall watchdog and clears waiting bookkeeping;
-    /// called on every non-waiting transition and every selection change so a
-    /// stale timestamp can never trigger an instant false stall later.
-    private func resetWaiting() {
-        stallWatchdog?.cancel()
-        stallWatchdog = nil
-    }
-
-    /// Applies this selection's stored resume position exactly once, when the
-    /// item first reports ready. Sub-millisecond/no-op targets skip the seek.
-    private func consumeResumeSeek() {
-        guard let target = pendingResumeSeek else { return }
-        pendingResumeSeek = nil
-        guard target > 0.5 else { return }
-        if let seekAction {
-            seekAction(target)
-        } else {
-            player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
-        }
-    }
-
-    private func mapExtractionFailure(_ error: Error) -> PlaybackError {
-        if error is ExtractionError {
-            return .itemFailed
-        }
-        return .unknown
     }
 }
 
@@ -375,7 +113,5 @@ extension PlayerCoordinator: PlayerCommandTarget {
     public func togglePlayPause() {
         if state.status == .playing { pause() } else { resume() }
     }
-    public func seek(to seconds: TimeInterval) {
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
-    }
+    public func seek(to seconds: TimeInterval) { engine.seek(to: seconds) }
 }

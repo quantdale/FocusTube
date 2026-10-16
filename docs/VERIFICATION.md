@@ -51,3 +51,6 @@ This is the **current qualified baseline**. Device Batch A (A1–A14) should tar
 | PiP / lock screen / background behavior under IFrame | — | ❌ **Unverified**; expected unsupported (ADR-0007) |
 | iOS target compiles without YouTubeKit | — | ❌ Not attempted yet (phase 3) |
 Rule: nothing WebKit-related is marked verified until macOS CI builds/tests it or a device runs it.
+| `PlayerCoordinator` over `PlayerEngine` (load deferral, resume, invalid id, typed errors, progress throttle, stop) | 7 `PlayerCoordinatorTests` pass on Linux in a scratch package: same sources, with `@Observable` stripped because the Linux toolchain's Observation library fails to link | ✅ logic on Linux; the real file with `@Observable` is unverified until macOS CI |
+| App target compiles with the IFrame switch-over, and UI journeys pass with `FixturePlayerEngine` | — | ❌ Pending macOS iOS CI (PR for `feat/iframe-playback-switch`) |
+| Real IFrame playback on device | — | ❌ Unverified |

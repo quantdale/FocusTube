@@ -6,7 +6,7 @@ import FocusTubeCore
 /// ADR-0007: thin WebKit adapter around the official YouTube IFrame Player.
 /// All decisions live in `IFramePlayerController` (core, unit-tested); this
 /// class only evaluates rendered commands and forwards bridge messages.
-/// Not wired into PlayerCoordinator yet (phase 2 switch-over).
+/// Owned by `PlayerCoordinator` (phase 2 switch-over).
 @MainActor
 final class WKWebViewPlayerEngine: NSObject, PlayerEngine {
     let webView: WKWebView

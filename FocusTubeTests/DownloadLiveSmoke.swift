@@ -40,7 +40,7 @@ final class DownloadLiveSmoke: XCTestCase {
         XCTAssertTrue(completed, "Expected combined download to finalize and validate")
         XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
 
-        let player = await PlayerCoordinator()
+        let player = await LegacyAVPlayerCoordinator()
         await player.playLocalFile(destination)
         // Bind the async-isolated state before asserting; XCTest autoclosures
         // are nonisolated and cannot contain await.

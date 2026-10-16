@@ -522,6 +522,13 @@ final class Journeys: XCTestCase {
         XCTAssertEqual(app.staticTexts["video-title"].label, "Fixture Documentary One")
         XCTAssertTrue(app.staticTexts["video-channel"].exists)
 
+        // ADR-0007: playback runs through the PlayerEngine seam; in fixtures the
+        // fake engine scripts ready → buffering → playing.
+        XCTAssertTrue(
+            app.descendants(matching: .any)["player-playing"].firstMatch.waitForExistence(timeout: 10),
+            "fake IFrame engine must drive the player to .playing;\(treeDiagnostics(app))"
+        )
+
         // Accessibility contract: the label reflects the ACTION, not the state,
         // before any interaction. The page is a deliberate non-lazy ScrollView,
         // so existence equals rendered — the assertion does not depend on
