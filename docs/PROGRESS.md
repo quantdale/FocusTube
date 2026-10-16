@@ -122,3 +122,13 @@ Branch `chore/remove-core-extraction` (stacked on the app-removal PR) deletes th
 `DownloadRetryPolicy` and `StorageEstimator`. Kept for now, because the persisted `DownloadRecord`/library
 index still needs them: `DownloadTask`/`DownloadState`/`DownloadQueue`/`DownloadTransport` (`FileManaging`) and
 `OfflineLibraryPolicy`. Linux `swift test`: 109/109 pass.
+
+## Update 2026-10-16 — ADR-0008 core (no Google Cloud)
+- PR #18: the `YouTubeLink` parser.
+- PR #19: the Atom feed parser and client, the oEmbed client and `HTTPFetching`.
+- Branch `feat/core-local-library-aggregator`: `LocalLibrary` (subscriptions, saved playlists, Watch Later,
+  history and resume, local search), `LocalLibraryStore` (atomic JSON; a corrupt file is moved aside) and
+  `PublicFeedAggregator` (4 concurrent fetches, 15-minute per-feed interval, failures keep the stale cache,
+  Shorts firewall by `/shorts/` link, portrait oEmbed or a learned duration ≤180 s, de-dup, newest first).
+  Linux `swift test`: 177/177 on that branch.
+- Next: app wiring (remove GoogleSignIn and `YouTubeDataClient`; add the Add tab, the local feed and the oEmbed video page).
