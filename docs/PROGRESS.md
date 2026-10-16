@@ -82,3 +82,7 @@ the quality picker section and quality resolution (which called the extractor) a
 flow/failure) and L (offline playback) are compiled out with them, and the shell/video-page
 journeys now assert the Downloads tab and Download button are **absent**. The download stack
 itself still compiles (deleted in phase 3). Verified only by macOS iOS CI.
+## Update 2026-10-16 — phase 3 started (ADR-0007)
+Removed the opt-in `LiveExtractionSmoke` and `AdaptiveLiveSmoke` tests. They only exercised
+YouTubeKit stream extraction against live YouTube, which ADR-0007 forbids. `DownloadLiveSmoke`
+and `PlaybackStartSmoke` follow once the playback switch-over PR lands, because it edits them.
