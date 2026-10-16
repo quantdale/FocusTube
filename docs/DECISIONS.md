@@ -58,3 +58,19 @@ Supersedes ADR-0002, ADR-0004 and ADR-0006.
   quality picker.
 - Migration: 1a docs, 1b core, 2 iOS engine + switch-over, 3 deletions + YouTubeKit removal,
   4 device validation. See the ADR table.
+
+## 2026-10-16 — ADR-0008: no Google Cloud; link-based, local-first app
+Full text: [`docs/adr/0008-no-google-cloud-local-first.md`](adr/0008-no-google-cloud-local-first.md).
+- No sign-in, no API key, no Data API v3. GoogleSignIn and the Data API client are removed.
+- Content enters by pasted link. A link parser accepts videos, playlists and `/channel/UC…`
+  channels, and rejects `/shorts/`.
+- `@handle`, `/c/` and `/user/` are **not resolved**. The user is told to use "Share channel →
+  Copy channel ID". Nothing is scraped.
+- Feeds come from public Atom (`feeds/videos.xml?channel_id=` / `?playlist_id=`), and metadata from oEmbed.
+- Subscriptions, Watch Later, history/resume and saved playlists are all local.
+- The Search tab is replaced by an **Add** tab (paste a link, plus local search over known videos),
+  because keyless YouTube search isn't possible within the ToS.
+- Shorts: drop `/shorts/` feed links and portrait oEmbed embeds, reject pasted `/shorts/` links, and
+  keep the 180 s rule when a duration is known. Documented leak: a Short with a `watch?v=` feed link
+  can slip in until its metadata is seen.
+- M4, M5, B4, B5 and B9 are dropped.
