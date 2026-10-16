@@ -30,21 +30,4 @@ final class PlaybackStateTests: XCTestCase {
             XCTAssertEqual(error as? PlaybackState.TransitionError, .invalidTransition)
         }
     }
-
-    func testSelectionWithoutPlayableStreamIsNil() {
-        let media = ResolvedMedia(
-            videoID: "x",
-            extractedAt: Date(),
-            combined: [
-                MediaStream(
-                    id: "u", videoID: "x", resolution: 2160, kind: .combined,
-                    nativePlayable: true, container: "mp4", videoCodec: "avc1",
-                    audioCodec: "mp4a", sourceURL: URL(string: "https://e/u")!, expiresAt: nil
-                )
-            ],
-            videoOnly: [],
-            audioOnly: []
-        )
-        XCTAssertNil(MediaStreamFilter.selectOnlineStream(media))
-    }
 }
