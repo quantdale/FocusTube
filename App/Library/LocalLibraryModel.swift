@@ -42,6 +42,8 @@ final class LocalLibraryModel {
     /// True once library.json has been read; refresh waits for it so a feed
     /// refresh racing the initial load never runs against an empty library.
     private(set) var didLoad = false
+    private var pendingRefresh = false
+    private var pendingForce = false
 
     func load() async {
         let (loaded, outcome) = await store.load()
@@ -100,14 +102,22 @@ final class LocalLibraryModel {
 
     func refresh(force: Bool = false) async {
         if !didLoad { await load() }
-        guard !isRefreshing else { return }
+        // A refresh requested while one is in flight (e.g. a new subscription)
+        // is queued, not dropped, so the feed always reflects the latest list.
+        guard !isRefreshing else { pendingRefresh = true; pendingForce = pendingForce || force; return }
         isRefreshing = true
         defer { isRefreshing = false }
-        let snap = await aggregator.refresh(library.subscriptions, now: now(), force: force)
-        feed = snap.videos
-        feedFailures = snap.failures
-        hiddenShorts = snap.hiddenShorts
-        lastRefresh = now()
+        var force = force
+        repeat {
+            pendingRefresh = false
+            let snap = await aggregator.refresh(library.subscriptions, now: now(), force: force)
+            feed = snap.videos
+            feedFailures = snap.failures
+            hiddenShorts = snap.hiddenShorts
+            lastRefresh = now()
+            force = pendingForce
+            pendingForce = false
+        } while pendingRefresh
     }
 
     /// ADR-0008 Shorts rule d: durations learned from the player feed back into the firewall.
