@@ -39,9 +39,14 @@ final class LocalLibraryModel {
             .appendingPathComponent("library.json")
     }
 
+    /// True once library.json has been read; refresh waits for it so a feed
+    /// refresh racing the initial load never runs against an empty library.
+    private(set) var didLoad = false
+
     func load() async {
         let (loaded, outcome) = await store.load()
         library = loaded
+        didLoad = true
         if outcome == .recoveredFromCorruption {
             Self.logger.fault("library.json was corrupt; moved aside and started empty")
         }
@@ -94,6 +99,7 @@ final class LocalLibraryModel {
     // MARK: Feed
 
     func refresh(force: Bool = false) async {
+        if !didLoad { await load() }
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
