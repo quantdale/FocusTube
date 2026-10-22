@@ -7,190 +7,113 @@ import FocusTubeCore
 /// Selected ONLY by the `-focustube-ui-test <scenario>` launch argument, which
 /// ordinary users cannot set; this entire file is compiled out of Release
 /// builds, so shipped binaries structurally cannot enter fake-service mode.
-/// Production always uses the real implementations.
+/// ADR-0008: fixtures serve canned public Atom feeds and oEmbed JSON.
 
 // MARK: - Scenario selection
 
 enum UITestScenario: String {
-    case signedOut = "signed-out"
+    /// No subscriptions yet.
+    case empty = "empty"
+    /// Subscribed to the fixture channel; feed loads.
     case homeLoaded = "home-loaded"
+    /// Subscribed, but the feed request fails.
     case homeNetworkError = "home-network-error"
-    case homeQuotaError = "home-quota-error"
-    case searchReady = "search-ready"
-    case searchEmpty = "search-empty"
-    case searchError = "search-error"
     case videoPage = "video-page"
     case librarySeeded = "library-seeded"
+    /// No subscriptions; the Add tab can subscribe to the fixture channel.
+    case addFlow = "add-flow"
 
     static func fromArguments(_ arguments: [String]) -> UITestScenario? {
         guard let index = arguments.firstIndex(of: "-focustube-ui-test"),
               arguments.indices.contains(index + 1) else { return nil }
         return UITestScenario(rawValue: arguments[index + 1])
     }
+
+    var startsSubscribed: Bool { self == .homeLoaded || self == .homeNetworkError || self == .videoPage }
 }
 
 // MARK: - Deterministic content
 
 enum FixtureContent {
-    static func video(
-        _ id: String,
-        _ title: String,
-        seconds: Int?,
-        channel: String = "Fixture Channel"
-    ) -> VideoSummary {
-        VideoSummary(
-            id: id,
-            title: title,
-            channelTitle: channel,
-            durationSeconds: seconds,
-            publishedAt: nil,
-            thumbnailURL: nil,
-            description: "Fixture description for \(title). Long-form content used by deterministic journeys.",
-            channelID: "UCfixture"
-        )
+    static let channelID = YouTubeChannelID("UCfixturefixturefixture0")!
+    static let playlistID = YouTubePlaylistID("PLfixturefixture01")!
+    /// Feed entries: three long-form videos (watch links) and one Short (/shorts/ link)
+    /// that the ADR-0008 firewall must hide.
+    static let entries: [(id: String, title: String, shorts: Bool, published: String)] = [
+        ("fixHome0001", "Fixture Documentary One", false, "2026-10-15T12:00:00+00:00"),
+        ("fixHome0002", "Fixture Interview Two", false, "2026-10-14T12:00:00+00:00"),
+        ("fixShort001", "Fixture Sneaky Short", true, "2026-10-14T18:00:00+00:00"),
+        ("fixHome0003", "Fixture Lecture Three", false, "2026-10-13T12:00:00+00:00"),
+    ]
+
+    static func feedXML(playlist: Bool = false) -> String {
+        let items = entries.map { e in
+            """
+             <entry>
+              <yt:videoId>\(e.id)</yt:videoId>
+              <yt:channelId>\(channelID.rawValue)</yt:channelId>
+              <title>\(e.title)</title>
+              <link rel="alternate" href="https://www.youtube.com/\(e.shorts ? "shorts/" : "watch?v=")\(e.id)"/>
+              <author><name>Fixture Channel</name></author>
+              <published>\(e.published)</published>
+              <media:group><media:description>Fixture description for \(e.title). Long-form content used by deterministic journeys.</media:description></media:group>
+             </entry>
+            """
+        }.joined(separator: "\n")
+        return """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+         <yt:channelId>\(channelID.rawValue)</yt:channelId>
+         \(playlist ? "<yt:playlistId>\(playlistID.rawValue)</yt:playlistId>" : "")
+         <title>\(playlist ? "Fixture Playlist" : "Fixture Channel")</title>
+         <author><name>Fixture Channel</name></author>
+        \(items)
+        </feed>
+        """
     }
 
-    /// Long-form Home fixtures (>= 10 minutes so they pass any firewall check).
-    static let homeVideos: [VideoSummary] = [
-        video("fix-home-1", "Fixture Documentary One", seconds: 1800),
-        video("fix-home-2", "Fixture Interview Two", seconds: 2400),
-        video("fix-home-3", "Fixture Lecture Three", seconds: 3600)
-    ]
-
-    static let homePageTwo: [VideoSummary] = [
-        video("fix-home-4", "Fixture Essay Four", seconds: 1500),
-        video("fix-home-5", "Fixture Panel Five", seconds: 2700)
-    ]
-
-    /// Search results include one 90-second short that ShortFormPolicy must
-    /// filter before render — the UI journey asserts it never appears.
-    static let searchDetails: [VideoSummary] = [
-        video("fix-search-1", "Fixture Search Result Alpha", seconds: 1200),
-        video("fix-search-short", "Fixture Sneaky Short", seconds: 90),
-        video("fix-search-2", "Fixture Search Result Beta", seconds: 2000)
-    ]
-
-    static let searchPageTwo: [VideoSummary] = [
-        video("fix-search-3", "Fixture Search Result Gamma", seconds: 900)
-    ]
-
-    /// Allowed ladder fully present so the picker shows all four options.
-    static let comments: [Comment] = [
-        Comment(id: "fc1", author: "Fixture Alice", text: "Fixture comment alpha", likeCount: 3, publishedAt: nil, replyCount: 1, replies: [
-            Comment(id: "fc1r1", author: "Fixture Bob", text: "Fixture reply", likeCount: 1, publishedAt: nil, replyCount: 0)
-        ]),
-        Comment(id: "fc2", author: "Fixture Carol", text: "Fixture comment beta", likeCount: 7, publishedAt: nil, replyCount: 0)
-    ]
+    static func oEmbedJSON(title: String, portrait: Bool) -> String {
+        #"{"title":"\#(title)","author_name":"Fixture Channel","width":\#(portrait ? 113 : 200),"height":\#(portrait ? 200 : 113)}"#
+    }
 }
 
-// MARK: - Auth
+/// Canned responses for the keyless public endpoints.
+struct FixtureHTTP: HTTPFetching {
+    let feedFails: Bool
 
-/// Class (not struct) so sign-out can flip the in-memory session state and
-/// sign-out journeys can observe the transition deterministically.
-/// `@unchecked Sendable`: the single mutable flag is written only from the
-/// main actor (UI actions) and read through async AuthSession methods in
-/// tests; no cross-thread torn-state risk exists at fixture scale.
-final class FixtureAuthSession: AuthSession, @unchecked Sendable {
-    var authenticated: Bool
-
-    init(authenticated: Bool) {
-        self.authenticated = authenticated
+    func get(_ url: URL) async throws -> (data: Data, status: Int) {
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let s = url.absoluteString
+        if s == PublicEndpoints.channelFeed(FixtureContent.channelID).absoluteString {
+            return feedFails ? (Data(), 500) : (Data(FixtureContent.feedXML().utf8), 200)
+        }
+        if s == PublicEndpoints.playlistFeed(FixtureContent.playlistID).absoluteString {
+            return (Data(FixtureContent.feedXML(playlist: true).utf8), 200)
+        }
+        if s.hasPrefix("https://www.youtube.com/oembed") {
+            if s.contains("fixPaste001") { return (Data(FixtureContent.oEmbedJSON(title: "Fixture Pasted Video", portrait: false).utf8), 200) }
+            if s.contains("fixPortrait") { return (Data(FixtureContent.oEmbedJSON(title: "Portrait", portrait: true).utf8), 200) }
+            return (Data(FixtureContent.oEmbedJSON(title: "Fixture Video", portrait: false).utf8), 200)
+        }
+        return (Data(), 404)
     }
-
-    var isAuthenticated: Bool { get async { authenticated } }
-    func restore() async -> Bool { authenticated }
-    func accessToken() async -> String? { authenticated ? "fixture-token" : nil }
-    func signOut() async { authenticated = false }
 }
 
-// MARK: - API
-
-/// Scenario-scripted YouTube Data API fake. No network I/O anywhere.
-struct FixtureYouTubeAPI: YouTubeAPI {
-    let feedError: YouTubeAPIError?
-    let searchError: YouTubeAPIError?
-    let searchHits: Bool
-
-    init(feedError: YouTubeAPIError? = nil, searchError: YouTubeAPIError? = nil, searchHits: Bool = true) {
-        self.feedError = feedError
-        self.searchError = searchError
-        self.searchHits = searchHits
-    }
-
-    func fetchSubscriptionUploadsPlaylistIDs(accessToken: String) async throws -> [String] {
-        if let feedError { throw feedError }
-        return ["fixture-uploads"]
-    }
-
-    func fetchPlaylistVideoIDs(playlistID: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
-        ([], nil)
-    }
-
-    func fetchVideoDetails(ids: [String], accessToken: String) async throws -> [VideoSummary] {
-        ids.compactMap { id in
-            (FixtureContent.homeVideos + FixtureContent.homePageTwo + FixtureContent.searchDetails + FixtureContent.searchPageTwo)
-                .first { $0.id == id }
+enum FixtureLocalLibrary {
+    /// Fresh per-launch library file, optionally pre-subscribed to the fixture channel.
+    static func fileURL(for scenario: UITestScenario) -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FocusTubeUITests-\(UUID().uuidString)")
+            .appendingPathComponent("library.json")
+        if scenario.startsSubscribed {
+            var library = LocalLibrary()
+            library.subscribe(FixtureContent.channelID, title: "Fixture Channel", now: Date())
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? encoder.encode(library).write(to: url)
         }
-    }
-
-    func searchVideoIDs(query: String, accessToken: String, pageToken: String?) async throws -> (ids: [String], nextPageToken: String?) {
-        if let searchError { throw searchError }
-        guard searchHits else { return ([], nil) }
-        if pageToken == nil {
-            return (["fix-search-1", "fix-search-short", "fix-search-2"], "fixture-search-token-2")
-        } else {
-            return (["fix-search-3"], nil)
-        }
-    }
-
-    func fetchComments(videoID: String, accessToken: String, pageToken: String?) async throws -> CommentPage {
-        CommentPage(comments: FixtureContent.comments, nextPageToken: nil, commentsDisabled: false)
-    }
-
-    // DDV2-04 mutation/lookup fakes: deterministic, no network, no tokens.
-
-    func postTopLevelComment(videoID: String, text: String, accessToken: String) async throws -> Comment {
-        Comment(id: "fc-posted", author: "Fixture You", text: text, likeCount: 0, publishedAt: Date(), replyCount: 0)
-    }
-
-    func postReply(parentCommentID: String, text: String, accessToken: String) async throws -> Comment {
-        Comment(id: "fc-reply-posted", author: "Fixture You", text: text, likeCount: 0, publishedAt: Date(), replyCount: 0)
-    }
-
-    func findMySubscription(channelID: String, accessToken: String) async throws -> SubscriptionLookup? {
-        SubscriptionLookup(subscriptionID: "SUB-fixture", channelTitle: "Fixture Channel")
-    }
-
-    func fetchMyVideoRating(videoID: String, accessToken: String) async throws -> VideoRatingState {
-        .like
-    }
-
-    // DDV2-08 bounded-playlist fakes.
-
-    func fetchMyPlaylists(accessToken: String) async throws -> [PlaylistSummary] {
-        [PlaylistSummary(id: "PL-fixture", title: "Fixture Playlist", privacyStatus: "private", itemCount: 2)]
-    }
-
-    func fetchPlaylistItems(playlistID: String, accessToken: String) async throws -> [PlaylistItemSummary] {
-        [PlaylistItemSummary(playlistItemID: "PI-1", videoID: "fix-home-1", title: "Fixture Documentary One", channelTitle: "Fixture Channel")]
-    }
-
-    func addToPlaylist(playlistID: String, videoID: String, accessToken: String) async throws {}
-
-    func removeFromPlaylist(playlistItemID: String, accessToken: String) async throws {}
-
-    func subscribe(channelID: String, accessToken: String) async throws {}
-
-    func unsubscribe(subscriptionID: String, accessToken: String) async throws {}
-
-    func rateVideo(videoID: String, rating: VideoRating, accessToken: String) async throws {}
-
-    func fetchSubscriptionFeed(accessToken: String, pageToken: String?) async throws -> SubscriptionFeedPage {
-        if let feedError { throw feedError }
-        if pageToken == nil {
-            return SubscriptionFeedPage(videos: FixtureContent.homeVideos, nextPageToken: "fixture-feed-token-2")
-        }
-        return SubscriptionFeedPage(videos: FixtureContent.homePageTwo, nextPageToken: nil)
+        return url
     }
 }
 

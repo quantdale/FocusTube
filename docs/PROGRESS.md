@@ -139,3 +139,10 @@ switch-over. It contains `URLSessionHTTP` (ephemeral session; only https `www.yo
 `LocalLibraryModel` (subscriptions and playlists in `library.json`, subscriptions feed refresh, oEmbed cache,
 player duration fed back into the Shorts firewall, local search), `AddView` (paste a link and local search)
 and `SubscriptionsFeedView` (pull-to-refresh). Watch history and Watch Later stay in the SwiftData `LibraryStore`.
+
+## 2026-10-16 — W2: app switched to local-first (ADR-0008)
+- Removed GoogleSignIn (package, Info.plist GIDClientID/URL scheme, delegate URL handler), AuthSession, Data API client wiring, Home/Search stores, account settings, comments, ratings.
+- Tabs are now Home (local subscriptions feed, pull-to-refresh), Add (paste link + local search), Library (history, Watch Later, playlists, subscriptions).
+- Video page rebuilt on feed/oEmbed metadata; player duration ≤180 s feeds the Shorts firewall and blocks playback.
+- UI-test fixtures/journeys rewritten for scenarios empty, home-loaded, home-network-error, video-page, library-seeded, add-flow.
+- Secrets example trimmed to DEVELOPMENT_TEAM only.
