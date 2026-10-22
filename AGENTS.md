@@ -180,3 +180,9 @@ A blocker never stops the work. When you hit one (CI not running, approvals, sec
 1. Log it at the top of `docs/BLOCKERS.md` under **Needs Michael (morning queue)**. Give the exact one-to-two-line fix, the links, and what it unblocks.
 2. Use safe, free workarounds: local `swift build`/`swift test` evidence, and keep PRs open with follow-up branches stacked on them. Merge only when CI is green. Never merge anything that needs runtime proof we do not have.
 3. Move on to the next unblocked task.
+
+## Cross-project UX, DX, and AX principles
+
+Cut taglines, helper text and secondary labels. If a screen needs them to make sense, fix the layout.
+
+Make the best decision that will elevate all three: the user experience (UX), developer experience (DX), and agent experience (AX) always, without breaking anything.
